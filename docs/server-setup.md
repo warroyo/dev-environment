@@ -26,23 +26,40 @@ group membership doesn't apply to your current shell session until you log
 out and back in — the script uses `sudo docker` internally to work around
 that, but your own `docker` commands will need a fresh login.
 
-## 2. Install and authenticate the Claude Code CLI
+The script now also installs the Claude Code CLI, applies the dotfiles via
+chezmoi, and installs the tmux plugins — those are no longer separate manual
+steps.
 
-If you haven't already, install `claude` and complete its one-time
-interactive login. This isn't scripted here since it requires interactive
-auth — see Anthropic's Claude Code docs for the current install command.
-`claude-tmux.service` (from step 1) assumes `claude` is already on `PATH`
-for your user.
+## 2. Authenticate the Claude Code CLI
 
-## 3. Manual: `tailscale up`
+Installation is handled by the script. The **first-run login is an
+interactive browser/OAuth flow** and stays manual — run `claude` once and
+follow the prompts.
+
+Because the server is headless, the shell config aliases `$BROWSER` to print
+URLs rather than launch a browser; Ghostty renders them as clickable links,
+so clicking opens the browser on your Mac. See
+[`docs/ARCHITECTURE.md`](ARCHITECTURE.md).
+
+## 3. `tailscale up`
+
+Either supply an auth key and let the script do it:
+
+```sh
+TAILSCALE_AUTHKEY=tskey-auth-... ./provision/server-bootstrap.sh
+```
+
+(generate the key at
+<https://login.tailscale.com/admin/settings/keys> — the key itself has to
+come from the web UI), or do it interactively:
 
 ```sh
 sudo tailscale up
 ```
 
-Interactive — follow the printed auth URL. Confirm the machine shows up in
-your tailnet and note its Tailscale hostname (should be `ubuntu-home`; used
-throughout `dotfiles/.chezmoidata.yaml` and the SSH config template).
+Confirm the machine shows up in your tailnet and note its Tailscale hostname
+(should be `ubuntu-home`; used throughout `dotfiles/.chezmoidata.yaml` and
+the SSH config template).
 
 ## 4. Run the bootstrap script again
 
@@ -89,19 +106,21 @@ flow that a stateful firewall may drop. Check that the UDM SE permits the
 VPN pool to reach whichever VLAN you're targeting, and prefer connecting to
 the address on the same VLAN the OpenVPN pool routes into.
 
-## 5. Apply dotfiles via chezmoi
+## 5. Dotfiles and tmux plugins — automated
 
-```sh
-chezmoi init --apply --source="$HOME/dev-environment/dotfiles"
-```
+Both are done by the bootstrap script; nothing to run by hand.
 
-This applies both layers (general + Claude-specific) unconditionally on the
-server, plus the `CLAUDE_CODE_TMUX_TRUECOLOR=1` export that's specific to
-this machine.
+It applies both layers (general + Claude-specific) on the server, including
+the `CLAUDE_CODE_TMUX_TRUECOLOR=1` export specific to this machine, then
+installs `tmux-resurrect` and `tmux-continuum` via tpm's `install_plugins`
+(the scripted equivalent of pressing `prefix + I`).
 
-The first time tmux starts, press `prefix + I` (capital I) inside a tmux
-session to have tpm fetch `tmux-resurrect` and `tmux-continuum` — this is a
-one-time, interactive step tpm requires and can't be scripted around.
+One ordering detail the script handles: if `claude-tmux.service` started a
+tmux server at boot *before* `~/.tmux.conf` existed, that server never
+sourced the config and tpm aborts with "Tmux Plugin Manager not configured
+in tmux.conf". The script runs `tmux source-file ~/.tmux.conf` against the
+live server first, which both fixes tpm and makes the new settings take
+effect in `claude-main` without restarting your session.
 
 ## 6. Manual: the second OpenVPN environment's config
 
@@ -142,6 +161,21 @@ activation** (this is what changed in 22.10). If that happens, the old
 `sshd_config` drop-in silently stops taking effect; re-running the bootstrap
 script detects the new mechanism and configures `ssh.socket` instead. Always
 verify with `sudo ss -tlnp | grep :22` rather than trusting `sshd -T`.
+
+## Verification: automated health check
+
+```sh
+./provision/verify-server.sh
+```
+
+Read-only, changes nothing, exits non-zero if anything FAILs. Checks tooling,
+dotfiles (including that chezmoi-managed files haven't drifted, and that
+`~/.ssh/config` is `0600`), tmux plugins, Tailscale, the ssh bindings
+(flagging any wildcard bind or unbound LAN address), and the persistent
+session. Run it after a reboot or an OS upgrade.
+
+WARNs don't fail the run — an unconfigured second OpenVPN environment is
+expected if you don't use it.
 
 ## Verification: reboot recovery
 

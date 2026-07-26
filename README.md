@@ -26,7 +26,16 @@ cd ~/dev-environment
 ./provision/<role>-bootstrap.sh
 ```
 
-Every bootstrap script is idempotent — safe to re-run.
+Every bootstrap script is idempotent — safe to re-run. Each ends by applying
+the dotfiles with chezmoi, so a bootstrap run is the whole setup apart from
+the interactive steps (Claude Code login, Tailscale auth, importing the
+OpenVPN profile).
+
+On the server, check the result at any time with:
+
+```sh
+./provision/verify-server.sh    # read-only; non-zero exit if anything failed
+```
 
 ## Layout
 

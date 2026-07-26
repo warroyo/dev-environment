@@ -1,4 +1,5 @@
-{{- $isWorkLaptop := eq .chezmoi.hostname .hostnames.workLaptop }}
+{{- $h := .chezmoi.hostname | lower | trimSuffix ".local" }}
+{{- $isWorkLaptop := eq $h (.hostnames.workLaptop | lower | trimSuffix ".local") }}
 # ============================================================================
 # General SSH defaults — applies on every machine
 # ============================================================================

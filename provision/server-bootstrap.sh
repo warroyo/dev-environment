@@ -79,6 +79,22 @@ else
 fi
 $SUDO systemctl enable --now tailscaled
 
+# Bring the tailnet up unattended if an auth key was supplied:
+#   TAILSCALE_AUTHKEY=tskey-auth-... ./provision/server-bootstrap.sh
+# Generate one at https://login.tailscale.com/admin/settings/keys (the key
+# itself still has to come from the web UI — that part can't be scripted).
+# Without a key this is a no-op and `sudo tailscale up` stays a manual step.
+if tailscale status >/dev/null 2>&1; then
+  log "Tailscale already up ($(tailscale ip -4 2>/dev/null | head -n1))"
+elif [ -n "${TAILSCALE_AUTHKEY:-}" ]; then
+  log "Bringing Tailscale up with the supplied auth key"
+  $SUDO tailscale up --authkey="${TAILSCALE_AUTHKEY}" --hostname="$(hostname)"
+else
+  log "Tailscale is installed but not logged in. Either re-run with"
+  log "  TAILSCALE_AUTHKEY=tskey-auth-... $0"
+  log "or run 'sudo tailscale up' manually, then re-run this script."
+fi
+
 # ---------------------------------------------------------------------------
 log "Installing Docker"
 if ! command -v docker >/dev/null 2>&1; then
@@ -104,6 +120,21 @@ if [ ! -d "$TPM_DIR" ]; then
   git clone -q https://github.com/tmux-plugins/tpm "$TPM_DIR"
 else
   git -C "$TPM_DIR" pull -q --ff-only || log "tpm pull skipped (local changes?)"
+fi
+
+# ---------------------------------------------------------------------------
+# Claude Code CLI. Installing is automated; the first-run login is an
+# interactive browser/OAuth flow and stays manual (see docs/server-setup.md).
+log "Installing Claude Code CLI"
+if command -v claude >/dev/null 2>&1; then
+  log "Claude Code already installed ($(claude --version 2>/dev/null || echo 'version unknown'))"
+else
+  if curl -fsSL https://claude.ai/install.sh | bash; then
+    log "Claude Code installed"
+  else
+    log "WARNING: automatic Claude Code install failed. Install it manually,"
+    log "         then re-run this script (claude-tmux.service needs it on PATH)."
+  fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -188,6 +219,40 @@ else
   log "No client-env.ovpn in ${GLUETUN_DIR}/config yet — drop it there, then run:"
   log "  (cd ${GLUETUN_DIR} && docker compose up -d)"
   log "See docs/server-setup.md."
+fi
+
+# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Apply dotfiles, same as the two client bootstrap scripts do. This must come
+# before the tpm plugin install below, since tpm reads the plugin list out of
+# the ~/.tmux.conf that chezmoi writes here.
+log "Applying chezmoi dotfiles"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+chezmoi init --apply --source="${REPO_ROOT}/dotfiles"
+
+# ---------------------------------------------------------------------------
+# Install the tmux plugins non-interactively. tpm's documented flow is to
+# press `prefix + I` inside a running session; install_plugins does the same
+# thing from a script, so this doesn't have to be a manual step.
+log "Installing tmux plugins (tmux-resurrect, tmux-continuum)"
+if [ -x "${TPM_DIR}/bin/install_plugins" ]; then
+  # tpm needs a tmux server to talk to. Use a throwaway detached session so
+  # this works even on a fresh boot with nothing else running, and so it
+  # never touches the claude-main session.
+  tmux new-session -d -s tpm-install 2>/dev/null || true
+  # An ALREADY-RUNNING server (e.g. claude-main started by systemd at boot,
+  # before chezmoi had written ~/.tmux.conf) never sourced the config, so tpm
+  # would abort with "Tmux Plugin Manager not configured in tmux.conf".
+  # Load it into the live server first. This is also what makes the new
+  # settings take effect in claude-main without restarting it.
+  tmux source-file "$HOME/.tmux.conf" 2>/dev/null || true
+  "${TPM_DIR}/bin/install_plugins" >/dev/null 2>&1 \
+    && log "tmux plugins installed" \
+    || log "WARNING: tpm install_plugins failed — run 'prefix + I' inside tmux to finish."
+  tmux kill-session -t tpm-install 2>/dev/null || true
+else
+  log "WARNING: ${TPM_DIR}/bin/install_plugins not found — run 'prefix + I' inside tmux."
 fi
 
 # ---------------------------------------------------------------------------

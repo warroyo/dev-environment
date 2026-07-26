@@ -8,7 +8,8 @@
   Verify with: chezmoi ignored
 */}}
 
-{{- if eq .chezmoi.hostname .hostnames.workLaptop }}
+{{- $h := .chezmoi.hostname | lower | trimSuffix ".local" }}
+{{- if eq $h (.hostnames.workLaptop | lower | trimSuffix ".local") }}
 {{/*
   Work MacBook Pro: exclude every Claude-Code-specific file. Everything else
   in this source directory (shell config, Ghostty, tmux, VS Code, git,
@@ -23,7 +24,7 @@
 .local/bin/paste-image
 {{- end }}
 
-{{- if ne .chezmoi.hostname .hostnames.personalAir }}
+{{- if ne $h (.hostnames.personalAir | lower | trimSuffix ".local") }}
 {{/*
   paste-image is macOS-only (it shells out to osascript to read the
   clipboard) and its whole purpose is pushing an image *to* the server, so

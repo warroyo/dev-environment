@@ -1,6 +1,12 @@
-{{/* Machine identity, computed once from the shared hostname data in .chezmoidata.yaml */}}
-{{- $isWorkLaptop := eq .chezmoi.hostname .hostnames.workLaptop }}
-{{- $isServer := eq .chezmoi.hostname .hostnames.server }}
+{{/*
+  Machine identity, from the shared hostname data in .chezmoidata.yaml.
+  Both sides are normalized (lowercased, .local stripped) because
+  .chezmoi.hostname excludes the domain and macOS reports mixed case —
+  a raw `eq` comparison silently fails to match on the Macs.
+*/}}
+{{- $h := .chezmoi.hostname | lower | trimSuffix ".local" }}
+{{- $isWorkLaptop := eq $h (.hostnames.workLaptop | lower | trimSuffix ".local") }}
+{{- $isServer := eq $h (.hostnames.server | lower | trimSuffix ".local") }}
 
 # ============================================================================
 # General layer — applies on every machine (including the work MacBook Pro)

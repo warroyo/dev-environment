@@ -10,7 +10,12 @@
 #
 # Note: git identity is NOT here — it's the same on every machine, so
 # dot_gitconfig is a plain (non-templated) file.
+# Write these lowercase and WITHOUT any domain suffix. chezmoi's
+# .chezmoi.hostname excludes the domain, so macOS's "Wills-MacBook-Air.local"
+# arrives as "Wills-MacBook-Air". The templates normalize both sides
+# (lowercase + strip .local) before comparing, so case here doesn't matter,
+# but keeping them lowercase makes the intent obvious.
 hostnames:
   server: "ubuntu-home"
-  personalAir: "wills-MacBook-Air.local"
+  personalAir: "wills-macbook-air"
   workLaptop: "REPLACE_WITH_WORK_LAPTOP_HOSTNAME"

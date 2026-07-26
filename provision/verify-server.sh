@@ -1,0 +1,151 @@
+#!/usr/bin/env bash
+#
+# Read-only health check for the Ubuntu server. Changes nothing — safe to run
+# any time, and the right thing to run after a reboot or an OS upgrade.
+#
+# Exit status: 0 if every check passed, 1 if any FAILed. WARNs don't fail the
+# run (they're "expected in some states", e.g. the second OpenVPN environment
+# not being configured yet).
+set -uo pipefail
+
+PASS=0; FAIL=0; WARN=0
+ok()   { printf '  \033[32mPASS\033[0m  %s\n' "$1"; PASS=$((PASS+1)); }
+bad()  { printf '  \033[31mFAIL\033[0m  %s\n' "$1"; FAIL=$((FAIL+1)); }
+warn() { printf '  \033[33mWARN\033[0m  %s\n' "$1"; WARN=$((WARN+1)); }
+section() { printf '\n\033[1m%s\033[0m\n' "$1"; }
+
+# ---------------------------------------------------------------------------
+section "Tooling"
+for c in zsh tmux git docker chezmoi tailscale mosh-server rg fzf eza; do
+  if command -v "$c" >/dev/null 2>&1; then ok "$c present"; else bad "$c MISSING"; fi
+done
+# Ubuntu ships these under different binary names; server-bootstrap.sh
+# symlinks them into ~/.local/bin under the names the aliases expect.
+check_renamed() {
+  if command -v "$1" >/dev/null 2>&1; then ok "$1 present (Ubuntu ships it as $2)"
+  else warn "$1 not on PATH — expected a ~/.local/bin symlink to $2"; fi
+}
+check_renamed fd fdfind
+check_renamed bat batcat
+if command -v claude >/dev/null 2>&1; then
+  ok "claude present ($(claude --version 2>/dev/null || echo '?'))"
+else
+  bad "claude MISSING — claude-tmux.service cannot work without it"
+fi
+
+# ---------------------------------------------------------------------------
+section "Shell + dotfiles"
+[ "$(getent passwd "$USER" | cut -d: -f7)" = "$(command -v zsh)" ] \
+  && ok "login shell is zsh" || bad "login shell is not zsh"
+for f in .zshrc .tmux.conf .gitconfig .ssh/config; do
+  [ -f "$HOME/$f" ] && ok "~/$f present" || bad "~/$f MISSING — run chezmoi apply"
+done
+# Existence alone doesn't prove chezmoi owns it (a pre-existing file counts
+# as present), so ask chezmoi whether anything managed has drifted.
+if command -v chezmoi >/dev/null 2>&1; then
+  # Pass --source explicitly: chezmoi's configured sourceDir may be its
+  # default (~/.local/share/chezmoi) rather than this repo's dotfiles/.
+  VERIFY_SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/../dotfiles" && pwd)"
+  if chezmoi verify --source="$VERIFY_SRC" >/dev/null 2>&1; then
+    ok "all chezmoi-managed files match the source"
+  else
+    warn "chezmoi reports drift — run 'chezmoi diff' to see what differs"
+  fi
+fi
+if [ -f "$HOME/.ssh/config" ]; then
+  perms="$(stat -c %a "$HOME/.ssh/config")"
+  [ "$perms" = "600" ] && ok ".ssh/config is 0600" \
+    || bad ".ssh/config is 0$perms — OpenSSH rejects group/world-writable configs"
+fi
+for s in claude-attach claude-env; do
+  [ -x "$HOME/.local/bin/$s" ] && ok "$s installed and executable" || bad "$s missing from ~/.local/bin"
+done
+
+# ---------------------------------------------------------------------------
+section "tmux plugins"
+for p in tmux-resurrect tmux-continuum; do
+  [ -d "$HOME/.tmux/plugins/$p" ] && ok "$p installed" \
+    || bad "$p MISSING — session state will not survive a reboot"
+done
+
+# ---------------------------------------------------------------------------
+section "Tailscale"
+if tailscale status >/dev/null 2>&1; then
+  TS_IP="$(tailscale ip -4 2>/dev/null | head -n1)"
+  ok "tailnet up (${TS_IP})"
+else
+  bad "tailscale is not logged in — run 'sudo tailscale up'"
+  TS_IP=""
+fi
+
+# ---------------------------------------------------------------------------
+section "ssh bindings (must be LAN + Tailscale only, never WAN)"
+LISTENERS="$(ss -tlnH '( sport = :22 )' 2>/dev/null | awk '{print $4}')"
+if [ -z "$LISTENERS" ]; then
+  bad "nothing is listening on :22"
+else
+  if echo "$LISTENERS" | grep -qE '^(0\.0\.0\.0|\*|\[::\]):22$'; then
+    bad "WILDCARD bind present — ssh is listening on every interface incl. WAN:"
+    echo "$LISTENERS" | sed 's/^/          /'
+  else
+    ok "no wildcard bind"
+  fi
+  # Every RFC1918 address on a physical interface should be bound, or that
+  # path (e.g. the work laptop's OpenVPN-to-LAN) silently can't connect.
+  while read -r ip; do
+    [ -z "$ip" ] && continue
+    if echo "$LISTENERS" | grep -q "^${ip}:22$"; then ok "bound on LAN ${ip}"
+    else warn "LAN ${ip} is NOT bound — connections arriving there will be refused"; fi
+  done < <(
+    ip -o -4 addr show scope global 2>/dev/null \
+      | awk '{split($4,a,"/"); print $2" "a[1]}' \
+      | grep -vE '^(lo|docker|br-|veth|virbr|tailscale|tun|wg)' \
+      | awk '{print $2}' \
+      | grep -E '^(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.)' | sort -u
+  )
+  if [ -n "$TS_IP" ]; then
+    echo "$LISTENERS" | grep -q "^${TS_IP}:22$" \
+      && ok "bound on Tailscale ${TS_IP}" \
+      || bad "Tailscale ${TS_IP} is NOT bound — the personal Air cannot connect"
+  fi
+fi
+printf '        (reminder: confirm the UDM SE has no WAN port-forward to :22 — not checkable from here)\n'
+
+# ---------------------------------------------------------------------------
+section "Persistent Claude session"
+systemctl is-enabled --quiet claude-tmux.service 2>/dev/null \
+  && ok "claude-tmux.service enabled (starts on boot)" \
+  || bad "claude-tmux.service NOT enabled — it will not come back after a reboot"
+systemctl is-active --quiet claude-tmux.service 2>/dev/null \
+  && ok "claude-tmux.service active" || bad "claude-tmux.service not active"
+if tmux has-session -t claude-main 2>/dev/null; then
+  ok "tmux session 'claude-main' exists"
+  if tmux list-panes -t claude-main -F '#{pane_current_command}' 2>/dev/null | grep -q claude; then
+    ok "claude is running inside claude-main"
+  else
+    warn "claude-main exists but no 'claude' process in it"
+  fi
+else
+  bad "tmux session 'claude-main' does not exist"
+fi
+
+# ---------------------------------------------------------------------------
+section "Second OpenVPN environment (gluetun)"
+if [ -f /opt/claude-env-vpn/config/client-env.ovpn ]; then
+  ok "client-env.ovpn present"
+  for c in claude-env-vpn claude-env-shell; do
+    if sudo docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$c"; then ok "$c running"
+    else bad "$c not running"; fi
+  done
+  if sudo docker exec claude-env-shell sh -c 'command -v claude' >/dev/null 2>&1; then
+    ok "claude installed inside claude-env-shell"
+  else
+    warn "claude not installed in claude-env-shell — re-run server-bootstrap.sh"
+  fi
+else
+  warn "no client-env.ovpn yet — the second environment is not configured (expected if unused)"
+fi
+
+# ---------------------------------------------------------------------------
+printf '\n\033[1mSummary:\033[0m %d passed, %d failed, %d warnings\n' "$PASS" "$FAIL" "$WARN"
+[ "$FAIL" -eq 0 ] || exit 1
