@@ -42,15 +42,12 @@ dotfiles/     single chezmoi source for all machines (layer 1 everywhere,
 
 ## Before you use this on the work laptop
 
-`dotfiles/.chezmoidata.yaml` has two placeholders that must be filled in
-before running chezmoi on the work MacBook Pro:
+`dotfiles/.chezmoidata.yaml` has one placeholder that must be filled in
+before running chezmoi on the work MacBook Pro: `hostnames.workLaptop`. If
+it doesn't match that machine's `hostname` exactly, `.chezmoiignore.tmpl`
+won't match and the Claude-specific scripts **will be installed there**.
 
-| Key | Why it matters |
-|---|---|
-| `hostnames.workLaptop` | If it doesn't match `hostname` exactly, `.chezmoiignore.tmpl` won't match and the Claude-specific scripts **will be installed there** |
-| `emails.work` | Otherwise git commits on that machine are authored with your personal address |
-
-See [`docs/client-work-setup.md`](docs/client-work-setup.md#0-before-you-start-fill-in-the-placeholders).
+See [`docs/client-work-setup.md`](docs/client-work-setup.md#0-before-you-start-set-the-real-hostname).
 
 Note that `.chezmoiignore` patterns match **target** paths (`.local/bin/claude-attach`),
 not source paths (`dot_local/bin/executable_claude-attach`). Verify with

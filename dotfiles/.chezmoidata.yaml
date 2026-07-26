@@ -1,22 +1,16 @@
-# Single source of truth for per-machine values used by the templates in this
-# source directory (dot_zshrc.tmpl, dot_ssh/config.tmpl, dot_gitconfig.tmpl,
-# .chezmoiignore.tmpl). Change a value in exactly one place: here.
+# Single source of truth for the hostnames used by the templates in this
+# source directory (dot_zshrc.tmpl, private_dot_ssh/private_config.tmpl,
+# .chezmoiignore.tmpl). Change a hostname in exactly one place: here.
 #
-# PLACEHOLDERS — replace before running chezmoi on the work laptop:
-#   hostnames.workLaptop  run `hostname` on that machine
-#   emails.work           your work email address
-# Until hostnames.workLaptop is replaced, chezmoi will never match that host,
-# so the Claude-specific exclusions in .chezmoiignore.tmpl won't apply there.
+# PLACEHOLDER — replace before running chezmoi on the work laptop:
+#   workLaptop   run `hostname` on that machine, paste the exact output
+# Until it's replaced, chezmoi will never match that host, so the
+# Claude-specific exclusions in .chezmoiignore.tmpl won't apply there and
+# the Claude scripts WILL be installed on it.
+#
+# Note: git identity is NOT here — it's the same on every machine, so
+# dot_gitconfig is a plain (non-templated) file.
 hostnames:
   server: "ubuntu-home"
   personalAir: "wills-MacBook-Air.local"
   workLaptop: "REPLACE_WITH_WORK_LAPTOP_HOSTNAME"
-
-# git author identity, selected by hostname in dot_gitconfig.tmpl — commits
-# made on the work laptop must not be authored with a personal address.
-emails:
-  personal: "willarroyoa@gmail.com"
-  work: "REPLACE_WITH_WORK_EMAIL"
-
-git:
-  name: "Will Arroyo"

@@ -1,0 +1,29 @@
+# Same identity on every machine, work laptop included — not templated by
+# hostname, deliberately.
+[user]
+    name = warroyo
+    email = warroyo7199008@gmail.com
+
+[init]
+    defaultBranch = main
+
+[core]
+    editor = vim
+    autocrlf = input
+
+[pull]
+    rebase = false
+
+[push]
+    autoSetupRemote = true
+
+[color]
+    ui = auto
+
+[alias]
+    st = status -sb
+    co = checkout
+    br = branch
+    ci = commit
+    lg = log --graph --oneline --decorate --all
+    last = log -1 HEAD

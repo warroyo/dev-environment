@@ -7,28 +7,25 @@ config, tmux, VS Code defaults, common CLI tools) applies here exactly as
 it does on the server and the personal Air; this machine is a normal
 chezmoi target, not a special case for that layer.
 
-## 0. Before you start: fill in the placeholders
+## 0. Before you start: set the real hostname
 
-`dotfiles/.chezmoidata.yaml` has two placeholders for this machine:
+`dotfiles/.chezmoidata.yaml` has one placeholder for this machine:
 
 ```yaml
 hostnames:
   workLaptop: "REPLACE_WITH_WORK_LAPTOP_HOSTNAME"
-emails:
-  work: "REPLACE_WITH_WORK_EMAIL"
 ```
 
-Run `hostname` on this laptop and replace `workLaptop` with that exact
-value; replace `emails.work` with your work email address. Commit both
+Run `hostname` on this laptop, paste the exact output in, and commit
 *before* running `chezmoi apply` here.
 
-This matters more than it looks:
+This matters more than it looks: if `workLaptop` doesn't match,
+`.chezmoiignore.tmpl` won't match this host and **the Claude-specific
+scripts get installed here** — that exclusion is the only thing enforcing
+the constraint.
 
-- If `workLaptop` doesn't match, `.chezmoiignore.tmpl` won't match this host
-  and **the Claude-specific scripts get installed here** — the exclusion is
-  the only thing enforcing that constraint.
-- If `emails.work` is wrong, git commits made on this machine are authored
-  with your personal address.
+(Git identity is the same on every machine, so there's nothing per-machine
+to set for it.)
 
 Verify the exclusion actually took effect before trusting it:
 
