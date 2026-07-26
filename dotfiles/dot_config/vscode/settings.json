@@ -1,6 +1,7 @@
 {
   "editor.fontSize": 13,
-  "editor.fontFamily": "Menlo, 'MesloLGS NF', monospace",
+  "editor.fontFamily": "'MesloLGS Nerd Font', Menlo, monospace",
+  "terminal.integrated.fontFamily": "'MesloLGS Nerd Font', Menlo, monospace",
   "editor.formatOnSave": true,
   "editor.rulers": [100],
   "editor.minimap.enabled": false,

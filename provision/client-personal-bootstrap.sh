@@ -16,8 +16,11 @@ brew update
 # The ripgrep/fd/bat/eza/fzf set is the general layer's CLI tooling — the
 # same tools server-bootstrap.sh installs, so the aliases in dot_zshrc.tmpl
 # work identically on every machine.
-FORMULAE=(tailscale mosh chezmoi ripgrep fd bat eza fzf)
-CASKS=(ghostty visual-studio-code)
+FORMULAE=(tailscale mosh chezmoi ripgrep fd bat eza fzf
+          starship zsh-autosuggestions zsh-syntax-highlighting)
+# The Nerd Font is installed on the CLIENTS, not the server: the Mac's
+# terminal is what renders glyphs, the headless server draws nothing.
+CASKS=(ghostty visual-studio-code font-meslo-lg-nerd-font)
 
 for f in "${FORMULAE[@]}"; do
   if brew list --formula "$f" >/dev/null 2>&1; then

@@ -28,8 +28,9 @@ brew update
 
 # Same general-layer CLI tooling as every other machine — this laptop is
 # excluded from the Claude Code layer, not from the terminal/editor defaults.
-FORMULAE=(mosh chezmoi ripgrep fd bat eza fzf)
-CASKS=(ghostty visual-studio-code)
+FORMULAE=(mosh chezmoi ripgrep fd bat eza fzf
+          starship zsh-autosuggestions zsh-syntax-highlighting)
+CASKS=(ghostty visual-studio-code font-meslo-lg-nerd-font)
 
 for f in "${FORMULAE[@]}"; do
   if brew list --formula "$f" >/dev/null 2>&1; then

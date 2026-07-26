@@ -65,6 +65,44 @@ elif [ -d /usr/share/doc/fzf/examples ]; then
   [ -f /usr/share/doc/fzf/examples/key-bindings.zsh ] && source /usr/share/doc/fzf/examples/key-bindings.zsh
 fi
 
+# ---- zsh plugins ----
+# Package paths differ between Homebrew (macOS) and apt (Ubuntu), so probe
+# both. Sourced in this order deliberately: syntax-highlighting must come
+# LAST or it won't wrap the widgets the other plugins install.
+_zsh_plugin() {
+  local name="$1"
+  local candidates=(
+    "/usr/share/${name}/${name}.zsh"
+    "/usr/share/zsh/plugins/${name}/${name}.zsh"
+  )
+  if command -v brew >/dev/null 2>&1; then
+    candidates+=("$(brew --prefix 2>/dev/null)/share/${name}/${name}.zsh")
+  fi
+  local f
+  for f in "${candidates[@]}"; do
+    [ -r "$f" ] && { source "$f"; return 0; }
+  done
+  return 1
+}
+_zsh_plugin zsh-autosuggestions
+ZSH_AUTOSUGGEST_HIGHLIGHT_STYLE='fg=8'   # dim the ghost text
+
+# ---- Prompt ----
+# starship: one binary, one config (~/.config/starship.toml), identical
+# prompt on the server and both Macs. Without this zsh falls back to its
+# bare default (`hostname%`), which is what a fresh install looks like.
+if command -v starship >/dev/null 2>&1; then
+  eval "$(starship init zsh)"
+else
+  # Legible fallback so a machine without starship still gets cwd + colors
+  # rather than the bare default prompt.
+  autoload -Uz colors && colors
+  PROMPT='%F{cyan}%~%f %F{green}❯%f '
+fi
+
+# Must be last.
+_zsh_plugin zsh-syntax-highlighting
+
 {{- if $isWorkLaptop }}
 
 # ----------------------------------------------------------------------------

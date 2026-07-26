@@ -62,6 +62,31 @@ for s in claude-attach claude-env; do
 done
 
 # ---------------------------------------------------------------------------
+section "Prompt + shell plugins"
+if command -v starship >/dev/null 2>&1; then
+  ok "starship present ($(starship --version 2>/dev/null | head -n1))"
+  [ -f "$HOME/.config/starship.toml" ] && ok "starship.toml applied" \
+    || warn "~/.config/starship.toml missing — starship will use its defaults"
+else
+  warn "starship not installed — zsh falls back to the plain built-in prompt"
+fi
+# Confirm the prompt is actually wired up, not just that the binary exists.
+# A bare zsh prompt is "%m%# " (6 chars); starship's is far longer.
+PROMPT_LEN="$(zsh -i -c 'print -r -- ${#PROMPT}' 2>/dev/null | tail -n1)"
+if [ -n "${PROMPT_LEN:-}" ] && [ "$PROMPT_LEN" -gt 20 ] 2>/dev/null; then
+  ok "interactive prompt is configured (length ${PROMPT_LEN})"
+else
+  bad "interactive prompt looks like zsh's bare default — check the starship init in ~/.zshrc"
+fi
+for p in zsh-autosuggestions zsh-syntax-highlighting; do
+  if [ -r "/usr/share/${p}/${p}.zsh" ] || [ -r "/usr/share/zsh/plugins/${p}/${p}.zsh" ]; then
+    ok "$p installed"
+  else
+    warn "$p not installed — run 'sudo apt install $p' or re-run server-bootstrap.sh"
+  fi
+done
+
+# ---------------------------------------------------------------------------
 section "tmux plugins"
 for p in tmux-resurrect tmux-continuum; do
   [ -d "$HOME/.tmux/plugins/$p" ] && ok "$p installed" \

@@ -15,6 +15,16 @@ macos-option-as-alt = true
 # Selecting text copies it immediately — no separate Cmd-C required.
 copy-on-select = true
 
+# Nerd Font, so the starship prompt's git/folder glyphs render as icons
+# rather than boxes. Installed by the client bootstrap scripts
+# (font-meslo-lg-nerd-font).
+#
+# If glyphs still show as boxes, the family name may differ on your machine —
+# list what Ghostty actually sees with:  ghostty +list-fonts | grep -i meslo
+# and set the exact name here.
+font-family = "MesloLGS Nerd Font"
+font-size = 13
+
 # Quality-of-life
 mouse-hide-while-typing = true
 confirm-close-surface = false

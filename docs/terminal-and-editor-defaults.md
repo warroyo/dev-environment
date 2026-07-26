@@ -75,6 +75,50 @@ name.
 Shell config also sets up zsh history (50k entries, shared live across
 concurrent shells, timestamped) and case-insensitive completion.
 
+## Prompt and shell plugins
+
+The bootstrap scripts set zsh as the login shell. zsh's *built-in* default
+prompt is just `%m%#` — bare hostname and a `%`, no colours, no working
+directory, no git info — which is a downgrade from Ubuntu's stock bash
+prompt. So the prompt is configured explicitly:
+
+| Piece | What it gives you |
+|---|---|
+| [`starship`](https://starship.rs) | cwd, git branch + dirty/untracked/ahead-behind status, exit code, and command duration for anything over 2s |
+| `zsh-autosuggestions` | Ghost-text completion from history; accept with `→` |
+| `zsh-syntax-highlighting` | Commands colour as you type — typos go red before you press enter |
+
+`starship` is a single binary with a single config
+([`dot_config/starship.toml`](../dotfiles/dot_config/starship.toml)), so the
+prompt is identical on the server and both Macs. The hostname segment is
+`ssh_only`, so it appears when you're on the server and stays out of the way
+locally — useful when the whole point of the setup is working on a machine
+that isn't the one in front of you.
+
+Load order in `.zshrc` matters: `zsh-syntax-highlighting` must be sourced
+**last**, or it won't wrap the widgets the other plugins install. Package
+paths differ between Homebrew and apt, so the config probes both.
+
+If `starship` is missing, `.zshrc` falls back to a simple coloured
+`cwd ❯` prompt rather than dropping to the bare default.
+
+## Fonts
+
+The prompt uses Nerd Font glyphs (git branch, folder icons). The client
+bootstrap scripts install `font-meslo-lg-nerd-font` and the Ghostty config
+selects `MesloLGS Nerd Font`; VS Code's editor and integrated terminal use
+the same family.
+
+The font is installed on the **clients only** — the Mac's terminal renders
+the glyphs, the headless server draws nothing.
+
+If glyphs show as boxes, the family name may differ on your machine. List
+what Ghostty actually sees and set the exact name in the config:
+
+```sh
+ghostty +list-fonts | grep -i meslo
+```
+
 ## Applies everywhere
 
 Every piece above — Ghostty, tmux, VS Code, the CLI tools — is part of the

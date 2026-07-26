@@ -33,8 +33,12 @@ log "Installing base packages"
 #      any of this repo's shell config.
 # mosh: the *server* side (mosh-server) is required for the clients' mosh to
 #      work at all.
+# zsh-autosuggestions / zsh-syntax-highlighting: without these (and starship
+# below) a fresh zsh gives you the bare `hostname%` default prompt, which is
+# a downgrade from Ubuntu's stock bash.
 $SUDO apt-get install -y --no-install-recommends \
-  zsh tmux git curl wget ca-certificates gnupg build-essential \
+  zsh zsh-autosuggestions zsh-syntax-highlighting \
+  tmux git curl wget ca-certificates gnupg build-essential \
   mosh ripgrep fd-find bat fzf
 
 # eza isn't in Ubuntu's default repos; add its apt repo once.
@@ -60,6 +64,15 @@ if [ ! -e "$HOME/.local/bin/fd" ] && command -v fdfind >/dev/null 2>&1; then
 fi
 if [ ! -e "$HOME/.local/bin/bat" ] && command -v batcat >/dev/null 2>&1; then
   ln -s "$(command -v batcat)" "$HOME/.local/bin/bat"
+fi
+
+# starship: the prompt. Not in Ubuntu's repos, so use the official installer
+# (idempotent — it just replaces the binary in ~/.local/bin).
+if ! command -v starship >/dev/null 2>&1; then
+  log "Installing starship"
+  curl -fsSL https://starship.rs/install.sh | sh -s -- --yes --bin-dir "$HOME/.local/bin"
+else
+  log "starship already installed ($(starship --version 2>/dev/null | head -n1))"
 fi
 
 # Make zsh the login shell so ~/.zshrc is actually used.
