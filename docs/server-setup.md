@@ -12,11 +12,19 @@ cd ~/dev-environment
 ./provision/server-bootstrap.sh
 ```
 
-Installs Tailscale, tmux + tpm, `ripgrep`/`fd`/`bat`/`eza`/`fzf`, Docker,
-and writes the `claude-tmux.service` systemd unit and gluetun's
-`docker-compose.yml`. It will print a warning about sshd and skip locking it
-down — that's expected on this first run, before Tailscale has an IP. The
-script is idempotent; you'll run it again in step 4.
+Installs zsh (and sets it as your login shell), tmux + tpm, mosh,
+`ripgrep`/`fd`/`bat`/`eza`/`fzf`, Tailscale, Docker, and chezmoi, and writes
+the `claude-tmux.service` systemd unit and gluetun's `docker-compose.yml`.
+
+Two warnings are expected on this first run and are not errors:
+
+- **sshd lockdown skipped** — Tailscale has no IP yet. Fixed by step 4.
+- **`claude` not on PATH** — the CLI isn't installed yet. Fixed by step 2.
+
+The script is idempotent; you'll run it again in step 4. Note that Docker
+group membership doesn't apply to your current shell session until you log
+out and back in — the script uses `sudo docker` internally to work around
+that, but your own `docker` commands will need a fresh login.
 
 ## 2. Install and authenticate the Claude Code CLI
 
@@ -42,12 +50,22 @@ throughout `dotfiles/.chezmoidata.yaml` and the SSH config template).
 ./provision/server-bootstrap.sh
 ```
 
-Now that Tailscale has an IP, this run locks sshd down: `ListenAddress` is
-set to the Tailscale IP and the LAN IP only, never WAN. Confirm with:
+Now that Tailscale has an IP, this run locks ssh down to the Tailscale IP
+and the LAN IP only, never WAN.
+
+**Ubuntu 24.04 uses socket activation** (`ssh.socket`), where
+`sshd_config`'s `ListenAddress` is ignored entirely — binding is controlled
+by `ListenStream=` in the socket unit. The script detects which mechanism is
+live and configures the right one, so the authoritative check is what's
+actually listening, not what's in `sshd_config`:
 
 ```sh
-sudo sshd -T | grep -i listenaddress
+sudo ss -tlnp | grep :22
 ```
+
+You should see exactly two entries — the LAN IP and the Tailscale IP — and
+**no** `0.0.0.0:22` or `*:22`. If you see a wildcard bind, ssh is still
+exposed on every interface including WAN.
 
 ## 5. Apply dotfiles via chezmoi
 
@@ -95,7 +113,13 @@ sudo sshd -T | grep -i listenaddress
 ```
 
 If it's reverted to binding all interfaces, re-run `server-bootstrap.sh` —
-step 4's sshd logic is idempotent and will re-apply the drop-in.
+step 4's ssh logic is idempotent and will re-apply the drop-in.
+
+An OS upgrade can also **switch ssh from `ssh.service` to socket
+activation** (this is what changed in 22.10). If that happens, the old
+`sshd_config` drop-in silently stops taking effect; re-running the bootstrap
+script detects the new mechanism and configures `ssh.socket` instead. Always
+verify with `sudo ss -tlnp | grep :22` rather than trusting `sshd -T`.
 
 ## Verification: reboot recovery
 

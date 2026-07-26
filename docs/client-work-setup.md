@@ -7,19 +7,38 @@ config, tmux, VS Code defaults, common CLI tools) applies here exactly as
 it does on the server and the personal Air; this machine is a normal
 chezmoi target, not a special case for that layer.
 
-## 0. Before you start: set the real hostname
+## 0. Before you start: fill in the placeholders
 
-`dotfiles/.chezmoidata.yaml` currently has a placeholder for this machine:
+`dotfiles/.chezmoidata.yaml` has two placeholders for this machine:
 
 ```yaml
 hostnames:
   workLaptop: "REPLACE_WITH_WORK_LAPTOP_HOSTNAME"
+emails:
+  work: "REPLACE_WITH_WORK_EMAIL"
 ```
 
-Run `hostname` on this laptop, replace the placeholder with that value, and
-commit the change *before* running `chezmoi apply` here — otherwise
-`.chezmoiignore.tmpl` won't match this host and the Claude-specific files
-won't be excluded.
+Run `hostname` on this laptop and replace `workLaptop` with that exact
+value; replace `emails.work` with your work email address. Commit both
+*before* running `chezmoi apply` here.
+
+This matters more than it looks:
+
+- If `workLaptop` doesn't match, `.chezmoiignore.tmpl` won't match this host
+  and **the Claude-specific scripts get installed here** — the exclusion is
+  the only thing enforcing that constraint.
+- If `emails.work` is wrong, git commits made on this machine are authored
+  with your personal address.
+
+Verify the exclusion actually took effect before trusting it:
+
+```sh
+chezmoi ignored          # should list .local/bin/claude-attach, claude-env, paste-image
+chezmoi execute-template '{{ .chezmoi.hostname }}'   # should match workLaptop exactly
+```
+
+The bootstrap script also checks for leaked files at the end and errors
+loudly if any are present.
 
 ## 1. Run the bootstrap script
 
@@ -62,10 +81,15 @@ other.
 ## 4. Verify
 
 ```sh
-ssh ubuntu-home   # over the OpenVPN-to-LAN path, once connected
+ssh <server-LAN-IP>   # over the OpenVPN-to-LAN path, once connected
 ```
 
-Should reach the server directly (this machine doesn't have the
-`claude-server` SSH alias — that's Tailscale-only — so use the LAN
-hostname/IP directly, or add your own `Host` entry outside the
-chezmoi-managed block if you want a shortcut).
+Use the server's **LAN IP**, not `ubuntu-home`. That name is provided by
+Tailscale MagicDNS, which this machine deliberately doesn't have — it will
+not resolve here unless you've added a local DNS record for it on the
+UDM SE. This machine also doesn't get the `claude-server` SSH alias (that
+block is Tailscale-only, skipped by `dot_ssh/config.tmpl`).
+
+If you want a shortcut, add your own `Host` entry pointing at the LAN IP in
+a file chezmoi doesn't manage (e.g. `~/.ssh/config.d/`), or add a local DNS
+entry on the UDM SE so `ubuntu-home` resolves over the VPN.

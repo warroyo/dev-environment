@@ -13,7 +13,10 @@ fi
 log "Updating Homebrew"
 brew update
 
-FORMULAE=(tailscale mosh chezmoi)
+# The ripgrep/fd/bat/eza/fzf set is the general layer's CLI tooling — the
+# same tools server-bootstrap.sh installs, so the aliases in dot_zshrc.tmpl
+# work identically on every machine.
+FORMULAE=(tailscale mosh chezmoi ripgrep fd bat eza fzf)
 CASKS=(ghostty visual-studio-code)
 
 for f in "${FORMULAE[@]}"; do

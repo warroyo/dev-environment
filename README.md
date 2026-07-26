@@ -35,14 +35,26 @@ docs/         architecture + per-machine setup docs
 provision/    one idempotent bootstrap script per machine role
 dotfiles/     single chezmoi source for all machines (layer 1 everywhere,
               layer 2 everywhere except the work laptop)
+  .chezmoidata.yaml    hostnames + emails, referenced by every template
+  .chezmoiignore.tmpl  the work-laptop exclusion (target paths!)
+  dot_local/bin/       helper scripts -> ~/.local/bin (on PATH)
 ```
 
 ## Before you use this on the work laptop
 
-`dotfiles/.chezmoidata.yaml` has a placeholder for the work MacBook Pro's
-hostname (`REPLACE_WITH_WORK_LAPTOP_HOSTNAME`). Replace it with the real
-value before running chezmoi there — see
-[`docs/client-work-setup.md`](docs/client-work-setup.md#0-before-you-start-set-the-real-hostname).
+`dotfiles/.chezmoidata.yaml` has two placeholders that must be filled in
+before running chezmoi on the work MacBook Pro:
+
+| Key | Why it matters |
+|---|---|
+| `hostnames.workLaptop` | If it doesn't match `hostname` exactly, `.chezmoiignore.tmpl` won't match and the Claude-specific scripts **will be installed there** |
+| `emails.work` | Otherwise git commits on that machine are authored with your personal address |
+
+See [`docs/client-work-setup.md`](docs/client-work-setup.md#0-before-you-start-fill-in-the-placeholders).
+
+Note that `.chezmoiignore` patterns match **target** paths (`.local/bin/claude-attach`),
+not source paths (`dot_local/bin/executable_claude-attach`). Verify with
+`chezmoi ignored` after any change to that file.
 
 ## Docs index
 

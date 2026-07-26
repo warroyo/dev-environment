@@ -63,8 +63,17 @@ Homebrew on both Macs):
 | [`eza`](https://github.com/eza-community/eza) | `ls` | Colorized, git-aware, tree view |
 | [`fzf`](https://github.com/junegunn/fzf) | — | Fuzzy history/file search, wired into shell keybindings |
 
-`dot_zshrc.tmpl` aliases `ls`/`cat`/`find`/`grep` to these unconditionally,
-on all three machines.
+`dot_zshrc.tmpl` aliases `ls`→`eza` and `cat`→`bat` unconditionally on all
+three machines.
+
+`find` and `grep` are deliberately **not** aliased to `fd`/`rg`. Their flag
+syntax is incompatible (`find . -name x` and `grep -r` are both errors under
+the replacements), so aliasing them breaks muscle memory and any
+copy-pasted command in ways that are annoying to debug. Use `fd` and `rg` by
+name.
+
+Shell config also sets up zsh history (50k entries, shared live across
+concurrent shells, timestamped) and case-insensitive completion.
 
 ## Applies everywhere
 

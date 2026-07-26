@@ -1,15 +1,34 @@
 {{/*
-  Excludes the Claude-Code-specific bin scripts on the work MacBook Pro.
-  Everything else in this source directory (shell config, Ghostty, tmux,
-  VS Code, git, general SSH config) applies to the work laptop normally —
-  see docs/client-work-setup.md.
-
-  Whole-file exclusion is preferred here over an in-template conditional
-  so the boundary between "general layer" and "Claude-specific" is visible
-  at a glance in this one file, rather than scattered through dot_zshrc.tmpl.
+  IMPORTANT: chezmoi matches these patterns against the *target* path
+  (relative to $HOME), NOT the source path. So the entry for
+  dot_local/bin/executable_claude-attach must be written as
+  .local/bin/claude-attach — source-path spellings like
+  "bin/executable_claude-attach" silently match nothing, which would
+  quietly ship the Claude-specific scripts to the work laptop.
+  Verify with: chezmoi ignored
 */}}
+
 {{- if eq .chezmoi.hostname .hostnames.workLaptop }}
-bin/executable_claude-attach
-bin/executable_claude-env
-bin/executable_paste-image
+{{/*
+  Work MacBook Pro: exclude every Claude-Code-specific file. Everything else
+  in this source directory (shell config, Ghostty, tmux, VS Code, git,
+  general SSH config) applies here normally — see docs/client-work-setup.md.
+
+  Whole-file exclusion is preferred over in-template conditionals so the
+  boundary between "general layer" and "Claude-specific" stays visible at a
+  glance in this one file.
+*/}}
+.local/bin/claude-attach
+.local/bin/claude-env
+.local/bin/paste-image
+{{- end }}
+
+{{- if ne .chezmoi.hostname .hostnames.personalAir }}
+{{/*
+  paste-image is macOS-only (it shells out to osascript to read the
+  clipboard) and its whole purpose is pushing an image *to* the server, so
+  it only makes sense on the personal Air. Excluding it everywhere else
+  keeps a broken script off the server.
+*/}}
+.local/bin/paste-image
 {{- end }}

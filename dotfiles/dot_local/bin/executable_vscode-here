@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Print a clickable OSC8 hyperlink that opens the current directory, on the
+# current host, in VS Code Remote-SSH. General-purpose (works from a tmux
+# pane on any Remote-SSH target) — applies on every machine, including the
+# work MacBook Pro.
+#
+# Override VSCODE_HERE_HOST if the hostname this box reports isn't the name
+# your Mac's ~/.ssh/config knows it by (e.g. an ssh alias like
+# `claude-server`), otherwise VS Code won't resolve the target.
+set -euo pipefail
+
+host="${VSCODE_HERE_HOST:-$(hostname -f 2>/dev/null || hostname)}"
+cwd="$(pwd)"
+uri="vscode://vscode-remote/ssh-remote+${host}${cwd}"
+
+printf '\e]8;;%s\e\\Open in VS Code (%s on %s)\e]8;;\e\\\n' "$uri" "$cwd" "$host"

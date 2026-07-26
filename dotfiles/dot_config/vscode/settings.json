@@ -14,6 +14,15 @@
   "terminal.integrated.scrollback": 10000,
   "git.autofetch": true,
   "git.confirmSync": false,
+
+  // Never auto-install the Claude Code IDE extension when an integrated
+  // terminal opens. Required on the work MacBook Pro (which must never run
+  // Claude Code); harmless everywhere else, where the extension is installed
+  // deliberately rather than implicitly. Lives in this managed file — not
+  // patched in by the bootstrap script — because chezmoi symlinks the real
+  // settings.json here and would otherwise overwrite any local patch.
+  "claude-code.autoInstallIdeExtension": false,
+
   "explorer.confirmDelete": false,
   "explorer.confirmDragAndDrop": false
 }

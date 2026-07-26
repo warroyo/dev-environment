@@ -10,6 +10,10 @@
 # script once before `tailscale up`, then run it again afterward — the
 # second run is what actually locks sshd down. Every other step here is a
 # no-op on the second run.
+#
+# Docker commands here are run via sudo on purpose: `usermod -aG docker`
+# below does not affect the *current* shell session, so on a first run the
+# invoking user is not yet an effective member of the docker group.
 set -euo pipefail
 
 log() { printf '\n==> %s\n' "$1"; }
@@ -25,9 +29,13 @@ log "Updating apt package index"
 $SUDO apt-get update -qq
 
 log "Installing base packages"
+# zsh: the shell dot_zshrc.tmpl targets — without it the server never reads
+#      any of this repo's shell config.
+# mosh: the *server* side (mosh-server) is required for the clients' mosh to
+#      work at all.
 $SUDO apt-get install -y --no-install-recommends \
-  tmux git curl wget ca-certificates gnupg build-essential \
-  ripgrep fd-find bat fzf
+  zsh tmux git curl wget ca-certificates gnupg build-essential \
+  mosh ripgrep fd-find bat fzf
 
 # eza isn't in Ubuntu's default repos; add its apt repo once.
 if ! command -v eza >/dev/null 2>&1; then
@@ -47,8 +55,20 @@ fi
 # Ubuntu packages fd/bat as fdfind/batcat; symlink to the names everything
 # (including dot_zshrc's aliases) expects.
 mkdir -p "$HOME/.local/bin"
-[ -x "$HOME/.local/bin/fd" ] || ln -s "$(command -v fdfind)" "$HOME/.local/bin/fd"
-[ -x "$HOME/.local/bin/bat" ] || ln -s "$(command -v batcat)" "$HOME/.local/bin/bat"
+if [ ! -e "$HOME/.local/bin/fd" ] && command -v fdfind >/dev/null 2>&1; then
+  ln -s "$(command -v fdfind)" "$HOME/.local/bin/fd"
+fi
+if [ ! -e "$HOME/.local/bin/bat" ] && command -v batcat >/dev/null 2>&1; then
+  ln -s "$(command -v batcat)" "$HOME/.local/bin/bat"
+fi
+
+# Make zsh the login shell so ~/.zshrc is actually used.
+if [ "$(getent passwd "$USER" | cut -d: -f7)" != "$(command -v zsh)" ]; then
+  log "Setting zsh as the login shell for $USER"
+  $SUDO chsh -s "$(command -v zsh)" "$USER"
+else
+  log "zsh is already the login shell"
+fi
 
 # ---------------------------------------------------------------------------
 log "Installing Tailscale"
@@ -83,7 +103,7 @@ TPM_DIR="$HOME/.tmux/plugins/tpm"
 if [ ! -d "$TPM_DIR" ]; then
   git clone -q https://github.com/tmux-plugins/tpm "$TPM_DIR"
 else
-  git -C "$TPM_DIR" pull -q --ff-only
+  git -C "$TPM_DIR" pull -q --ff-only || log "tpm pull skipped (local changes?)"
 fi
 
 # ---------------------------------------------------------------------------
@@ -104,7 +124,9 @@ cat >"${GLUETUN_DIR}/docker-compose.yml" <<'EOF'
 # Managed by dev-environment/provision/server-bootstrap.sh — do not edit by hand.
 services:
   gluetun:
-    image: qmcgaw/gluetun
+    # Pinned: an unpinned :latest would silently pick up breaking upstream
+    # changes on the next `compose up`.
+    image: qmcgaw/gluetun:v3.40.0
     container_name: claude-env-vpn
     cap_add:
       - NET_ADMIN
@@ -117,16 +139,31 @@ services:
     volumes:
       - ./config:/gluetun
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "/gluetun-entrypoint", "healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
   claude-env-shell:
-    image: node:20-bookworm-slim
+    # Full node image, not -slim: Claude Code needs git, which the slim
+    # variant does not ship.
+    image: node:20-bookworm
     container_name: claude-env-shell
     network_mode: "service:gluetun"
     depends_on:
-      - gluetun
+      gluetun:
+        condition: service_healthy
+    environment:
+      # Global npm installs go to a named volume so Claude Code survives
+      # container recreation (image bump, compose edit) instead of vanishing
+      # into a discarded writable layer.
+      - NPM_CONFIG_PREFIX=/npm-global
+      - PATH=/npm-global/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
     volumes:
       - claude-env-workspace:/workspace
       - claude-env-config:/root/.claude
+      - claude-env-npm:/npm-global
     working_dir: /workspace
     command: sleep infinity
     restart: unless-stopped
@@ -134,14 +171,17 @@ services:
 volumes:
   claude-env-workspace:
   claude-env-config:
+  claude-env-npm:
 EOF
 
 if [ -f "${GLUETUN_DIR}/config/client-env.ovpn" ]; then
-  (cd "$GLUETUN_DIR" && docker compose up -d)
-  if docker ps --format '{{.Names}}' | grep -qx claude-env-shell; then
-    if ! docker exec claude-env-shell sh -c 'command -v claude' >/dev/null 2>&1; then
+  (cd "$GLUETUN_DIR" && $SUDO docker compose up -d)
+  if $SUDO docker ps --format '{{.Names}}' | grep -qx claude-env-shell; then
+    if ! $SUDO docker exec claude-env-shell sh -c 'command -v claude' >/dev/null 2>&1; then
       log "Installing Claude Code CLI inside claude-env-shell"
-      docker exec claude-env-shell npm install -g @anthropic-ai/claude-code
+      $SUDO docker exec claude-env-shell npm install -g @anthropic-ai/claude-code
+    else
+      log "Claude Code already installed in claude-env-shell"
     fi
   fi
 else
@@ -153,7 +193,13 @@ fi
 # ---------------------------------------------------------------------------
 log "Writing claude-tmux systemd service"
 UNIT_PATH="/etc/systemd/system/claude-tmux.service"
+CLAUDE_BIN="$(command -v claude || true)"
+if [ -z "$CLAUDE_BIN" ]; then
+  log "WARNING: 'claude' is not on PATH. Install and authenticate the Claude Code CLI (see docs/server-setup.md), then re-run this script."
+fi
+
 cat <<EOF | $SUDO tee "$UNIT_PATH" >/dev/null
+# Managed by dev-environment/provision/server-bootstrap.sh — do not edit by hand.
 [Unit]
 Description=Persistent tmux session (claude-main) running Claude Code
 After=network-online.target tailscaled.service
@@ -163,10 +209,17 @@ Wants=network-online.target
 Type=forking
 User=${USER}
 Environment=HOME=${HOME}
+# systemd's default PATH excludes ~/.local/bin and npm's global bin dir, so
+# without this the unit fails with "claude: command not found".
+Environment=PATH=${HOME}/.local/bin:${HOME}/.npm-global/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 RemainAfterExit=yes
-ExecStart=/usr/bin/tmux new-session -d -s claude-main claude
+# -A is attach-or-create: tmux-continuum's restore may have already created
+# claude-main by the time this runs, and plain \`new-session\` would fail with
+# "duplicate session".
+ExecStart=/usr/bin/tmux new-session -A -d -s claude-main claude
 ExecStop=/usr/bin/tmux kill-session -t claude-main
 Restart=on-failure
+RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
@@ -175,7 +228,8 @@ EOF
 $SUDO systemctl daemon-reload
 $SUDO systemctl enable claude-tmux.service
 if ! $SUDO systemctl is-active --quiet claude-tmux.service; then
-  $SUDO systemctl start claude-tmux.service
+  $SUDO systemctl start claude-tmux.service || \
+    log "WARNING: claude-tmux.service failed to start — check 'journalctl -u claude-tmux'."
 else
   log "claude-tmux.service already running"
 fi
@@ -185,30 +239,92 @@ fi
 # WAN. This is what lets both the Tailscale path (personal Air) and the
 # OpenVPN-to-LAN path (work laptop) reach the box, while it has zero SSH
 # surface on the public internet.
+#
+# Ubuntu 22.10+ (including 24.04) ships OpenSSH with SOCKET ACTIVATION
+# enabled, where sshd_config's ListenAddress is IGNORED entirely — binding
+# is controlled by ListenStream= in ssh.socket. Writing only an sshd_config
+# drop-in on such a system silently leaves sshd listening on all interfaces,
+# including WAN. So: detect which mechanism is live and configure that one.
+#
+# Both paths set FreeBind/ip_nonlocal_bind so ssh can bind the Tailscale IP
+# even when it starts before tailscaled has finished assigning it —
+# otherwise a reboot race makes ssh fail to start and locks you out of the
+# LAN path too (Comet Pro KVM would be the only way back in).
 # ---------------------------------------------------------------------------
 log "Restricting sshd bind addresses"
-TS_IP="$(command -v tailscale >/dev/null 2>&1 && tailscale ip -4 2>/dev/null || true)"
+TS_IP="$(tailscale ip -4 2>/dev/null | head -n1 || true)"
 LAN_IFACE="$(ip -o -4 route show to default | awk '{print $5}' | head -n1)"
 LAN_IP="$(ip -o -4 addr show "$LAN_IFACE" 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -n1)"
-SSHD_DROPIN="/etc/ssh/sshd_config.d/10-listen-addresses.conf"
 
 if [ -z "$TS_IP" ]; then
   log "WARNING: Tailscale has no IP yet. Run 'sudo tailscale up', then re-run this script to lock down sshd. Leaving sshd as-is for now."
 elif [ -z "$LAN_IP" ]; then
   log "WARNING: couldn't determine a LAN IP on ${LAN_IFACE}. Leaving sshd as-is for now."
 else
-  NEW_CONF="# Managed by dev-environment/provision/server-bootstrap.sh — do not edit by hand.
-# Binds sshd to the Tailscale and LAN interfaces only; never WAN.
-ListenAddress ${TS_IP}
-ListenAddress ${LAN_IP}
+  if $SUDO systemctl is-enabled --quiet ssh.socket 2>/dev/null; then
+    # ---- Socket-activated (Ubuntu 22.10+, incl. 24.04) ----
+    log "Detected socket-activated ssh — configuring ssh.socket (sshd_config ListenAddress would be ignored here)"
+    SOCKET_DROPIN_DIR="/etc/systemd/system/ssh.socket.d"
+    $SUDO mkdir -p "$SOCKET_DROPIN_DIR"
+    NEW_CONF="# Managed by dev-environment/provision/server-bootstrap.sh — do not edit by hand.
+# Binds ssh to the Tailscale and LAN addresses only; never WAN.
+[Socket]
+# Empty value resets systemd's default ListenStream (0.0.0.0:22) before
+# adding ours — without this, the defaults are kept and WAN stays exposed.
+ListenStream=
+ListenStream=${LAN_IP}:22
+ListenStream=${TS_IP}:22
+# Allow binding the Tailscale address before tailscaled has assigned it,
+# so a boot-order race can't leave ssh dead.
+FreeBind=true
 "
-  if [ ! -f "$SSHD_DROPIN" ] || [ "$(cat "$SSHD_DROPIN" 2>/dev/null)" != "$NEW_CONF" ]; then
-    printf '%s' "$NEW_CONF" | $SUDO tee "$SSHD_DROPIN" >/dev/null
-    $SUDO sshd -t
-    $SUDO systemctl reload ssh
-    log "sshd now bound to ${LAN_IP} (LAN) and ${TS_IP} (Tailscale) only"
+    if [ "$($SUDO cat "${SOCKET_DROPIN_DIR}/10-listen-addresses.conf" 2>/dev/null)" != "$NEW_CONF" ]; then
+      printf '%s' "$NEW_CONF" | $SUDO tee "${SOCKET_DROPIN_DIR}/10-listen-addresses.conf" >/dev/null
+      $SUDO systemctl daemon-reload
+      $SUDO systemctl restart ssh.socket
+      log "ssh.socket now bound to ${LAN_IP}:22 (LAN) and ${TS_IP}:22 (Tailscale) only"
+    else
+      log "ssh.socket bind restriction already up to date"
+    fi
+    log "Verify with: sudo ss -tlnp | grep :22"
   else
-    log "sshd bind restriction already up to date"
+    # ---- Traditional ssh.service ----
+    log "Detected traditional ssh.service — configuring sshd_config ListenAddress"
+    SSHD_DROPIN="/etc/ssh/sshd_config.d/10-listen-addresses.conf"
+    NEW_CONF="# Managed by dev-environment/provision/server-bootstrap.sh — do not edit by hand.
+# Binds sshd to the Tailscale and LAN interfaces only; never WAN.
+ListenAddress ${LAN_IP}
+ListenAddress ${TS_IP}
+"
+    if [ "$($SUDO cat "$SSHD_DROPIN" 2>/dev/null)" != "$NEW_CONF" ]; then
+      printf '%s' "$NEW_CONF" | $SUDO tee "$SSHD_DROPIN" >/dev/null
+      $SUDO sshd -t
+      $SUDO systemctl reload ssh
+      log "sshd now bound to ${LAN_IP} (LAN) and ${TS_IP} (Tailscale) only"
+    else
+      log "sshd bind restriction already up to date"
+    fi
+
+    # Order ssh after tailscaled and permit non-local bind, so binding the
+    # Tailscale IP can't fail at boot.
+    SVC_DROPIN_DIR="/etc/systemd/system/ssh.service.d"
+    $SUDO mkdir -p "$SVC_DROPIN_DIR"
+    SVC_CONF="# Managed by dev-environment/provision/server-bootstrap.sh — do not edit by hand.
+[Unit]
+After=tailscaled.service
+Wants=tailscaled.service
+
+[Service]
+Restart=on-failure
+RestartSec=5
+"
+    if [ "$($SUDO cat "${SVC_DROPIN_DIR}/10-after-tailscale.conf" 2>/dev/null)" != "$SVC_CONF" ]; then
+      printf '%s' "$SVC_CONF" | $SUDO tee "${SVC_DROPIN_DIR}/10-after-tailscale.conf" >/dev/null
+      $SUDO systemctl daemon-reload
+    fi
+    echo 'net.ipv4.ip_nonlocal_bind=1' | $SUDO tee /etc/sysctl.d/99-ssh-nonlocal-bind.conf >/dev/null
+    $SUDO sysctl -q -w net.ipv4.ip_nonlocal_bind=1
+    log "Verify with: sudo ss -tlnp | grep :22"
   fi
 fi
 

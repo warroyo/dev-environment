@@ -1,0 +1,34 @@
+{{- $isWorkLaptop := eq .chezmoi.hostname .hostnames.workLaptop -}}
+[user]
+    name = {{ .git.name }}
+{{- if $isWorkLaptop }}
+    # Work machine — commits must not be authored with a personal address.
+    # Set emails.work in .chezmoidata.yaml.
+    email = {{ .emails.work }}
+{{- else }}
+    email = {{ .emails.personal }}
+{{- end }}
+
+[init]
+    defaultBranch = main
+
+[core]
+    editor = vim
+    autocrlf = input
+
+[pull]
+    rebase = false
+
+[push]
+    autoSetupRemote = true
+
+[color]
+    ui = auto
+
+[alias]
+    st = status -sb
+    co = checkout
+    br = branch
+    ci = commit
+    lg = log --graph --oneline --decorate --all
+    last = log -1 HEAD
