@@ -61,10 +61,21 @@ interrupted, because nothing Claude-related is running there.
 
 ## sshd binding
 
-sshd on the server binds only to the `tailscale0` interface and the LAN
-interface (`ListenAddress`, set by
+sshd on the server binds only to the `tailscale0` address and its LAN
+addresses (set by
 [`provision/server-bootstrap.sh`](../provision/server-bootstrap.sh)) — never
-the WAN interface. This is what allows both the Tailscale path (personal
+a WAN address. "LAN addresses" is plural on purpose: the server has more
+than one LAN interface on different VLANs, and all RFC1918 addresses on
+physical interfaces get bound, so the OpenVPN-to-LAN path works regardless
+of which VLAN the UDM SE routes it into. The RFC1918 filter is what enforces
+the never-WAN rule — a public address would not match and so would never be
+bound.
+
+Note that on Ubuntu 22.10+ (including 24.04) ssh is socket-activated and
+`sshd_config`'s `ListenAddress` is ignored entirely; binding is controlled by
+`ListenStream=` in `ssh.socket`. The script detects which mechanism is live
+and configures that one, because writing only an `sshd_config` drop-in on
+such a system silently leaves ssh listening everywhere. This is what allows both the Tailscale path (personal
 Air) and the OpenVPN-to-LAN path (work laptop) to reach it, while the server
 has zero SSH surface on the public internet: even if someone had the WAN IP,
 there's nothing listening there.

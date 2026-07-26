@@ -253,27 +253,52 @@ fi
 # ---------------------------------------------------------------------------
 log "Restricting sshd bind addresses"
 TS_IP="$(tailscale ip -4 2>/dev/null | head -n1 || true)"
-LAN_IFACE="$(ip -o -4 route show to default | awk '{print $5}' | head -n1)"
-LAN_IP="$(ip -o -4 addr show "$LAN_IFACE" 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -n1)"
+
+# Bind EVERY LAN address, not just the one on the default route. This box has
+# more than one LAN interface (e.g. ethernet on one VLAN, wifi on another),
+# and the work laptop's OpenVPN-to-LAN path may arrive on either depending on
+# how the UDM SE routes between the VPN pool and each VLAN. Binding them all
+# means the listener is never the reason a path fails — only routing is.
+#
+# Selection rule: global-scope IPv4 addresses on physical interfaces that are
+# RFC1918 (10/8, 172.16/12, 192.168/16). Loopback, docker/bridge/virtual
+# interfaces and tailscale0 are excluded here (tailscale0 is added separately
+# below). The RFC1918 filter is what enforces "never WAN" — a public address
+# on this box would not match and so would never be bound.
+mapfile -t LAN_IPS < <(
+  ip -o -4 addr show scope global 2>/dev/null \
+    | awk '{split($4,a,"/"); print $2" "a[1]}' \
+    | grep -vE '^(lo|docker|br-|veth|virbr|tailscale|tun|wg)' \
+    | awk '{print $2}' \
+    | grep -E '^(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.)' \
+    | sort -u
+)
 
 if [ -z "$TS_IP" ]; then
   log "WARNING: Tailscale has no IP yet. Run 'sudo tailscale up', then re-run this script to lock down sshd. Leaving sshd as-is for now."
-elif [ -z "$LAN_IP" ]; then
-  log "WARNING: couldn't determine a LAN IP on ${LAN_IFACE}. Leaving sshd as-is for now."
+elif [ "${#LAN_IPS[@]}" -eq 0 ]; then
+  log "WARNING: found no RFC1918 LAN address to bind. Leaving sshd as-is for now."
 else
+  log "LAN addresses to bind: ${LAN_IPS[*]}"
+  log "NOTE: these must be DHCP reservations / static. If one changes, ssh keeps"
+  log "      starting (FreeBind) but silently stops accepting on it — re-run this script."
   if $SUDO systemctl is-enabled --quiet ssh.socket 2>/dev/null; then
     # ---- Socket-activated (Ubuntu 22.10+, incl. 24.04) ----
     log "Detected socket-activated ssh — configuring ssh.socket (sshd_config ListenAddress would be ignored here)"
     SOCKET_DROPIN_DIR="/etc/systemd/system/ssh.socket.d"
     $SUDO mkdir -p "$SOCKET_DROPIN_DIR"
+    LISTEN_LINES=""
+    for ip in "${LAN_IPS[@]}"; do
+      LISTEN_LINES="${LISTEN_LINES}ListenStream=${ip}:22
+"
+    done
     NEW_CONF="# Managed by dev-environment/provision/server-bootstrap.sh — do not edit by hand.
 # Binds ssh to the Tailscale and LAN addresses only; never WAN.
 [Socket]
 # Empty value resets systemd's default ListenStream (0.0.0.0:22) before
 # adding ours — without this, the defaults are kept and WAN stays exposed.
 ListenStream=
-ListenStream=${LAN_IP}:22
-ListenStream=${TS_IP}:22
+${LISTEN_LINES}ListenStream=${TS_IP}:22
 # Allow binding the Tailscale address before tailscaled has assigned it,
 # so a boot-order race can't leave ssh dead.
 FreeBind=true
@@ -282,7 +307,7 @@ FreeBind=true
       printf '%s' "$NEW_CONF" | $SUDO tee "${SOCKET_DROPIN_DIR}/10-listen-addresses.conf" >/dev/null
       $SUDO systemctl daemon-reload
       $SUDO systemctl restart ssh.socket
-      log "ssh.socket now bound to ${LAN_IP}:22 (LAN) and ${TS_IP}:22 (Tailscale) only"
+      log "ssh.socket now bound to ${LAN_IPS[*]} (LAN) and ${TS_IP} (Tailscale) on :22 only"
     else
       log "ssh.socket bind restriction already up to date"
     fi
@@ -291,16 +316,20 @@ FreeBind=true
     # ---- Traditional ssh.service ----
     log "Detected traditional ssh.service — configuring sshd_config ListenAddress"
     SSHD_DROPIN="/etc/ssh/sshd_config.d/10-listen-addresses.conf"
+    LISTEN_LINES=""
+    for ip in "${LAN_IPS[@]}"; do
+      LISTEN_LINES="${LISTEN_LINES}ListenAddress ${ip}
+"
+    done
     NEW_CONF="# Managed by dev-environment/provision/server-bootstrap.sh — do not edit by hand.
 # Binds sshd to the Tailscale and LAN interfaces only; never WAN.
-ListenAddress ${LAN_IP}
-ListenAddress ${TS_IP}
+${LISTEN_LINES}ListenAddress ${TS_IP}
 "
     if [ "$($SUDO cat "$SSHD_DROPIN" 2>/dev/null)" != "$NEW_CONF" ]; then
       printf '%s' "$NEW_CONF" | $SUDO tee "$SSHD_DROPIN" >/dev/null
       $SUDO sshd -t
       $SUDO systemctl reload ssh
-      log "sshd now bound to ${LAN_IP} (LAN) and ${TS_IP} (Tailscale) only"
+      log "sshd now bound to ${LAN_IPS[*]} (LAN) and ${TS_IP} (Tailscale) only"
     else
       log "sshd bind restriction already up to date"
     fi

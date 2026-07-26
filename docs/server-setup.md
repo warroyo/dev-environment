@@ -63,9 +63,31 @@ actually listening, not what's in `sshd_config`:
 sudo ss -tlnp | grep :22
 ```
 
-You should see exactly two entries — the LAN IP and the Tailscale IP — and
-**no** `0.0.0.0:22` or `*:22`. If you see a wildcard bind, ssh is still
-exposed on every interface including WAN.
+You should see one entry per LAN address plus the Tailscale address, and
+**no** `0.0.0.0:22` or `*:22`. A wildcard bind means ssh is still listening
+on every interface.
+
+The script binds **every** RFC1918 address on a physical interface, not just
+the one on the default route — this server has more than one LAN interface
+(ethernet and wifi, on different VLANs), and the work laptop's
+OpenVPN-to-LAN traffic can arrive on either depending on how the UDM SE
+routes between the VPN pool and each VLAN. Binding all of them means the
+listener is never the reason a path fails. `docker0`, loopback and
+`tailscale0` are excluded (Tailscale is added explicitly).
+
+**These addresses must be DHCP reservations or static.** The bind is written
+as a literal address, and `FreeBind` means ssh still *starts* successfully
+if an address is gone — it just silently stops accepting on it. If you
+change a reservation on the UDM SE, re-run this script.
+
+### If the work laptop can reach the server but SSH hangs
+
+That's a routing symptom, not a binding one. The server's default route
+exits via one VLAN's gateway, so a request arriving on the *other* LAN
+interface gets its reply sent back out the default route — an asymmetric
+flow that a stateful firewall may drop. Check that the UDM SE permits the
+VPN pool to reach whichever VLAN you're targeting, and prefer connecting to
+the address on the same VLAN the OpenVPN pool routes into.
 
 ## 5. Apply dotfiles via chezmoi
 
