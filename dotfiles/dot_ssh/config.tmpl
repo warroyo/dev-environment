@@ -1,0 +1,24 @@
+{{- $isWorkLaptop := eq .chezmoi.hostname .hostnames.workLaptop }}
+# ============================================================================
+# General SSH defaults — applies on every machine
+# ============================================================================
+Host *
+  AddKeysToAgent yes
+  ServerAliveInterval 60
+  ServerAliveCountMax 3
+  Compression yes
+
+{{ if not $isWorkLaptop -}}
+# ----------------------------------------------------------------------------
+# Claude Code server — reached over Tailscale.
+#
+# Skipped on the work MacBook Pro: that machine reaches ubuntu-home over the
+# split-tunnel OpenVPN-to-LAN connection instead (it never joins the
+# tailnet — see docs/client-work-setup.md), so it uses the server's LAN
+# hostname/IP directly rather than this Host block.
+# ----------------------------------------------------------------------------
+Host claude-server
+  HostName {{ .hostnames.server }}
+  User warroyo
+  ForwardAgent yes
+{{ end -}}

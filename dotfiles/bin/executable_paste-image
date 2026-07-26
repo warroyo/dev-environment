@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Personal MacBook Air only (excluded on the work laptop by
+# .chezmoiignore.tmpl, since its whole purpose is getting an image onto the
+# Claude Code server): grab the current image on the Mac's clipboard and scp
+# it to the server over Tailscale, then print the remote path so it can be
+# dropped straight into a Claude Code prompt.
+#
+# No listener/bridge needed on the server: Tailscale already gives the Air
+# direct reach to the server, unlike a NAT'd setup where the server would
+# need a reverse tunnel to reach back to the Mac.
+set -euo pipefail
+
+HOST="${CLAUDE_SERVER_HOST:-claude-server}"
+REMOTE_DIR="/tmp/pasted-images"
+FILENAME="paste-$(date +%Y%m%d-%H%M%S).png"
+TMPFILE="$(mktemp -t paste-image).png"
+
+cleanup() { rm -f "$TMPFILE"; }
+trap cleanup EXIT
+
+if ! osascript -e 'the clipboard as «class PNGf»' >/dev/null 2>&1; then
+  echo "paste-image: no image found on the clipboard" >&2
+  exit 1
+fi
+
+osascript <<OSA
+set pngData to (the clipboard as «class PNGf»)
+set outFile to open for access POSIX file "${TMPFILE}" with write permission
+write pngData to outFile
+close access outFile
+OSA
+
+ssh "$HOST" "mkdir -p '${REMOTE_DIR}'"
+scp -q "$TMPFILE" "${HOST}:${REMOTE_DIR}/${FILENAME}"
+
+echo "${REMOTE_DIR}/${FILENAME}"

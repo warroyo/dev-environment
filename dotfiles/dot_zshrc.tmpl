@@ -1,0 +1,87 @@
+{{/* Machine identity, computed once from the shared hostname data in .chezmoidata.yaml */}}
+{{- $isWorkLaptop := eq .chezmoi.hostname .hostnames.workLaptop }}
+{{- $isServer := eq .chezmoi.hostname .hostnames.server }}
+
+# ============================================================================
+# General layer — applies on every machine (including the work MacBook Pro)
+# ============================================================================
+
+export EDITOR=vim
+export VISUAL="$EDITOR"
+export PATH="$HOME/.local/bin:$PATH"
+
+# Modern CLI tool replacements (ripgrep/fd/bat/eza) — see
+# docs/terminal-and-editor-defaults.md for why each one is here.
+alias ls='eza --group-directories-first'
+alias ll='eza -la --group-directories-first'
+alias lt='eza --tree --level=2'
+alias cat='bat --paging=never'
+alias find='fd'
+alias grep='rg'
+
+alias gs='git status -sb'
+alias gd='git diff'
+alias gl='git log --graph --oneline --decorate'
+
+# fzf keybindings/completion, if installed via the package manager's fzf
+# shell integration.
+[ -f ~/.fzf.zsh ] && source ~/.fzf.zsh
+[ -f /opt/homebrew/opt/fzf/shell/completion.zsh ] && source /opt/homebrew/opt/fzf/shell/completion.zsh
+[ -f /opt/homebrew/opt/fzf/shell/key-bindings.zsh ] && source /opt/homebrew/opt/fzf/shell/key-bindings.zsh
+
+alias reload='exec zsh'
+alias vhere='vscode-here'
+
+{{- if $isServer }}
+
+# ----------------------------------------------------------------------------
+# Server-only, general layer (not Claude-specific — just only meaningful on
+# a machine that's actually SSH'd/tmux'd into, i.e. the server)
+# ----------------------------------------------------------------------------
+
+# A CLI tool that wants to open a URL (docs links, `gh auth login`, OAuth
+# flows) can't launch a browser on a headless box. Ghostty renders
+# http(s):// URLs as clickable links, so printing the URL and letting the
+# human click it opens *their own* local browser on the Mac — no reverse
+# tunnel, no listener, no token. Only takes effect inside an SSH/tmux
+# session; doesn't affect actual listening dev servers, which VS Code
+# Remote-SSH's port forwarding already handles.
+if [ -n "$SSH_CONNECTION" ] || [ -n "$TMUX" ]; then
+  export BROWSER=echo
+  open() { echo "$1"; }
+  alias xdg-open=open
+fi
+
+# Forwarded-agent-socket fix: a forwarded agent socket left over from a
+# dropped connection still accepts connections but never answers, so a
+# plain `ssh-add -l` after a sleep/network-roam can hang forever. Repoint a
+# stable symlink at the freshest live socket on every login, and give any
+# script that probes the agent a hard timeout instead of a hang. Only
+# matters if you `ssh -A` into this box rather than using a key that lives
+# on the server itself.
+if [ -n "${SSH_AUTH_SOCK:-}" ] && [ -S "$SSH_AUTH_SOCK" ]; then
+  ln -sf "$SSH_AUTH_SOCK" "$HOME/.ssh/agent-socket"
+fi
+if [ -S "$HOME/.ssh/agent-socket" ]; then
+  export SSH_AUTH_SOCK="$HOME/.ssh/agent-socket"
+fi
+alias ssh-check='timeout 2 ssh-add -l'
+{{- end }}
+
+{{- if not $isWorkLaptop }}
+
+# ============================================================================
+# Claude Code layer — everywhere except the work MacBook Pro
+# ============================================================================
+
+alias ca='claude-attach'
+alias ce='claude-env'
+
+{{- if $isServer }}
+# Claude Code deliberately downgrades color output whenever $TMUX is set, as
+# a conservative default for unknown terminals. Ghostty is the standardized
+# terminal for this whole setup and is known-good for true color, so it's
+# safe to opt back in.
+export CLAUDE_CODE_TMUX_TRUECOLOR=1
+{{- end }}
+{{- end }}

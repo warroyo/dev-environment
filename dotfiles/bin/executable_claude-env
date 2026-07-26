@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Attach to the tmux session dedicated to the second, unrelated OpenVPN
+# environment. That environment's traffic is isolated inside the gluetun
+# container's network namespace (see provision/server-bootstrap.sh) so it
+# never contends with Tailscale for the server's default route; the
+# claude-env-shell container shares gluetun's network stack, and Claude Code
+# runs inside it via `docker exec`.
+set -euo pipefail
+
+HOST="${CLAUDE_SERVER_HOST:-claude-server}"
+SESSION="claude-env"
+CONTAINER="claude-env-shell"
+
+ssh -t "$HOST" "tput reset; tmux new-session -A -s '${SESSION}' 'docker exec -it ${CONTAINER} claude'"

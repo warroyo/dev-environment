@@ -1,0 +1,15 @@
+{{/*
+  Excludes the Claude-Code-specific bin scripts on the work MacBook Pro.
+  Everything else in this source directory (shell config, Ghostty, tmux,
+  VS Code, git, general SSH config) applies to the work laptop normally —
+  see docs/client-work-setup.md.
+
+  Whole-file exclusion is preferred here over an in-template conditional
+  so the boundary between "general layer" and "Claude-specific" is visible
+  at a glance in this one file, rather than scattered through dot_zshrc.tmpl.
+*/}}
+{{- if eq .chezmoi.hostname .hostnames.workLaptop }}
+bin/executable_claude-attach
+bin/executable_claude-env
+bin/executable_paste-image
+{{- end }}

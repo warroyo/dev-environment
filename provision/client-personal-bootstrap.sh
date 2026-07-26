@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# Idempotent bootstrap for the personal MacBook Air — the full Claude Code
+# client, reached over Tailscale. Safe to re-run any time.
+set -euo pipefail
+
+log() { printf '\n==> %s\n' "$1"; }
+
+if ! command -v brew >/dev/null 2>&1; then
+  log "Homebrew not found. Install it first: https://brew.sh"
+  exit 1
+fi
+
+log "Updating Homebrew"
+brew update
+
+FORMULAE=(tailscale mosh chezmoi)
+CASKS=(ghostty visual-studio-code)
+
+for f in "${FORMULAE[@]}"; do
+  if brew list --formula "$f" >/dev/null 2>&1; then
+    log "$f already installed"
+  else
+    log "Installing $f"
+    brew install "$f"
+  fi
+done
+
+for c in "${CASKS[@]}"; do
+  if brew list --cask "$c" >/dev/null 2>&1; then
+    log "$c already installed"
+  else
+    log "Installing $c"
+    brew install --cask "$c"
+  fi
+done
+
+log "Enabling the Tailscale background service (interactive login is a separate manual step — see docs/client-personal-setup.md)"
+sudo brew services start tailscale >/dev/null 2>&1 || true
+
+if command -v code >/dev/null 2>&1; then
+  log "Installing VS Code Remote-SSH extension"
+  code --install-extension ms-vscode-remote.remote-ssh --force
+else
+  log "WARNING: 'code' CLI not on PATH yet. In VS Code, run 'Shell Command: Install code command in PATH' from the command palette, then re-run this script."
+fi
+
+log "Applying chezmoi dotfiles"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+chezmoi init --apply --source="${REPO_ROOT}/dotfiles"
+
+log "Done. See docs/client-personal-setup.md for the remaining manual steps (tailscale up, etc.)."

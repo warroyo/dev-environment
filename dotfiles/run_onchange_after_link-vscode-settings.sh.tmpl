@@ -1,0 +1,27 @@
+#!/bin/bash
+# chezmoi run_onchange script: points the real, OS-specific VS Code settings
+# file at the one chezmoi manages (dot_config/vscode/settings.json ->
+# ~/.config/vscode/settings.json), since VS Code doesn't read settings from
+# ~/.config on macOS. Runs automatically on `chezmoi apply` whenever this
+# script's content changes; safe to re-run any time.
+set -euo pipefail
+
+src="{{ .chezmoi.homeDir }}/.config/vscode/settings.json"
+
+{{ if eq .chezmoi.os "darwin" -}}
+dest="{{ .chezmoi.homeDir }}/Library/Application Support/Code/User/settings.json"
+{{- else -}}
+dest="{{ .chezmoi.homeDir }}/.config/Code/User/settings.json"
+{{- end }}
+
+mkdir -p "$(dirname "$dest")"
+
+if [ -L "$dest" ] && [ "$(readlink "$dest")" = "$src" ]; then
+  exit 0
+fi
+
+if [ -e "$dest" ] && [ ! -L "$dest" ]; then
+  mv "$dest" "$dest.pre-chezmoi.bak"
+fi
+
+ln -sf "$src" "$dest"

@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Attach to the persistent Claude Code session on the server. Creates the
+# session if systemd's claude-tmux.service hasn't already (tmux's own
+# `new-session -A` handles create-or-attach, so this stays idempotent
+# without any hand-rolled "does it exist" check).
+set -euo pipefail
+
+HOST="${CLAUDE_SERVER_HOST:-claude-server}"
+SESSION="claude-main"
+
+# tput reset before attaching: a session that drops mid-tmux can leave
+# terminal modes (mouse tracking, alternate screen) stuck on, which then
+# makes the *next* connection spew raw escape-sequence garbage. Reset
+# first so that never happens.
+ssh -t "$HOST" "tput reset; tmux new-session -A -s '${SESSION}'"

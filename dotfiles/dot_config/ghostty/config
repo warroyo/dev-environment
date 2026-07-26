@@ -1,0 +1,20 @@
+# Ghostty config — applies on every machine that runs Ghostty locally
+# (personal Air, work MacBook Pro). See docs/terminal-and-editor-defaults.md
+# for the reasoning behind each of these.
+
+# Ghostty's native terminfo (xterm-ghostty) usually isn't installed on
+# remote Linux hosts, so tmux run over SSH can't find it and colors/keybinds
+# break in confusing ways. Reporting xterm-256color avoids needing to patch
+# terminfo on every remote host we ever SSH into.
+term = xterm-256color
+
+# macOS: let Option behave as Alt/Meta (needed for readline/vim word-jump
+# bindings like Alt-b / Alt-f).
+macos-option-as-alt = true
+
+# Selecting text copies it immediately — no separate Cmd-C required.
+copy-on-select = true
+
+# Quality-of-life
+mouse-hide-while-typing = true
+confirm-close-surface = false
