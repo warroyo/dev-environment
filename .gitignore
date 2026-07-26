@@ -1,0 +1,26 @@
+# OpenVPN configs are sensitive (embed certs/keys) and are dropped in at
+# runtime (see docs/server-setup.md, docs/client-work-setup.md), never
+# committed.
+*.ovpn
+
+# Private keys / certs, in case one ever ends up under dotfiles/dot_ssh/
+# by mistake — SSH keys should never be chezmoi-managed in this repo.
+id_rsa*
+id_ed25519*
+*.pem
+*.key
+
+# Local secrets / env overrides
+.env
+.env.*
+*.secret
+
+# chezmoi local state, if ever run with this repo dir as its config/state
+# home instead of the default ~/.config/chezmoi
+.chezmoiroot.local
+.chezmoi.toml
+
+# OS and editor cruft
+.DS_Store
+*.swp
+*~
