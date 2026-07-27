@@ -1,0 +1,15 @@
+[[ -o interactive ]] || return
+
+# Claude Code layer. Excluded entirely on the work laptop (and on any machine
+# with an unrecognised role) by .chezmoiignore.tmpl — that exclusion is
+# fail-closed, so a machine that hasn't declared a role gets nothing here.
+
+alias ca='claude-attach'
+alias ce='claude-env'
+
+{{ if eq .role "server" -}}
+# Claude Code deliberately downgrades colour output whenever $TMUX is set, as a
+# conservative default for unknown terminals. Ghostty is the standardized
+# terminal for this setup and is known-good for true colour, so opt back in.
+export CLAUDE_CODE_TMUX_TRUECOLOR=1
+{{- end }}

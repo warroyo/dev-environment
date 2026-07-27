@@ -239,10 +239,26 @@ fi
 # Apply dotfiles, same as the two client bootstrap scripts do. This must come
 # before the tpm plugin install below, since tpm reads the plugin list out of
 # the ~/.tmux.conf that chezmoi writes here.
-log "Applying chezmoi dotfiles"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-chezmoi init --apply --source="${REPO_ROOT}/dotfiles"
+
+# Per-machine git signing key, so signing never depends on a forwarded
+# ssh-agent (which dies with the client connection). Passphrase-less by design:
+# it is only ever used by git-ssh-sign on this box.
+if [ ! -f "$HOME/.ssh/id_ed25519_signing" ]; then
+  log "Generating a per-machine git signing key"
+  ssh-keygen -t ed25519 -N "" -f "$HOME/.ssh/id_ed25519_signing" \
+    -C "$(hostname) git signing" >/dev/null
+  log "Register it on GitHub as a SIGNING key, then enable signing:"
+  log "  gh ssh-key add ~/.ssh/id_ed25519_signing.pub --type signing --title \"\$(hostname) git signing\""
+  log "  git config --file ~/.gitconfig.local commit.gpgsign true"
+else
+  log "git signing key already present"
+fi
+
+# shellcheck source=lib/chezmoi-apply.sh
+source "${SCRIPT_DIR}/lib/chezmoi-apply.sh"
+apply_dotfiles server "$REPO_ROOT"
 
 # ---------------------------------------------------------------------------
 # Install the tmux plugins non-interactively. tpm's documented flow is to

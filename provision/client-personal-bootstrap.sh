@@ -50,9 +50,10 @@ else
   log "WARNING: 'code' CLI not on PATH yet. In VS Code, run 'Shell Command: Install code command in PATH' from the command palette, then re-run this script."
 fi
 
-log "Applying chezmoi dotfiles"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-chezmoi init --apply --source="${REPO_ROOT}/dotfiles"
+# shellcheck source=lib/chezmoi-apply.sh
+source "${SCRIPT_DIR}/lib/chezmoi-apply.sh"
+apply_dotfiles personal "$REPO_ROOT"
 
 log "Done. See docs/client-personal-setup.md for the remaining manual steps (tailscale up, etc.)."

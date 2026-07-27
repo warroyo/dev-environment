@@ -1,4 +1,4 @@
-# Personal MacBook Air setup (`wills-MacBook-Air.local`)
+# Personal MacBook Air setup (role: `personal`)
 
 The full Claude Code client, reached over Tailscale. Gets both layers:
 general terminal/editor defaults, and the Claude-specific
@@ -28,6 +28,20 @@ app if you prefer. Confirm the server (`ubuntu-home`) is visible:
 ```sh
 tailscale status | grep ubuntu-home
 ```
+
+## 2b. Set your login name for the server
+
+The `Host claude-server` block in the managed SSH config deliberately carries
+no `User` — that's identifying, so it stays out of the repo. Put it in
+`~/.ssh/config.local`, which is included first and therefore wins:
+
+```sshconfig
+Host claude-server
+  User your-login-name-on-the-server
+```
+
+The bootstrap creates that file with a comment to this effect. Skip it only if
+your Mac username already matches your server username.
 
 ## 3. Manual: add the server to VS Code Remote-SSH
 

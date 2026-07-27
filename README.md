@@ -49,18 +49,42 @@ dotfiles/     single chezmoi source for all machines (layer 1 everywhere,
   dot_local/bin/       helper scripts -> ~/.local/bin (on PATH)
 ```
 
-## Before you use this on the work laptop
+## Nothing to fill in first
 
-`dotfiles/.chezmoidata.yaml` has one placeholder that must be filled in
-before running chezmoi on the work MacBook Pro: `hostnames.workLaptop`. If
-it doesn't match that machine's `hostname` exactly, `.chezmoiignore.tmpl`
-won't match and the Claude-specific scripts **will be installed there**.
+Which layers a machine gets is decided by an explicit **role** that the
+bootstrap script writes to `~/.config/chezmoi/chezmoi.toml` — there are no
+hostnames or placeholders to edit before running it.
 
-See [`docs/client-work-setup.md`](docs/client-work-setup.md#0-before-you-start-set-the-real-hostname).
+| Role | Set by | Gets |
+|---|---|---|
+| `server` | `server-bootstrap.sh` | General + Claude Code layer |
+| `personal` | `client-personal-bootstrap.sh` | General + Claude Code layer |
+| `work` | `client-work-bootstrap.sh` | General layer only |
+| `restricted` | default when unset | General layer only |
 
-Note that `.chezmoiignore` patterns match **target** paths (`.local/bin/claude-attach`),
-not source paths (`dot_local/bin/executable_claude-attach`). Verify with
-`chezmoi ignored` after any change to that file.
+The default is the most restrictive value, so this **fails closed**: a machine
+that never declared a role never receives the Claude Code layer.
+
+## What is deliberately not in this repo
+
+No hostnames, no email address, no credentials. Machine-specific and
+identifying values live outside git — `~/.zsh.local`, `~/.gitconfig.local`,
+`~/.ssh/config.local`, `~/.secrets/*`. The bootstrap scripts seed the git
+identity from whatever the machine already has, so applying these dotfiles
+never silently changes commit attribution. See
+[`docs/terminal-and-editor-defaults.md`](docs/terminal-and-editor-defaults.md#local-overrides--what-stays-out-of-the-repo).
+
+## Testing
+
+```sh
+docker build -t dev-env-test .
+docker run --rm -e ROLE=work dev-env-test     # also: server, personal, restricted
+```
+
+Applies the dotfiles twice in a clean container to prove they're idempotent,
+then asserts each role's exclusions actually took effect. Note
+`.chezmoiignore` patterns match **target** paths (`.local/bin/claude-attach`),
+not source paths — verify with `chezmoi ignored`.
 
 ## Docs index
 

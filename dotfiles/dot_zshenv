@@ -1,0 +1,23 @@
+# TIER 1 — sourced by EVERY zsh: interactive shells, scripts, `zsh -c`, cron,
+# and `ssh host <command>`. Keep it minimal, fast, and silent: no output, no
+# prompts, nothing that touches a tty.
+#
+# This tier exists specifically so that
+#     ssh claude-server 'claude --version'
+# works. Non-interactive shells never read ~/.zshrc, so PATH set only there is
+# invisible to remote commands, systemd units, and scripts.
+
+# Deduplicate PATH automatically. Without this, re-sourcing (or a login shell
+# that reads both .zshenv and .zshrc) silently grows PATH with duplicates.
+typeset -U path PATH
+
+# Helper scripts installed by chezmoi from dotfiles/dot_local/bin/, plus
+# anything pip/pipx/uv --user drops there.
+[[ -d "$HOME/.local/bin" ]] && path=("$HOME/.local/bin" $path)
+
+export PATH
+
+# Editor belongs in this tier: git, cron jobs and remote commands all need it,
+# and none of them read .zshrc.
+export EDITOR=vim
+export VISUAL="$EDITOR"

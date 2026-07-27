@@ -1,8 +1,6 @@
-# Same identity on every machine, work laptop included — not templated by
-# hostname, deliberately.
-[user]
-    name = warroyo
-    email = warroyo7199008@gmail.com
+# Shared git config. NO [user] section lives here on purpose: identity is the
+# one thing that is both machine-specific and identifying, so it stays out of
+# the repo entirely and comes from the includes at the bottom of this file.
 
 [init]
     defaultBranch = main
@@ -10,6 +8,7 @@
 [core]
     editor = vim
     autocrlf = input
+    excludesfile = ~/.gitignore
 
 [pull]
     rebase = false
@@ -27,3 +26,22 @@
     ci = commit
     lg = log --graph --oneline --decorate --all
     last = log -1 HEAD
+    amend = commit --amend --no-edit
+
+# Identity, kept out of git. Created by provision/*-bootstrap.sh, which
+# migrates any identity already configured on the machine:
+#
+#   [user]
+#       name = your-name
+#       email = your-email
+#
+# Using a dedicated alias here (rather than your primary address) keeps your
+# real mailbox out of every public commit while staying attributable.
+[include]
+    path = ~/.gitconfig.local
+
+# Platform-specific bits — credential helper, and on Linux the signing setup
+# that routes through git-ssh-sign. Written by chezmoi from
+# dot_gitconfig.platform.tmpl. Included last so it wins.
+[include]
+    path = ~/.gitconfig.platform

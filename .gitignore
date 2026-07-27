@@ -15,6 +15,22 @@ id_ed25519*
 .env.*
 *.secret
 
+# Machine-specific and identifying values live OUTSIDE this repo by design
+# (see docs/terminal-and-editor-defaults.md § Local overrides). These names are
+# listed defensively in case one is ever created inside the repo by mistake:
+#   ~/.zsh.local        shell overrides
+#   ~/.gitconfig.local  git identity
+#   ~/.ssh/config.local ssh hosts and usernames
+#   ~/.secrets/*        tokens and credentials
+.zsh.local
+.gitconfig.local
+config.local
+.secrets/
+
+# Scratch space for throwaway notes and agent hand-off files. In-repo (rather
+# than /tmp) so it shows up in the editor; never committed.
+.scratch/
+
 # chezmoi local state, if ever run with this repo dir as its config/state
 # home instead of the default ~/.config/chezmoi
 .chezmoiroot.local

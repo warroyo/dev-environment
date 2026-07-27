@@ -37,9 +37,22 @@ fi
 section "Shell + dotfiles"
 [ "$(getent passwd "$USER" | cut -d: -f7)" = "$(command -v zsh)" ] \
   && ok "login shell is zsh" || bad "login shell is not zsh"
-for f in .zshrc .tmux.conf .gitconfig .ssh/config; do
+for f in .zshenv .zshrc .tmux.conf .gitconfig .gitconfig.local .ssh/config; do
   [ -f "$HOME/$f" ] && ok "~/$f present" || bad "~/$f MISSING — run chezmoi apply"
 done
+# Tier 1 must reach NON-interactive shells, or `ssh host <cmd>` can't find
+# anything in ~/.local/bin. This is the bug .zshenv exists to prevent.
+if zsh -c 'case ":$PATH:" in *":$HOME/.local/bin:"*) exit 0;; *) exit 1;; esac' 2>/dev/null; then
+  ok "~/.local/bin on PATH in a non-interactive shell"
+else
+  bad "~/.local/bin missing from non-interactive PATH — check ~/.zshenv"
+fi
+# Identity must resolve through the include chain, not be blank.
+if [ -n "$(git config user.email 2>/dev/null)" ]; then
+  ok "git identity resolves ($(git config user.email))"
+else
+  bad "git has no user.email — fill in ~/.gitconfig.local"
+fi
 # Existence alone doesn't prove chezmoi owns it (a pre-existing file counts
 # as present), so ask chezmoi whether anything managed has drifted.
 if command -v chezmoi >/dev/null 2>&1; then

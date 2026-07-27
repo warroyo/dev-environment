@@ -7,35 +7,28 @@ config, tmux, VS Code defaults, common CLI tools) applies here exactly as
 it does on the server and the personal Air; this machine is a normal
 chezmoi target, not a special case for that layer.
 
-## 0. Before you start: set the real hostname
+## 0. Nothing to configure first
 
-`dotfiles/.chezmoidata.yaml` has one placeholder for this machine:
+There's no placeholder to fill in. `client-work-bootstrap.sh` declares this
+machine's role as `work` in `~/.config/chezmoi/chezmoi.toml`, and that role is
+what excludes the Claude-specific files.
 
-```yaml
-hostnames:
-  workLaptop: "REPLACE_WITH_WORK_LAPTOP_HOSTNAME"
-```
+This is safe by default: if the role were somehow missing, it falls back to
+`restricted`, which excludes exactly the same things. The scheme **fails
+closed** — you cannot end up with Claude Code here by forgetting a step.
 
-Run `hostname` on this laptop, paste the exact output in, and commit
-*before* running `chezmoi apply` here.
-
-This matters more than it looks: if `workLaptop` doesn't match,
-`.chezmoiignore.tmpl` won't match this host and **the Claude-specific
-scripts get installed here** — that exclusion is the only thing enforcing
-the constraint.
-
-(Git identity is the same on every machine, so there's nothing per-machine
-to set for it.)
-
-Verify the exclusion actually took effect before trusting it:
+Verify the exclusion actually took effect:
 
 ```sh
-chezmoi ignored          # should list .local/bin/claude-attach, claude-env, paste-image
-chezmoi execute-template '{{ .chezmoi.hostname }}'   # should match workLaptop exactly
+chezmoi ignored     # lists .local/bin/claude-attach, claude-env, paste-image, 70_claude.sh
 ```
 
-The bootstrap script also checks for leaked files at the end and errors
-loudly if any are present.
+The bootstrap script also checks for leaked files at the end and errors loudly
+if any are present.
+
+Your git identity is read from `~/.gitconfig.local`, which the bootstrap seeds
+from whatever this machine already had — applying these dotfiles won't change
+how your work commits are attributed.
 
 ## 1. Run the bootstrap script
 

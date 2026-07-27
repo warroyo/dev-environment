@@ -1,0 +1,34 @@
+# TIER 2 — interactive shells only.
+#
+# Environment that must exist everywhere lives in ~/.zshenv (tier 1), NOT here.
+# This file is only the interactive UX layer, composed from numbered fragments.
+#
+# Deliberate deviation from the reference layout this borrows from: we do NOT
+# have ~/.zprofile source ~/.zshrc. That pattern makes environment available to
+# `zsh -lc`, but it also means an interactive *login* shell sources ~/.zshrc
+# twice — duplicating PATH entries and registering prompt hooks twice. Putting
+# the whole environment tier in ~/.zshenv gets the same benefit without that
+# hazard, because .zshenv is read by every zsh including login shells.
+#
+# Fragment contract (see docs/terminal-and-editor-defaults.md):
+#   guarded with `[[ -o interactive ]] || return`  = interactive-only UX
+#   unguarded                                      = environment; must be fast,
+#                                                    silent, and tty-free
+# Numeric prefixes control load order:
+#   10-19  terminal/locale basics, no dependencies
+#   40-49  PATH construction
+#   50-59  environment + interactive UX (aliases, history, completion, prompt)
+#   60-69  machine-specific (ssh agent, browser bridge)
+#   70-79  Claude Code layer
+
+typeset -U path PATH
+
+for _f in "$HOME"/.config/shell/source/*.sh(N); do
+  source "$_f"
+done
+unset _f
+
+# Machine-specific overrides that must never live in the repo: a work email,
+# a one-off PATH entry, a host alias. Sourced last so it wins over everything
+# above. See docs/terminal-and-editor-defaults.md.
+[[ -r "$HOME/.zsh.local" ]] && source "$HOME/.zsh.local"

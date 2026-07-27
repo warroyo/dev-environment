@@ -1,4 +1,4 @@
-# Server setup (`ubuntu-home`)
+# Server setup (role: `server`)
 
 The sole, always-on Claude Code host. See
 [`docs/ARCHITECTURE.md`](ARCHITECTURE.md) for why session state lives here

@@ -2,34 +2,55 @@
   IMPORTANT: chezmoi matches these patterns against the *target* path
   (relative to $HOME), NOT the source path. So the entry for
   dot_local/bin/executable_claude-attach must be written as
-  .local/bin/claude-attach — source-path spellings like
-  "bin/executable_claude-attach" silently match nothing, which would
-  quietly ship the Claude-specific scripts to the work laptop.
+  .local/bin/claude-attach — source-path spellings silently match nothing,
+  which would quietly ship the Claude-specific scripts everywhere.
   Verify with: chezmoi ignored
+
+  Keyed on .role (set per machine in ~/.config/chezmoi/chezmoi.toml by the
+  bootstrap scripts), defaulting to "restricted" in .chezmoidata.yaml.
 */}}
 
-{{- $h := .chezmoi.hostname | lower | trimSuffix ".local" }}
-{{- if eq $h (.hostnames.workLaptop | lower | trimSuffix ".local") }}
-{{/*
-  Work MacBook Pro: exclude every Claude-Code-specific file. Everything else
-  in this source directory (shell config, Ghostty, tmux, VS Code, git,
-  general SSH config) applies here normally — see docs/client-work-setup.md.
+{{- $claudeAllowed := or (eq .role "server") (eq .role "personal") }}
 
-  Whole-file exclusion is preferred over in-template conditionals so the
-  boundary between "general layer" and "Claude-specific" stays visible at a
-  glance in this one file.
+{{- if not $claudeAllowed }}
+{{/*
+  Work laptop, or any machine that hasn't declared a role: exclude every
+  Claude-Code-specific file. Everything else in this source directory (shell
+  config, Ghostty, tmux, VS Code, git, general SSH config) applies normally —
+  see docs/client-work-setup.md.
+
+  Whole-file exclusion keeps the general/Claude boundary visible at a glance
+  rather than scattered through in-file conditionals.
 */}}
 .local/bin/claude-attach
 .local/bin/claude-env
+.config/shell/source/70_claude.sh
+{{- else }}
+{{/* Conversely, the work-laptop VS Code guard is pointless where Claude Code
+     is legitimately installed. */}}
+.config/shell/source/70_work_guard.sh
+{{- end }}
+
+{{- if ne .role "personal" }}
+{{/*
+  paste-image is macOS-only (it shells out to osascript to read the clipboard)
+  and exists to push an image to the server, so it only makes sense on the
+  personal Air. Excluding it elsewhere keeps a broken script off the server.
+*/}}
 .local/bin/paste-image
 {{- end }}
 
-{{- if ne $h (.hostnames.personalAir | lower | trimSuffix ".local") }}
+{{- if ne .role "server" }}
+{{/* Headless-server-only: remap $BROWSER to print URLs rather than launch one. */}}
+.config/shell/source/60_browser.sh
+{{- end }}
+
+{{- if ne .chezmoi.os "linux" }}
 {{/*
-  paste-image is macOS-only (it shells out to osascript to read the
-  clipboard) and its whole purpose is pushing an image *to* the server, so
-  it only makes sense on the personal Air. Excluding it everywhere else
-  keeps a broken script off the server.
+  macOS gets its ssh-agent from launchd, and git signing there may use the
+  keychain-backed agent — where stripping SSH_AUTH_SOCK would break signing
+  rather than fix it. Both are Linux-only.
 */}}
-.local/bin/paste-image
+.config/shell/source/60_ssh_agent.sh
+.local/bin/git-ssh-sign
 {{- end }}

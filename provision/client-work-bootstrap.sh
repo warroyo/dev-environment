@@ -54,21 +54,26 @@ done
 # in here. chezmoi symlinks the real settings.json at
 # ~/Library/Application Support/Code/User/ to the managed
 # dot_config/vscode/settings.json, so anything written directly to the real
-# file gets replaced by the `chezmoi init --apply` below. The setting
+# file gets replaced by the chezmoi apply below. The setting
 # (claude-code.autoInstallIdeExtension: false) therefore lives in the managed
-# file itself, and dot_zshrc.tmpl additionally exports
-# CLAUDE_CODE_IDE_SKIP_AUTO_INSTALL=1 on this host.
+# file itself, and the shell config exports CLAUDE_CODE_IDE_SKIP_AUTO_INSTALL=1
+# for the "work" role.
 
-log "Applying chezmoi dotfiles (Claude-specific files are excluded on this host by dotfiles/.chezmoiignore.tmpl)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-chezmoi init --apply --source="${REPO_ROOT}/dotfiles"
+# shellcheck source=lib/chezmoi-apply.sh
+source "${SCRIPT_DIR}/lib/chezmoi-apply.sh"
+# role=work is what excludes the Claude-specific files (see
+# dotfiles/.chezmoiignore.tmpl). No hostname has to match for this to work —
+# and an unset role would fall back to "restricted", which excludes them too.
+apply_dotfiles work "$REPO_ROOT"
 
 log "Verifying no Claude Code artifacts landed on this machine"
 LEAKED=0
-for f in "$HOME/.local/bin/claude-attach" "$HOME/.local/bin/claude-env" "$HOME/.local/bin/paste-image"; do
+for f in "$HOME/.local/bin/claude-attach" "$HOME/.local/bin/claude-env" \
+         "$HOME/.local/bin/paste-image" "$HOME/.config/shell/source/70_claude.sh"; do
   if [ -e "$f" ]; then
-    log "ERROR: ${f} exists on this machine — check hostnames.workLaptop in dotfiles/.chezmoidata.yaml matches '$(hostname)'"
+    log "ERROR: ${f} exists on this machine — check [data] role in ~/.config/chezmoi/chezmoi.toml"
     LEAKED=1
   fi
 done

@@ -1,21 +1,31 @@
-# Single source of truth for the hostnames used by the templates in this
-# source directory (dot_zshrc.tmpl, private_dot_ssh/private_config.tmpl,
-# .chezmoiignore.tmpl). Change a hostname in exactly one place: here.
+# Defaults for this source directory. Nothing machine-specific or identifying
+# belongs here — real per-machine values live OUTSIDE the repo:
 #
-# PLACEHOLDER — replace before running chezmoi on the work laptop:
-#   workLaptop   run `hostname` on that machine, paste the exact output
-# Until it's replaced, chezmoi will never match that host, so the
-# Claude-specific exclusions in .chezmoiignore.tmpl won't apply there and
-# the Claude scripts WILL be installed on it.
+#   ~/.config/chezmoi/chezmoi.toml   role (written by provision/*-bootstrap.sh)
+#   ~/.zsh.local                     shell overrides
+#   ~/.gitconfig.local               git identity
+#   ~/.secrets/*                     tokens and credentials
 #
-# Note: git identity is NOT here — it's the same on every machine, so
-# dot_gitconfig is a plain (non-templated) file.
-# Write these lowercase and WITHOUT any domain suffix. chezmoi's
-# .chezmoi.hostname excludes the domain, so macOS's "Wills-MacBook-Air.local"
-# arrives as "Wills-MacBook-Air". The templates normalize both sides
-# (lowercase + strip .local) before comparing, so case here doesn't matter,
-# but keeping them lowercase makes the intent obvious.
-hostnames:
-  server: "ubuntu-home"
-  personalAir: "wills-macbook-air"
-  workLaptop: "REPLACE_WITH_WORK_LAPTOP_HOSTNAME"
+# This replaced hostname matching. Hostnames were both identifying (they had to
+# be committed) and fragile — chezmoi's .chezmoi.hostname strips the domain and
+# macOS reports mixed case, which silently broke matching twice.
+
+# Role decides which layers apply. Overridden per machine in
+# ~/.config/chezmoi/chezmoi.toml under [data].
+#
+#   server     — the always-on Claude Code host
+#   personal   — full client (personal MacBook Air)
+#   work       — restricted client: general layer only, never Claude Code
+#   restricted — DEFAULT. Same restrictions as "work".
+#
+# The default is deliberately the most restrictive value, so this FAILS CLOSED:
+# a machine that never declared a role gets the general layer only. The old
+# hostname scheme failed open — an unmatched hostname received the full Claude
+# Code layer, which is exactly backwards for a rule whose whole job is keeping
+# Claude Code off one machine.
+role: "restricted"
+
+# The server's Tailscale hostname, used for the `Host claude-server` SSH entry.
+# Generic and functionally required; override in ~/.config/chezmoi/chezmoi.toml
+# if yours differs.
+serverHost: "ubuntu-home"
