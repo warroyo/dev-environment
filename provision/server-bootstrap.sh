@@ -278,12 +278,48 @@ if [ -z "$CLAUDE_BIN" ]; then
   log "WARNING: 'claude' is not on PATH. Install and authenticate the Claude Code CLI (see docs/server-setup.md), then re-run this script."
 fi
 
-# Where the persistent session starts. Override to a projects directory if you
-# would rather land there than in $HOME:
-#   CLAUDE_WORKDIR=~/workspace ./provision/server-bootstrap.sh
-CLAUDE_WORKDIR="${CLAUDE_WORKDIR:-$HOME}"
+# Where the persistent session starts. Defaults to ~/workspace rather than
+# $HOME: it is the natural project root, and it keeps Claude Code's read/write
+# scope off dotfiles, ~/.ssh and everything else in the home directory.
+#   CLAUDE_WORKDIR=~/some/project ./provision/server-bootstrap.sh
+CLAUDE_WORKDIR="${CLAUDE_WORKDIR:-$HOME/workspace}"
+mkdir -p "$CLAUDE_WORKDIR"
 LOGIN_SHELL="$(getent passwd "$USER" | cut -d: -f7)"
 log "claude-main will start in ${CLAUDE_WORKDIR}"
+
+# Claude Code asks "is this a project you trust?" the first time it runs in a
+# directory, and requires an interactive answer. systemd starts the session
+# detached with nobody to answer, so claude prints the prompt, gets no input
+# and exits — leaving an empty session. Pre-record the trust decision for the
+# directory we are about to point it at.
+#
+# This edits Claude Code's own config file, which is not a documented
+# interface: if its format changes in an update this silently stops working
+# and you get the interactive prompt back (the session still survives, thanks
+# to the shell fallback in ExecStart — you would just have to answer once).
+CLAUDE_CFG="$HOME/.claude.json"
+if [ -f "$CLAUDE_CFG" ] && command -v python3 >/dev/null 2>&1; then
+  if python3 - "$CLAUDE_CFG" "$CLAUDE_WORKDIR" <<'PYEOF'
+import json, shutil, sys
+cfg_path, workdir = sys.argv[1], sys.argv[2]
+with open(cfg_path) as f:
+    cfg = json.load(f)
+proj = cfg.setdefault("projects", {}).setdefault(workdir, {})
+if proj.get("hasTrustDialogAccepted") is True:
+    sys.exit(1)                      # already trusted; nothing to do
+shutil.copy2(cfg_path, cfg_path + ".bak")
+proj["hasTrustDialogAccepted"] = True
+with open(cfg_path, "w") as f:
+    json.dump(cfg, f, indent=2)
+PYEOF
+  then
+    log "Recorded Claude Code trust for ${CLAUDE_WORKDIR} (backup: ${CLAUDE_CFG}.bak)"
+  else
+    log "Claude Code already trusts ${CLAUDE_WORKDIR}"
+  fi
+else
+  log "NOTE: ${CLAUDE_CFG} not found — run 'claude' once in ${CLAUDE_WORKDIR} and accept the trust prompt."
+fi
 
 cat <<EOF | $SUDO tee "$UNIT_PATH" >/dev/null
 # Managed by dev-environment/provision/server-bootstrap.sh — do not edit by hand.

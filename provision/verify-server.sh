@@ -162,6 +162,25 @@ if tmux has-session -t claude-main 2>/dev/null; then
     ok "claude is running inside claude-main"
   else
     warn "claude-main exists but no 'claude' process in it"
+    # Most common cause: claude hit the interactive trust prompt for its
+    # working directory, got no answer, and exited into the shell fallback.
+    PANE_DIR="$(tmux display-message -p -t claude-main '#{pane_current_path}' 2>/dev/null)"
+    if [ -n "${PANE_DIR:-}" ]; then
+      printf '        session cwd: %s\n' "$PANE_DIR"
+      if [ -f "$HOME/.claude.json" ] && command -v python3 >/dev/null 2>&1; then
+        python3 - "$HOME/.claude.json" "$PANE_DIR" <<'PYEOF' 2>/dev/null
+import json, sys
+cfg, d = sys.argv[1], sys.argv[2]
+p = json.load(open(cfg)).get("projects", {}).get(d, {})
+t = p.get("hasTrustDialogAccepted")
+if t is True:
+    print("        that directory IS trusted — check 'tmux capture-pane -p -t claude-main' for the real error")
+else:
+    print(f"        that directory is NOT trusted by Claude Code, which is very likely why it exited.")
+    print(f"        fix: re-run server-bootstrap.sh, or run 'claude' there once and accept the prompt")
+PYEOF
+      fi
+    fi
   fi
 else
   bad "tmux session 'claude-main' does not exist"

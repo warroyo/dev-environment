@@ -124,16 +124,29 @@ effect in `claude-main` without restarting your session.
 
 ### Where the session starts, and why it stays alive
 
-`claude-main` starts in `$HOME`. Override it if you'd rather land in a
-projects directory:
+`claude-main` starts in `~/workspace`. Override it per-run:
 
 ```sh
-CLAUDE_WORKDIR=~/workspace ./provision/server-bootstrap.sh
+CLAUDE_WORKDIR=~/some/project ./provision/server-bootstrap.sh
 ```
 
 This has to be set explicitly: systemd defaults `WorkingDirectory` to `/` for
 services, so without it the session — and everything you run in it — starts at
-the filesystem root.
+the filesystem root. `~/workspace` rather than `$HOME` keeps Claude Code's
+read/write scope off your dotfiles, `~/.ssh` and everything else in the home
+directory.
+
+**The trust prompt matters here.** Claude Code asks "is this a project you
+trust?" the first time it runs in a directory and requires an interactive
+answer. systemd starts the session detached with nobody to answer, so claude
+prints the prompt, gets no input, and exits — leaving an empty session. The
+script pre-records the trust decision for `CLAUDE_WORKDIR` in `~/.claude.json`
+(backing it up first) so this doesn't happen.
+
+That file isn't a documented interface. If its format changes in an update the
+pre-seeding silently stops working and the prompt comes back — the session
+still survives thanks to the shell fallback below, you'd just answer once by
+hand.
 
 The unit runs `claude; exec $SHELL -l` rather than just `claude`. tmux ends a
 session when its last command exits, so running `claude` directly means
