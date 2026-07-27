@@ -278,6 +278,13 @@ if [ -z "$CLAUDE_BIN" ]; then
   log "WARNING: 'claude' is not on PATH. Install and authenticate the Claude Code CLI (see docs/server-setup.md), then re-run this script."
 fi
 
+# Where the persistent session starts. Override to a projects directory if you
+# would rather land there than in $HOME:
+#   CLAUDE_WORKDIR=~/workspace ./provision/server-bootstrap.sh
+CLAUDE_WORKDIR="${CLAUDE_WORKDIR:-$HOME}"
+LOGIN_SHELL="$(getent passwd "$USER" | cut -d: -f7)"
+log "claude-main will start in ${CLAUDE_WORKDIR}"
+
 cat <<EOF | $SUDO tee "$UNIT_PATH" >/dev/null
 # Managed by dev-environment/provision/server-bootstrap.sh — do not edit by hand.
 [Unit]
@@ -288,17 +295,30 @@ Wants=network-online.target
 [Service]
 Type=forking
 User=${USER}
+# systemd defaults WorkingDirectory to / for services, so without this the
+# session (and everything you run in it) starts at the filesystem root.
+WorkingDirectory=${CLAUDE_WORKDIR}
 Environment=HOME=${HOME}
 # systemd's default PATH excludes ~/.local/bin and npm's global bin dir, so
 # without this the unit fails with "claude: command not found".
 Environment=PATH=${HOME}/.local/bin:${HOME}/.npm-global/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-RemainAfterExit=yes
 # -A is attach-or-create: tmux-continuum's restore may have already created
 # claude-main by the time this runs, and plain \`new-session\` would fail with
 # "duplicate session".
-ExecStart=/usr/bin/tmux new-session -A -d -s claude-main claude
+#
+# \`claude; exec \$SHELL -l\` matters: tmux ends a session when its last command
+# exits, so running claude directly means quitting or crashing claude destroys
+# the session and there is nothing left to attach to. Falling through to a
+# login shell keeps claude-main alive so \`claude-attach\` always lands
+# somewhere — just re-run \`claude\` in it.
+ExecStart=/usr/bin/tmux new-session -A -d -s claude-main -c ${CLAUDE_WORKDIR} 'claude; exec ${LOGIN_SHELL} -l'
 ExecStop=/usr/bin/tmux kill-session -t claude-main
-Restart=on-failure
+# No RemainAfterExit: it makes systemd report "active (exited)" forever even
+# after the tmux server is gone, which hides exactly the failure this unit
+# exists to prevent. Note \`systemctl is-active\` still is not proof on its own
+# (any lingering process in the cgroup counts) — provision/verify-server.sh
+# checks \`tmux has-session\`, which is.
+Restart=always
 RestartSec=5
 
 [Install]

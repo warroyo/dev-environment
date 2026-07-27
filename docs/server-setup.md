@@ -122,6 +122,29 @@ in tmux.conf". The script runs `tmux source-file ~/.tmux.conf` against the
 live server first, which both fixes tpm and makes the new settings take
 effect in `claude-main` without restarting your session.
 
+### Where the session starts, and why it stays alive
+
+`claude-main` starts in `$HOME`. Override it if you'd rather land in a
+projects directory:
+
+```sh
+CLAUDE_WORKDIR=~/workspace ./provision/server-bootstrap.sh
+```
+
+This has to be set explicitly: systemd defaults `WorkingDirectory` to `/` for
+services, so without it the session — and everything you run in it — starts at
+the filesystem root.
+
+The unit runs `claude; exec $SHELL -l` rather than just `claude`. tmux ends a
+session when its last command exits, so running `claude` directly means
+quitting or crashing it **destroys the session**, leaving `claude-attach`
+nothing to attach to. Falling through to a login shell keeps `claude-main`
+alive; just run `claude` again inside it.
+
+Note that `systemctl is-active claude-tmux` is **not** proof the session
+exists — any lingering process in the unit's cgroup keeps it looking active.
+`verify-server.sh` checks `tmux has-session`, which is the real signal.
+
 ## 6. Manual: the second OpenVPN environment's config
 
 Drop that environment's `.ovpn` file in as `client-env.ovpn`:
