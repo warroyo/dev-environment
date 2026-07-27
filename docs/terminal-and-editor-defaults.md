@@ -145,6 +145,33 @@ machine. It was also fragile: chezmoi strips the domain from
 `.chezmoi.hostname` and macOS reports mixed case, which silently broke matching
 twice during development.
 
+## `vscode-here`
+
+Opens the current directory in VS Code. Behaviour depends on where you run it:
+
+- **Locally** (no `$SSH_CONNECTION`): runs `code .`. A Remote-SSH URI pointing
+  at your own hostname is meaningless — you don't Remote-SSH into yourself.
+- **Over SSH**: prints a `vscode://vscode-remote/ssh-remote+<host><path>` link
+  that opens VS Code *on your local machine*, attached to the remote directory.
+
+Two things it has to get right, both of which are easy to miss:
+
+**The host must be a name the client knows.** The URI is resolved by the
+*client's* `~/.ssh/config`, not the server's. Prefer an ssh alias
+(`claude-server`) over the server's own hostname (`ubuntu-home`): the alias
+carries `User`, whereas a bare hostname makes VS Code connect as whatever local
+username the client happens to have — usually the wrong one. Set it per machine:
+
+```sh
+echo 'export VSCODE_HERE_HOST=claude-server' >> ~/.zsh.local
+```
+
+**The click may not work, and that's not a bug in the escape sequence.**
+Terminals choose which URI schemes they linkify, and many handle only
+`http(s)`/`mailto`. A `vscode://` link can render as plain text no matter how
+correct the OSC8 sequence is. So the command also prints the raw URI and a
+copy-pasteable `code --remote ...` line — use those if clicking does nothing.
+
 ## Prompt and shell plugins
 
 The bootstrap scripts set zsh as the login shell. zsh's *built-in* default

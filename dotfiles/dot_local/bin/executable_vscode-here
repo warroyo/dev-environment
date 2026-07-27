@@ -1,16 +1,45 @@
 #!/usr/bin/env bash
-# Print a clickable OSC8 hyperlink that opens the current directory, on the
-# current host, in VS Code Remote-SSH. General-purpose (works from a tmux
-# pane on any Remote-SSH target) — applies on every machine, including the
-# work MacBook Pro.
+# Open the current directory in VS Code.
 #
-# Override VSCODE_HERE_HOST if the hostname this box reports isn't the name
-# your Mac's ~/.ssh/config knows it by (e.g. an ssh alias like
-# `claude-server`), otherwise VS Code won't resolve the target.
+# Run it on a REMOTE box inside tmux/SSH and it emits a Remote-SSH link that
+# opens VS Code on your local machine, attached to this directory here. Run it
+# locally and it just opens the directory — no Remote-SSH involved.
 set -euo pipefail
 
+# --- Local case -------------------------------------------------------------
+# Not in an SSH session means we're already on the machine with the GUI, where
+# a Remote-SSH URI pointing at our own hostname is meaningless (you don't
+# Remote-SSH into yourself). Just open the directory.
+if [ -z "${SSH_CONNECTION:-}" ]; then
+  if command -v code >/dev/null 2>&1; then
+    exec code .
+  fi
+  echo "vscode-here: not an SSH session, and the 'code' CLI isn't on PATH." >&2
+  echo "  In VS Code: Cmd-Shift-P -> 'Shell Command: Install code command in PATH'" >&2
+  exit 1
+fi
+
+# --- Remote case ------------------------------------------------------------
+# The host in the URI is resolved by the CLIENT's ~/.ssh/config, so it must be
+# a name that machine knows. Prefer an ssh alias over this box's own hostname:
+# the alias carries User (and any other options), whereas a bare hostname makes
+# VS Code connect as whatever local username the client happens to have.
+#
+# Set VSCODE_HERE_HOST in ~/.zsh.local to whatever alias your clients use.
 host="${VSCODE_HERE_HOST:-$(hostname -f 2>/dev/null || hostname)}"
 cwd="$(pwd)"
 uri="vscode://vscode-remote/ssh-remote+${host}${cwd}"
 
-printf '\e]8;;%s\e\\Open in VS Code (%s on %s)\e]8;;\e\\\n' "$uri" "$cwd" "$host"
+# OSC8 hyperlink. Terminals decide which URI schemes they will make clickable,
+# and many linkify only http(s)/mailto — so a vscode:// link may render as
+# plain text no matter how correct the escape sequence is. That's why the raw
+# URI and a copy-pasteable command are printed too, rather than relying on the
+# click working.
+printf '\e]8;;%s\e\\Open in VS Code\e]8;;\e\\\n' "$uri"
+printf '  uri:  %s\n' "$uri"
+printf '  or:   code --remote ssh-remote+%s %s\n' "$host" "$cwd"
+
+if [ -z "${VSCODE_HERE_HOST:-}" ]; then
+  printf '  note: using this host'\''s own name (%s). If your client reaches it\n' "$host"
+  printf '        under a different ssh alias, set VSCODE_HERE_HOST in ~/.zsh.local\n'
+fi
