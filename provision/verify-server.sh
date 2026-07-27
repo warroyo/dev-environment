@@ -158,7 +158,24 @@ systemctl is-active --quiet claude-tmux.service 2>/dev/null \
   && ok "claude-tmux.service active" || bad "claude-tmux.service not active"
 if tmux has-session -t claude-main 2>/dev/null; then
   ok "tmux session 'claude-main' exists"
-  if tmux list-panes -t claude-main -F '#{pane_current_command}' 2>/dev/null | grep -q claude; then
+  # Do NOT use #{pane_current_command} alone: the systemd unit runs
+  # `claude; exec $SHELL -l` so the pane's own process is the wrapping shell
+  # and claude is its CHILD. tmux reports the pane process, so that check
+  # reports "no claude" while claude is running perfectly well.
+  _claude_in_pane() {
+    local pid="$1" child
+    [ "$(ps -o comm= -p "$pid" 2>/dev/null | tr -d ' ')" = "claude" ] && return 0
+    for child in $(pgrep -P "$pid" 2>/dev/null); do
+      [ "$(ps -o comm= -p "$child" 2>/dev/null | tr -d ' ')" = "claude" ] && return 0
+    done
+    return 1
+  }
+  CLAUDE_FOUND=0
+  for p in $(tmux list-panes -t claude-main -F '#{pane_pid}' 2>/dev/null); do
+    _claude_in_pane "$p" && { CLAUDE_FOUND=1; break; }
+  done
+
+  if [ "$CLAUDE_FOUND" -eq 1 ]; then
     ok "claude is running inside claude-main"
   else
     warn "claude-main exists but no 'claude' process in it"
