@@ -47,8 +47,24 @@ applies exactly as it does everywhere else.
 
 Because VS Code doesn't read settings from `~/.config` on macOS, a chezmoi
 `run_onchange` script
-([`dotfiles/run_onchange_after_link-vscode-settings.sh.tmpl`](../dotfiles/run_onchange_after_link-vscode-settings.sh.tmpl))
-symlinks the real, OS-specific settings file to this one on `chezmoi apply`.
+([`dotfiles/run_onchange_after_install-vscode-settings.sh.tmpl`](../dotfiles/run_onchange_after_install-vscode-settings.sh.tmpl))
+copies this file over the real, OS-specific settings file on `chezmoi apply`.
+
+It copies rather than symlinks on purpose. A symlink points VS Code's own
+writes — theme changes, font tweaks, extensions recording that you dismissed
+them — at chezmoi's target file, so the next `chezmoi apply` stops with
+`.config/vscode/settings.json has changed since chezmoi last wrote it?` and
+waits for an answer that a provisioning script can't give. Copying keeps the
+two files separate: VS Code writes only its own, and chezmoi's can never drift.
+
+The trade is that the repo wins on a schedule rather than continuously. The
+script embeds a hash of `settings.json`, so it re-runs and re-copies whenever
+the managed settings change — an edit here lands on the next apply, overwriting
+whatever VS Code wrote in between. A setting changed only in VS Code's UI
+survives until then. For the one setting that matters on the work laptop
+(`claude-code.autoInstallIdeExtension`), the backstop is the check in
+`provision/client-work-bootstrap.sh`, which fails the run if the Claude Code
+extension is actually installed.
 
 ## Common CLI tools
 

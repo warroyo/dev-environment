@@ -1,0 +1,51 @@
+#!/bin/bash
+# chezmoi run_onchange script: installs the managed VS Code settings
+# (dot_config/vscode/settings.json -> ~/.config/vscode/settings.json) at the
+# real, OS-specific path VS Code actually reads, since VS Code doesn't read
+# settings from ~/.config on macOS.
+#
+# This COPIES rather than symlinks, deliberately. A symlink here aims VS Code's
+# writes — every theme change, font tweak and extension quietly recording that
+# you dismissed it — straight at chezmoi's own target file. chezmoi then finds
+# a file it did not write and stops the next apply with
+#
+#     .config/vscode/settings.json has changed since chezmoi last wrote it?
+#     > diff/overwrite/all-overwrite/skip/quit
+#
+# which is unanswerable inside a provisioning script. With a copy, VS Code only
+# ever writes its own file, so chezmoi's copy cannot drift and never prompts.
+#
+# The hash below is what makes this a two-way street: it changes whenever the
+# managed settings change, which re-runs this script, which copies the new
+# settings over whatever VS Code has written in the meantime. Edits made in the
+# repo still win — just at the next apply after an edit, rather than by keeping
+# VS Code permanently pointed at chezmoi's file.
+#
+# settings.json hash: {{ include "dot_config/vscode/settings.json" | sha256sum }}
+set -euo pipefail
+
+src="{{ .chezmoi.homeDir }}/.config/vscode/settings.json"
+
+{{ if eq .chezmoi.os "darwin" -}}
+dest="{{ .chezmoi.homeDir }}/Library/Application Support/Code/User/settings.json"
+{{- else -}}
+dest="{{ .chezmoi.homeDir }}/.config/Code/User/settings.json"
+{{- end }}
+
+mkdir -p "$(dirname "$dest")"
+
+# Machines provisioned before this switched from symlinking to copying still
+# have $dest pointing at $src, and cp refuses to copy a file onto itself.
+if [ -L "$dest" ]; then
+  rm -f "$dest"
+fi
+
+# Whatever VS Code had before chezmoi took over, kept once. The guard matters
+# now that this script runs again on every settings change: without it, the
+# second run would "back up" this script's own previous output over the real
+# original.
+if [ -e "$dest" ] && [ ! -e "$dest.pre-chezmoi.bak" ]; then
+  cp "$dest" "$dest.pre-chezmoi.bak"
+fi
+
+cp "$src" "$dest"

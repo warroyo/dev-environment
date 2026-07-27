@@ -61,10 +61,9 @@ ensure_cask visual-studio-code   "Visual Studio Code.app"
 ensure_cask font-meslo-lg-nerd-font
 
 # The "never auto-install the Claude Code IDE extension" guard is NOT patched
-# in here. chezmoi symlinks the real settings.json at
-# ~/Library/Application Support/Code/User/ to the managed
-# dot_config/vscode/settings.json, so anything written directly to the real
-# file gets replaced by the chezmoi apply below. The setting
+# in here. chezmoi copies the managed dot_config/vscode/settings.json over the
+# real one at ~/Library/Application Support/Code/User/, so anything written
+# directly to the real file gets replaced by the chezmoi apply below. The setting
 # (claude-code.autoInstallIdeExtension: false) therefore lives in the managed
 # file itself, and the shell config exports CLAUDE_CODE_IDE_SKIP_AUTO_INSTALL=1
 # for the "work" role.
