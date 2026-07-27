@@ -342,12 +342,11 @@ Environment=PATH=${HOME}/.local/bin:${HOME}/.npm-global/bin:/usr/local/sbin:/usr
 # claude-main by the time this runs, and plain \`new-session\` would fail with
 # "duplicate session".
 #
-# \`claude; exec \$SHELL -l\` matters: tmux ends a session when its last command
-# exits, so running claude directly means quitting or crashing claude destroys
-# the session and there is nothing left to attach to. Falling through to a
-# login shell keeps claude-main alive so \`claude-attach\` always lands
-# somewhere — just re-run \`claude\` in it.
-ExecStart=/usr/bin/tmux new-session -A -d -s claude-main -c ${CLAUDE_WORKDIR} 'claude; exec ${LOGIN_SHELL} -l'
+# claude-session runs claude, then drops to a login shell with a message
+# saying how to restart it. Wrapping matters: tmux ends a session when its
+# last command exits, so running claude directly means quitting or crashing it
+# destroys claude-main and leaves nothing to attach to.
+ExecStart=/usr/bin/tmux new-session -A -d -s claude-main -c ${CLAUDE_WORKDIR} ${HOME}/.local/bin/claude-session
 ExecStop=/usr/bin/tmux kill-session -t claude-main
 # No RemainAfterExit: it makes systemd report "active (exited)" forever even
 # after the tmux server is gone, which hides exactly the failure this unit

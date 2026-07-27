@@ -148,11 +148,32 @@ pre-seeding silently stops working and the prompt comes back — the session
 still survives thanks to the shell fallback below, you'd just answer once by
 hand.
 
-The unit runs `claude; exec $SHELL -l` rather than just `claude`. tmux ends a
-session when its last command exits, so running `claude` directly means
-quitting or crashing it **destroys the session**, leaving `claude-attach`
-nothing to attach to. Falling through to a login shell keeps `claude-main`
-alive; just run `claude` again inside it.
+The unit runs [`claude-session`](../dotfiles/dot_local/bin/executable_claude-session)
+rather than `claude` directly. tmux ends a session when its last command exits,
+so running `claude` directly means quitting or crashing it **destroys the
+session**, leaving `claude-attach` nothing to attach to. The wrapper runs
+claude, then drops to a login shell and prints how to get back:
+
+```
+  ── claude exited ─────────────────────────────────────────────
+     run  claude      to start it again in this window
+     or   Ctrl-b d    to detach and leave the session running
+  ──────────────────────────────────────────────────────────────
+```
+
+### Getting claude back after you've quit it
+
+Once claude exits, that window stays a shell — it does not relaunch by itself.
+That's deliberate: auto-restarting would make a crash-looping claude
+impossible to escape, and would fight you when you quit on purpose.
+
+- **In that window:** run `claude`.
+- **Reset the whole session** (recreates it running claude, discarding any
+  windows and panes you've added):
+
+  ```sh
+  sudo systemctl restart claude-tmux.service
+  ```
 
 Note that `systemctl is-active claude-tmux` is **not** proof the session
 exists — any lingering process in the unit's cgroup keeps it looking active.

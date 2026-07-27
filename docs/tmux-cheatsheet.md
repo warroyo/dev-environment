@@ -102,8 +102,11 @@ it back to full width while you're working in it.
 **"`Ctrl-b` does nothing."** It's a prefix — press and release it, *then* press
 the command key. See the top of this page.
 
-**"Claude vanished."** Check the window list (`prefix w`) — it's probably in
-another window, not gone — and not necessarily the window number you expect.
+**"Claude vanished."** Two possibilities. If you're staring at a shell prompt,
+check the window list (`prefix w`) — claude is probably in another window, and
+not necessarily the number you expect. If you actually quit claude, that window
+stays a shell by design: just run `claude` in it. To reset the session
+completely, `sudo systemctl restart claude-tmux.service`.
 
 **"tmux says no sessions."** The persistent session is started by
 `claude-tmux.service`. Check it with `systemctl status claude-tmux`, and see

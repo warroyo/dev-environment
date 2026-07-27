@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# What claude-tmux.service runs as the claude-main session's command.
+#
+# Wrapping claude rather than running it directly is what keeps the session
+# alive: tmux ends a session when its last command exits, so a bare `claude`
+# means quitting or crashing it destroys claude-main and leaves nothing to
+# attach to.
+#
+# Dropping to a login shell afterwards is deliberate — you keep the session,
+# your scrollback, and any other windows. The message exists because a bare
+# shell prompt gives no clue that claude was ever there or how to get it back.
+
+claude "$@" || true
+
+printf '\n'
+printf '  ── claude exited ─────────────────────────────────────────────\n'
+printf '     run  claude      to start it again in this window\n'
+printf '     or   Ctrl-b d    to detach and leave the session running\n'
+printf '  ──────────────────────────────────────────────────────────────\n\n'
+
+exec "${SHELL:-/bin/sh}" -l
