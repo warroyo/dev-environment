@@ -40,8 +40,8 @@
 [include]
     path = ~/.gitconfig.local
 
-# Platform-specific bits — credential helper, and on Linux the signing setup
-# that routes through git-ssh-sign. Written by chezmoi from
+# Platform-specific bits — currently just the credential helper, which differs
+# between macOS (keychain) and Linux. Written by chezmoi from
 # dot_gitconfig.platform.tmpl. Included last so it wins.
 [include]
     path = ~/.gitconfig.platform

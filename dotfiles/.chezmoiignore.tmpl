@@ -47,10 +47,8 @@
 
 {{- if ne .chezmoi.os "linux" }}
 {{/*
-  macOS gets its ssh-agent from launchd, and git signing there may use the
-  keychain-backed agent — where stripping SSH_AUTH_SOCK would break signing
-  rather than fix it. Both are Linux-only.
+  macOS gets its ssh-agent from launchd, and AddKeysToAgent/UseKeychain in
+  ~/.ssh/config handle key loading there, so none of this is needed.
 */}}
 .config/shell/source/60_ssh_agent.sh
-.local/bin/git-ssh-sign
 {{- end }}
