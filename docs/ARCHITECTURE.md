@@ -7,8 +7,10 @@ This repo has two independent layers:
    and everyday aliases/scripts. Applies to **every** machine, including the
    restricted work laptop.
 2. **The remote Claude Code layer** — the persistent, always-on Claude Code
-   host, and the clients that reach it. Applies to every machine **except** the
-   work laptop.
+   host, and the clients that reach it. The *host* half is the server alone.
+   The *client* half — `claude-attach`, `claude-env`, their aliases — applies
+   everywhere, including the work laptop: those are SSH clients that execute
+   nothing locally, and reaching the server is what a client machine is for.
 
 A single chezmoi source directory ([`dotfiles/`](../dotfiles)) manages both at
 once: layer 1 is unconditional, layer 2 is excluded by
@@ -24,8 +26,17 @@ role to `~/.config/chezmoi/chezmoi.toml`, outside the repo.
 |---|---|---|
 | `server` | Sole Claude Code host, always on | — |
 | `personal` | Full client | Mesh VPN |
-| `work` | Restricted client — view/edit/SSH only, never runs Claude Code | Split-tunnel VPN to the LAN |
+| `work` | Restricted client — never *installs or runs* Claude Code locally; attaches to the server's session over SSH like any client | Split-tunnel VPN to the LAN |
 | `restricted` | Default for any undeclared machine; same as `work` | — |
+
+**What "restricted" restricts.** The line is local execution, not the name of a
+file. A restricted machine never has the CLI or the IDE extension installed and
+gets no file that runs `claude` in its own shell (`claude-session` is server
+only). It does get the SSH clients that attach to the session on the server.
+Enforcement lives where an install would actually happen: no install step in
+`client-work-bootstrap.sh` (which verifies the absence at the end),
+`claude-code.autoInstallIdeExtension: false` in the managed VS Code settings,
+and `CLAUDE_CODE_IDE_SKIP_AUTO_INSTALL=1` from `70_work_guard.sh`.
 
 Two further pieces sit outside the role system:
 
@@ -50,8 +61,10 @@ nothing Claude-related runs on a laptop.
 - **`personal` → server**: mesh VPN, direct. `claude-attach` SSHes to the
   server and attaches to (or creates) the `claude-main` tmux session.
 - **`work` → server**: split-tunnel VPN routed to the LAN only — no
-  `redirect-gateway`, so it never fights a corporate VPN's routing. This
-  machine never runs Claude Code; see
+  `redirect-gateway`, so it never fights a corporate VPN's routing. Same
+  `claude-attach` workflow as `personal`, but `claude-server` has to be defined
+  in `~/.ssh/config.local` because the managed tailnet Host block is skipped for
+  this role. Claude Code itself is never installed on it; see
   [`docs/client-work-setup.md`](client-work-setup.md).
 - **Out-of-band KVM**: keyboard/video access to the server's hardware when SSH
   is unavailable — a bad kernel update, a network misconfiguration — without
@@ -103,8 +116,9 @@ from `claude-main`):
 
 - [ ] Closing a laptop never interrupts a Claude Code session — session state
       lives only on the server.
-- [ ] The work laptop never runs Claude Code (CLI or IDE extension), but has
-      the same terminal/editor defaults as every other machine.
+- [ ] The work laptop never has Claude Code installed (CLI or IDE extension)
+      and never runs it locally, but has the same terminal/editor defaults as
+      every other machine and can attach to the server's session over SSH.
 - [ ] The two VPN paths never share a routing table on the server.
 - [ ] A server reboot restores everything — mesh VPN, ssh bindings, gluetun,
       and the `claude-main` tmux session with `claude` already running — with

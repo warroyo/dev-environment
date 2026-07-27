@@ -1,6 +1,10 @@
-# Deployed only on machines that are NOT part of the Claude Code layer — the
+# Deployed only on machines where Claude Code must never be INSTALLED — the
 # work laptop, and any machine with an unrecognised role (see
-# .chezmoiignore.tmpl). Unguarded on purpose: VS Code spawns its integrated
+# .chezmoiignore.tmpl). Those machines still get claude-attach/claude-env,
+# which only SSH to the server; this guards the one path that would put Claude
+# Code on the local disk without anyone choosing to.
+#
+# Unguarded by `[[ -o interactive ]]` on purpose: VS Code spawns its integrated
 # terminal non-interactively, which is exactly the case this defends against.
 #
 # Belt-and-braces with "claude-code.autoInstallIdeExtension": false in the

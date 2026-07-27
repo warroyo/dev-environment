@@ -79,6 +79,13 @@ seed_ssh_config_local() {
 # The server's login name goes here rather than in the repo:
 #   Host claude-server
 #     User your-login-name
+#
+# On the work laptop the managed config has no `Host claude-server` block at
+# all (that one points at the tailnet name, which does not resolve there), so
+# add the whole entry here for claude-attach/claude-env to work:
+#   Host claude-server
+#     HostName 192.0.2.10        # the server's LAN IP, over the OpenVPN path
+#     User your-login-name
 EOF
   chmod 600 "$target"
 }
