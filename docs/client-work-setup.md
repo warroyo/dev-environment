@@ -78,7 +78,7 @@ Use the server's **LAN IP**, not `ubuntu-home`. That name is provided by
 Tailscale MagicDNS, which this machine deliberately doesn't have — it will
 not resolve here unless you've added a local DNS record for it on the
 UDM SE. This machine also doesn't get the `claude-server` SSH alias (that
-block is Tailscale-only, skipped by `dot_ssh/config.tmpl`).
+block is for the mesh-VPN path only, skipped for this role by `private_dot_ssh/private_config.tmpl`).
 
 If you want a shortcut, add your own `Host` entry pointing at the LAN IP in
 a file chezmoi doesn't manage (e.g. `~/.ssh/config.d/`), or add a local DNS

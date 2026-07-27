@@ -47,7 +47,7 @@ your Mac username already matches your server username.
 
 VS Code Remote-SSH reads `~/.ssh/config`, which chezmoi already populated
 with a `Host claude-server` entry pointing at the server's Tailscale
-hostname (`dotfiles/dot_ssh/config.tmpl`). Open the command palette →
+hostname (`dotfiles/private_dot_ssh/private_config.tmpl`). Open the command palette →
 "Remote-SSH: Connect to Host..." → `claude-server` should already be listed
 with no further config.
 

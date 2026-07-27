@@ -63,7 +63,7 @@ Homebrew on both Macs):
 | [`eza`](https://github.com/eza-community/eza) | `ls` | Colorized, git-aware, tree view |
 | [`fzf`](https://github.com/junegunn/fzf) | — | Fuzzy history/file search, wired into shell keybindings |
 
-`dot_zshrc.tmpl` aliases `ls`→`eza` and `cat`→`bat` unconditionally on all
+`50_aliases.sh` aliases `ls`→`eza` and `cat`→`bat` unconditionally on all
 three machines.
 
 `find` and `grep` are deliberately **not** aliased to `fd`/`rg`. Their flag

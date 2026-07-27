@@ -44,7 +44,7 @@ docs/         architecture + per-machine setup docs
 provision/    one idempotent bootstrap script per machine role
 dotfiles/     single chezmoi source for all machines (layer 1 everywhere,
               layer 2 everywhere except the work laptop)
-  .chezmoidata.yaml    hostnames + emails, referenced by every template
+  .chezmoidata.yaml    non-identifying defaults (role fallback, server host)
   .chezmoiignore.tmpl  the work-laptop exclusion (target paths!)
   dot_local/bin/       helper scripts -> ~/.local/bin (on PATH)
 ```
@@ -88,8 +88,8 @@ not source paths — verify with `chezmoi ignored`.
 
 ## Docs index
 
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — topology, rationale, the
-  hard constraints this repo is built around, Definition of Done
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — roles, rationale, the hard
+  constraints this repo is built around, Definition of Done
 - [`docs/terminal-and-editor-defaults.md`](docs/terminal-and-editor-defaults.md) — the general layer
 - [`docs/tmux-cheatsheet.md`](docs/tmux-cheatsheet.md) — the handful of
   tmux bindings you actually need for this workflow
