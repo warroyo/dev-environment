@@ -1,34 +1,47 @@
 {{/*
   IMPORTANT: chezmoi matches these patterns against the *target* path
   (relative to $HOME), NOT the source path. So the entry for
-  dot_local/bin/executable_claude-attach must be written as
-  .local/bin/claude-attach — source-path spellings silently match nothing,
-  which would quietly ship the Claude-specific scripts everywhere.
+  dot_local/bin/executable_claude-session must be written as
+  .local/bin/claude-session — source-path spellings silently match nothing,
+  which would quietly ship the excluded scripts everywhere.
   Verify with: chezmoi ignored
 
   Keyed on .role (set per machine in ~/.config/chezmoi/chezmoi.toml by the
   bootstrap scripts), defaulting to "restricted" in .chezmoidata.yaml.
 */}}
 
-{{- $claudeAllowed := or (eq .role "server") (eq .role "personal") }}
-
-{{- if not $claudeAllowed }}
 {{/*
-  Work laptop, or any machine that hasn't declared a role: exclude every
-  Claude-Code-specific file. Everything else in this source directory (shell
-  config, Ghostty, tmux, VS Code, git, general SSH config) applies normally —
-  see docs/client-work-setup.md.
+  What "no Claude Code on the work laptop" actually means: the CLI is never
+  INSTALLED there, and nothing on that machine ever executes it. It does NOT
+  mean the machine can't reach the session running on the server.
 
-  Whole-file exclusion keeps the general/Claude boundary visible at a glance
-  rather than scattered through in-file conditionals.
+  So the line this file draws is "does the file run claude locally?", not
+  "does the file have claude in its name":
+
+    claude-attach / claude-env   pure SSH clients. They run `ssh` locally and
+                                 `claude` on the SERVER. Ship everywhere — this
+                                 is how a restricted client reaches the session.
+    70_claude.sh                 the ca/ce aliases for the above. Same.
+    claude-session               runs `claude` in the current shell. Server only
+                                 (it is what claude-tmux.service execs).
+
+  Enforcement of the never-install rule lives where an install would actually
+  happen: no CLI install step in client-work-bootstrap.sh (which verifies the
+  absence afterwards), autoInstallIdeExtension:false in the managed VS Code
+  settings, and 70_work_guard.sh below.
 */}}
-.local/bin/claude-attach
-.local/bin/claude-env
+{{- $claudeInstalled := eq .role "server" }}
+
+{{- if not $claudeInstalled }}
+{{/*
+  Runs claude in-process, so it only belongs where the CLI exists.
+*/}}
 .local/bin/claude-session
-.config/shell/source/70_claude.sh
-{{- else }}
-{{/* Conversely, the work-laptop VS Code guard is pointless where Claude Code
-     is legitimately installed. */}}
+{{- end }}
+
+{{- if or (eq .role "server") (eq .role "personal") }}
+{{/* The VS Code auto-install guard is pointless on the machines that are
+     allowed to have Claude Code; it exists for the restricted clients. */}}
 .config/shell/source/70_work_guard.sh
 {{- end }}
 

@@ -31,7 +31,11 @@ fi
 echo "OK: idempotent"
 
 # --- role exclusions -------------------------------------------------------
-claude_files=(.local/bin/claude-attach .local/bin/claude-env .config/shell/source/70_claude.sh)
+# These are SSH clients (and their aliases) — they run claude on the SERVER and
+# nothing locally, so every role gets them, including the restricted ones that
+# must never have the CLI installed. What a restricted role must NOT get is
+# claude-session, the wrapper that execs claude in the current shell.
+client_files=(.local/bin/claude-attach .local/bin/claude-env .config/shell/source/70_claude.sh)
 fail=0
 
 expect_absent() {
@@ -43,15 +47,19 @@ expect_present() {
   else echo "FAIL: $1 SHOULD exist for role=$ROLE"; fail=1; fi
 }
 
+for f in "${client_files[@]}"; do expect_present "$f"; done
+
+# claude-session runs claude in-process, so it belongs only where the CLI is
+# installed. The point of the whole exclusion mechanism: an unrecognised role
+# must behave like the work laptop, not like the server.
+if [ "$ROLE" = "server" ]; then expect_present .local/bin/claude-session
+else expect_absent .local/bin/claude-session; fi
+
+# The VS Code auto-install guard is the counterpart — deployed exactly where
+# Claude Code must never be installed.
 case "$ROLE" in
-  server|personal)
-    for f in "${claude_files[@]}"; do expect_present "$f"; done
-    ;;
-  *)
-    # The point of the whole exclusion mechanism: an unrecognised role must
-    # behave like the work laptop, not like a full client.
-    for f in "${claude_files[@]}"; do expect_absent "$f"; done
-    ;;
+  server|personal) expect_absent .config/shell/source/70_work_guard.sh ;;
+  *)               expect_present .config/shell/source/70_work_guard.sh ;;
 esac
 
 if [ "$ROLE" = "personal" ]; then expect_present .local/bin/paste-image

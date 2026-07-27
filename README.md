@@ -6,8 +6,10 @@ Two-layer setup, one repo:
    common CLI tools. Applies to every machine, work laptop included.
 2. **Remote Claude Code** — a persistent, always-on Claude Code host on an
    Ubuntu server, reachable from a personal MacBook Air over Tailscale and
-   from a work MacBook Pro over OpenVPN (view/edit/SSH only — that laptop
-   never runs Claude Code). Applies to every machine except the work laptop.
+   from a work MacBook Pro over OpenVPN. The host half is the server alone;
+   the client half (`claude-attach` and friends, which only SSH) applies
+   everywhere. **Claude Code is never installed on the work laptop** — it
+   attaches to the session on the server instead.
 
 Start with [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full
 picture, then follow the setup doc for whichever machine you're on.
@@ -43,9 +45,9 @@ On the server, check the result at any time with:
 docs/         architecture + per-machine setup docs
 provision/    one idempotent bootstrap script per machine role
 dotfiles/     single chezmoi source for all machines (layer 1 everywhere,
-              layer 2 everywhere except the work laptop)
+              layer 2's client half everywhere, its host half server-only)
   .chezmoidata.yaml    non-identifying defaults (role fallback, server host)
-  .chezmoiignore.tmpl  the work-laptop exclusion (target paths!)
+  .chezmoiignore.tmpl  the per-role exclusions (target paths!)
   dot_local/bin/       helper scripts -> ~/.local/bin (on PATH)
 ```
 
@@ -59,11 +61,13 @@ hostnames or placeholders to edit before running it.
 |---|---|---|
 | `server` | `server-bootstrap.sh` | General + Claude Code layer |
 | `personal` | `client-personal-bootstrap.sh` | General + Claude Code layer |
-| `work` | `client-work-bootstrap.sh` | General layer only |
-| `restricted` | default when unset | General layer only |
+| `work` | `client-work-bootstrap.sh` | General layer + the SSH clients that attach to the server |
+| `restricted` | default when unset | Same as `work` |
 
 The default is the most restrictive value, so this **fails closed**: a machine
-that never declared a role never receives the Claude Code layer.
+that never declared a role never receives anything that installs or runs Claude
+Code locally. It still gets `claude-attach`/`claude-env`, which only SSH to the
+server — see [what "restricted" restricts](docs/ARCHITECTURE.md#roles).
 
 ## What is deliberately not in this repo
 
@@ -83,7 +87,7 @@ docker run --rm -e ROLE=work dev-env-test     # also: server, personal, restrict
 
 Applies the dotfiles twice in a clean container to prove they're idempotent,
 then asserts each role's exclusions actually took effect. Note
-`.chezmoiignore` patterns match **target** paths (`.local/bin/claude-attach`),
+`.chezmoiignore` patterns match **target** paths (`.local/bin/claude-session`),
 not source paths — verify with `chezmoi ignored`.
 
 ## Docs index

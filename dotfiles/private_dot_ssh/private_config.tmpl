@@ -23,8 +23,13 @@ Host *
 #
 # Skipped on the work laptop (and any machine with an unrecognised role): that
 # machine reaches the server over the split-tunnel OpenVPN-to-LAN connection
-# instead and never joins the tailnet, so it uses the server's LAN IP directly
-# rather than this Host block. See docs/client-work-setup.md.
+# instead and never joins the tailnet, so this HostName would not resolve there.
+#
+# claude-attach/claude-env DO ship on those machines — they are SSH clients, and
+# reaching the server is what that laptop is for. To use them there, give the
+# name a value ssh can resolve by adding your own `Host claude-server` (pointing
+# at the server's LAN IP) to ~/.ssh/config.local, which is included first and
+# wins. See docs/client-work-setup.md.
 # ----------------------------------------------------------------------------
 Host claude-server
   HostName {{ .serverHost }}

@@ -1,30 +1,41 @@
 # Work MacBook Pro setup
 
-**This machine never installs or runs Claude Code (CLI or IDE extension),
-and never joins the tailnet.** It's a pure view/edit/SSH client — Ghostty,
+**The Claude Code CLI and IDE extension are never installed on this machine,
+and it never joins the tailnet.** It's a pure view/edit/SSH client — Ghostty,
 Mosh, VS Code Remote-SSH. Everything else in the general layer (shell
 config, tmux, VS Code defaults, common CLI tools) applies here exactly as
 it does on the server and the personal Air; this machine is a normal
 chezmoi target, not a special case for that layer.
 
-## 0. Nothing to configure first
+## 0. What "no Claude Code here" does and doesn't mean
+
+The rule is about **installation and local execution**, not about access.
+Nothing on this machine may install or run `claude`. Attaching over SSH to the
+session running on the server is fine — it's what this laptop is for — so
+`claude-attach` and `claude-env` are installed here like everywhere else. They
+run `ssh` locally and `claude` on the server.
+
+| Ships here | Doesn't |
+|---|---|
+| `claude-attach`, `claude-env`, the `ca`/`ce` aliases — SSH clients | `claude-session` — the wrapper that execs `claude` in the current shell (server only) |
+| `70_work_guard.sh` — exports `CLAUDE_CODE_IDE_SKIP_AUTO_INSTALL=1` | the CLI itself, by any install path |
+| | the Claude Code VS Code extension |
 
 There's no placeholder to fill in. `client-work-bootstrap.sh` declares this
-machine's role as `work` in `~/.config/chezmoi/chezmoi.toml`, and that role is
-what excludes the Claude-specific files.
+machine's role as `work` in `~/.config/chezmoi/chezmoi.toml`. If the role were
+somehow missing it falls back to `restricted`, which resolves identically — the
+scheme **fails closed**.
 
-This is safe by default: if the role were somehow missing, it falls back to
-`restricted`, which excludes exactly the same things. The scheme **fails
-closed** — you cannot end up with Claude Code here by forgetting a step.
-
-Verify the exclusion actually took effect:
+The bootstrap script ends by verifying the actual constraint: no `claude` on
+`PATH`, none at the known install locations (`~/.local/bin/claude`,
+`~/.claude/local/claude`, the Homebrew prefixes), no `anthropic.claude-code`
+in `code --list-extensions`, and no `claude-session`. Re-run it any time to
+re-check:
 
 ```sh
-chezmoi ignored     # lists .local/bin/claude-attach, claude-env, paste-image, 70_claude.sh
+./provision/client-work-bootstrap.sh
+chezmoi ignored     # role exclusions: .local/bin/claude-session, paste-image, 60_browser.sh
 ```
-
-The bootstrap script also checks for leaked files at the end and errors loudly
-if any are present.
 
 Your git identity is read from `~/.gitconfig.local`, which the bootstrap seeds
 from whatever this machine already had — applying these dotfiles won't change
@@ -41,10 +52,9 @@ cd ~/dev-environment
 Installs Ghostty, Mosh, chezmoi, and VS Code via Homebrew — **no Tailscale,
 no Claude Code** — sets `claude-code.autoInstallIdeExtension: false` in VS
 Code's settings so opening an integrated terminal there never silently
-installs the Claude Code extension, and ends with `chezmoi init --apply`.
-The `.chezmoiignore.tmpl` in the dotfiles source is what keeps
-`claude-attach`/`claude-env`/`paste-image` off this machine — chezmoi itself
-runs normally here.
+installs the Claude Code extension, and ends with `chezmoi apply`. chezmoi
+itself runs normally here; `.chezmoiignore.tmpl` keeps `claude-session` and
+`paste-image` off this machine.
 
 ## 2. Manual: install the OpenVPN client and import the split-tunnel profile
 
@@ -77,9 +87,35 @@ ssh <server-LAN-IP>   # over the OpenVPN-to-LAN path, once connected
 Use the server's **LAN IP**, not `ubuntu-home`. That name is provided by
 Tailscale MagicDNS, which this machine deliberately doesn't have — it will
 not resolve here unless you've added a local DNS record for it on the
-UDM SE. This machine also doesn't get the `claude-server` SSH alias (that
-block is for the mesh-VPN path only, skipped for this role by `private_dot_ssh/private_config.tmpl`).
+UDM SE. The managed `~/.ssh/config` also has no `Host claude-server` block
+here: that block's `HostName` is the tailnet name, so it's skipped for this
+role by `private_dot_ssh/private_config.tmpl`.
 
-If you want a shortcut, add your own `Host` entry pointing at the LAN IP in
-a file chezmoi doesn't manage (e.g. `~/.ssh/config.d/`), or add a local DNS
-entry on the UDM SE so `ubuntu-home` resolves over the VPN.
+## 5. Point `claude-attach` at the server
+
+`claude-attach` and `claude-env` are installed here, and both SSH to
+`$CLAUDE_SERVER_HOST` (default `claude-server`) — a name that resolves to
+nothing on this machine until you define it. Add the entry to
+`~/.ssh/config.local`, which chezmoi doesn't manage and the managed config
+includes first, so it wins:
+
+```sshconfig
+Host claude-server
+  HostName 192.168.1.50      # the server's LAN IP, reachable over OpenVPN
+  User your-login-name
+```
+
+Then, with the VPN up:
+
+```sh
+claude-attach     # or the alias: ca
+```
+
+You get the `claude-main` tmux session with `claude` already running **on the
+server**. Nothing executes locally — this is exactly the intended way to use
+Claude Code from this laptop, and it's why the CLI never needs to be installed
+here.
+
+Alternatively, set `export CLAUDE_SERVER_HOST=192.168.1.50` in `~/.zsh.local`
+and skip the SSH entry, or add a local DNS record on the UDM SE so
+`ubuntu-home` resolves over the VPN.
