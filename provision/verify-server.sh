@@ -85,11 +85,23 @@ else
 fi
 # Confirm the prompt is actually wired up, not just that the binary exists.
 # A bare zsh prompt is "%m%# " (6 chars); starship's is far longer.
-PROMPT_LEN="$(zsh -i -c 'print -r -- ${#PROMPT}' 2>/dev/null | tail -n1)"
-if [ -n "${PROMPT_LEN:-}" ] && [ "$PROMPT_LEN" -gt 20 ] 2>/dev/null; then
+#
+# setsid is load-bearing, and redirecting stdin is not enough on its own.
+# `zsh -i` starts zle, and zle opens /dev/tty *directly* — so run from a
+# terminal it grabs the tty and blocks even with all three fds redirected.
+# `timeout` alone cannot rescue it either, because interactive shells ignore
+# SIGTERM. setsid drops the controlling terminal so there is no /dev/tty to
+# open; -k adds a SIGKILL backstop. Without this the substitution yields
+# nothing and the branch below reports a bare prompt no matter how well
+# starship is configured.
+PROMPT_LEN="$(setsid timeout -k 2 10 zsh -i -c 'print -r -- ${#PROMPT}' </dev/null 2>/dev/null | tail -n1)"
+if [ -z "${PROMPT_LEN:-}" ]; then
+  bad "could not measure the interactive prompt — 'zsh -i' timed out or failed"
+elif [ "$PROMPT_LEN" -gt 20 ] 2>/dev/null; then
   ok "interactive prompt is configured (length ${PROMPT_LEN})"
 else
-  bad "interactive prompt looks like zsh's bare default — check the starship init in ~/.zshrc"
+  bad "interactive prompt looks like zsh's bare default (length ${PROMPT_LEN}) —"
+  bad "  check the starship init in ~/.config/shell/source/50_prompt.sh"
 fi
 for p in zsh-autosuggestions zsh-syntax-highlighting; do
   if [ -r "/usr/share/${p}/${p}.zsh" ] || [ -r "/usr/share/zsh/plugins/${p}/${p}.zsh" ]; then
