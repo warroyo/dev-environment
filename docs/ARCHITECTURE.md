@@ -46,8 +46,7 @@ Two further pieces sit outside the role system:
 - A **second, unrelated VPN environment** — a separate third-party network
   reached only through its own OpenVPN client, used for Claude Code work in
   that environment. It is *not* the same tunnel the work laptop uses to reach
-  the LAN, and the two must never share a routing table (see
-  [gluetun isolation](#gluetun-isolation)).
+  the LAN (see [the second VPN environment](#the-second-vpn-environment)).
 
 ## Why one always-on host
 
@@ -69,8 +68,8 @@ nothing Claude-related runs on a laptop.
 - **Out-of-band KVM**: keyboard/video access to the server's hardware when SSH
   is unavailable — a bad kernel update, a network misconfiguration — without
   needing physical presence.
-- **Second VPN environment**: reached only through the gluetun container on the
-  server, via the dedicated `claude-env` tmux session.
+- **Second VPN environment**: an on-demand OpenVPN client on the server,
+  reached via the dedicated `claude-env` tmux session.
 
 ## sshd binding
 
@@ -99,18 +98,47 @@ Two implementation notes that are easy to get wrong:
 This all assumes **the gateway forwards no ports to the server on WAN**. That's
 a manual check in the gateway's UI — it can't be verified from the server.
 
-## gluetun isolation
+## The second VPN environment
 
-The second VPN environment's client runs inside a `gluetun` Docker container,
-in its own network namespace, with its own tmux session (`claude-env`, distinct
-from `claude-main`):
+That environment's OpenVPN client runs **directly on the server** under
+systemd (`openvpn-client@client-env`), with its own tmux session (`claude-env`,
+distinct from `claude-main`).
 
-- Its routes stay inside the container's namespace, so they can never become
-  the server's default route and can never fight the mesh VPN for it.
-- Claude Code for that environment runs in a sibling container
-  (`claude-env-shell`) sharing gluetun's network stack via
-  `network_mode: "service:gluetun"`, so its traffic genuinely goes through that
-  tunnel, deliberately separate from everything else on the box.
+It was originally isolated inside a `gluetun` container in its own network
+namespace, on the stated constraint that this client and the mesh VPN must
+never share a routing table. That constraint was written for a full-tunnel
+config and does not describe the actual `client-env.ovpn`:
+
+- The file sets no `redirect-gateway`, so it never touches the default route.
+- The mesh VPN is a `/32` resolved through its own routing table (`ip rule`
+  5270 → table 52), and `100.64/10` overlaps none of the pushed subnets.
+- The LAN's `10.10.2.0/24` is more specific than the pushed `10.0.0.0/10`, so
+  the LAN and the default gateway keep winning.
+
+The one genuine collision was the pushed `172.17.0.0/24` against Docker's
+default bridge `172.17.0.0/16`: `/24` beats `/16`, so the tunnel would have
+captured exactly the range `docker0` hands out. `server-bootstrap.sh` moves
+`docker0` via `/etc/docker/daemon.json` instead.
+
+Running on the host also means Claude Code in this session gets the real home
+directory, ssh keys, gitconfig and editor — none of which existed in the
+container.
+
+### Connecting is always explicit
+
+The tunnel is **not enabled at boot**. That environment's identity is a
+certificate shared with other machines, and the server accepts only one live
+connection per identity, so auto-connecting would silently take the session
+from whoever else is on it:
+
+```sh
+client-vpn up      # connect
+client-vpn status  # unit state + tun0 + route count
+client-vpn down    # disconnect, freeing the shared identity
+```
+
+`claude-env` warns when the tunnel is down but never brings it up, for the same
+reason.
 
 ## Definition of Done
 
@@ -119,8 +147,8 @@ from `claude-main`):
 - [ ] The work laptop never has Claude Code installed (CLI or IDE extension)
       and never runs it locally, but has the same terminal/editor defaults as
       every other machine and can attach to the server's session over SSH.
-- [ ] The two VPN paths never share a routing table on the server.
-- [ ] A server reboot restores everything — mesh VPN, ssh bindings, gluetun,
+- [ ] The two VPN paths never contend for the server's default route.
+- [ ] A server reboot restores everything — mesh VPN, ssh bindings,
       and the `claude-main` tmux session with `claude` already running — with
       no manual steps (verify per [`docs/server-setup.md`](server-setup.md)).
 - [ ] The role scheme fails closed: a machine that never declared a role gets

@@ -73,7 +73,7 @@ them up:
 | File | Used on | Purpose |
 |---|---|---|
 | `home-server.ovpn` | Work MacBook Pro | Reach `ubuntu-home` over the UDM SE's split-tunnel OpenVPN server |
-| `client-env.ovpn` | Ubuntu server (inside gluetun) | The second, unrelated third-party environment |
+| `client-env.conf` | Ubuntu server (`/etc/openvpn/client/`) | The second, unrelated third-party environment |
 
 They're for entirely different networks and neither is a fallback for the
 other.

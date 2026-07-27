@@ -204,20 +204,62 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-section "Second OpenVPN environment (gluetun)"
-if [ -f /opt/claude-env-vpn/config/client-env.ovpn ]; then
-  ok "client-env.ovpn present"
-  for c in claude-env-vpn claude-env-shell; do
-    if sudo docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$c"; then ok "$c running"
-    else bad "$c not running"; fi
-  done
-  if sudo docker exec claude-env-shell sh -c 'command -v claude' >/dev/null 2>&1; then
-    ok "claude installed inside claude-env-shell"
+section "Second OpenVPN environment (on-demand)"
+OVPN_CONF="/etc/openvpn/client/client-env.conf"
+if [ -f "$OVPN_CONF" ]; then
+  ok "client-env.conf present"
+
+  # The key is embedded in this file, so anything world-readable is a finding.
+  perms="$(stat -c '%a %U' "$OVPN_CONF" 2>/dev/null || echo '? ?')"
+  case "$perms" in
+    "600 root") ok "client-env.conf is 600 root-owned" ;;
+    *) bad "client-env.conf should be 600 root-owned, is: $perms" ;;
+  esac
+
+  # Not being connected is the normal resting state: the identity is shared
+  # with other machines, so the tunnel is on-demand and off by default.
+  if systemctl is-enabled --quiet openvpn-client@client-env 2>/dev/null; then
+    bad "openvpn-client@client-env is enabled at boot — it must stay on-demand,"
+    bad "  because the VPN identity is shared with other machines"
   else
-    warn "claude not installed in claude-env-shell — re-run server-bootstrap.sh"
+    ok "openvpn-client@client-env not enabled at boot (correct: shared identity)"
+  fi
+
+  # The drop-in is the real signal: server-bootstrap.sh only writes it once it
+  # has actually located update-systemd-resolved, whose path varies by
+  # packaging, so testing for the script here would just re-guess that path.
+  OVPN_DNS_DROPIN="/etc/systemd/system/openvpn-client@client-env.service.d/dns.conf"
+  if [ -f "$OVPN_DNS_DROPIN" ]; then
+    ok "pushed DNS is wired into systemd-resolved"
+  else
+    bad "the tunnel's pushed DNS is not wired into systemd-resolved — internal"
+    bad "  names will not resolve while connected; re-run server-bootstrap.sh"
+  fi
+
+  if ip link show tun0 >/dev/null 2>&1; then
+    ok "tun0 up ($(ip -4 -brief addr show tun0 | awk '{print $3}')) — currently connected"
+    # A tunnel with no DNS scope is the failure mode that looks perfectly
+    # healthy: routes fine, every internal name fails.
+    if resolvectl status tun0 2>/dev/null | grep -q 'DNS Servers:'; then
+      ok "tun0 has DNS: $(resolvectl status tun0 2>/dev/null | sed -n 's/.*DNS Servers: *//p' | head -n1)"
+    else
+      bad "tun0 has no DNS servers (resolvectl status tun0 shows no scope) —"
+      bad "  internal names will not resolve; reconnect with 'client-vpn down && client-vpn up'"
+    fi
+  else
+    ok "tun0 absent — not connected (normal; 'client-vpn up' to connect)"
+  fi
+
+  # docker0 must not sit in the range the tunnel pushes (172.17.0.0/24), or
+  # the tunnel captures exactly the addresses the bridge hands out.
+  if ip -4 -brief addr show docker0 2>/dev/null | grep -q '172\.17\.0\.'; then
+    bad "docker0 is on 172.17.0.x, which the client VPN's pushed 172.17.0.0/24"
+    bad "  will capture — set a \"bip\" in /etc/docker/daemon.json"
+  else
+    ok "docker0 is clear of the pushed 172.17.0.0/24"
   fi
 else
-  warn "no client-env.ovpn yet — the second environment is not configured (expected if unused)"
+  warn "no client-env.conf yet — the second environment is not configured (expected if unused)"
 fi
 
 # ---------------------------------------------------------------------------

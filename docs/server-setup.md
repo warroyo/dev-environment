@@ -14,7 +14,7 @@ cd ~/dev-environment
 
 Installs zsh (and sets it as your login shell), tmux + tpm, mosh,
 `ripgrep`/`fd`/`bat`/`eza`/`fzf`, Tailscale, Docker, and chezmoi, and writes
-the `claude-tmux.service` systemd unit and gluetun's `docker-compose.yml`.
+the `claude-tmux.service` systemd unit and the OpenVPN client config.
 
 Two warnings are expected on this first run and are not errors:
 
@@ -181,18 +181,34 @@ exists — any lingering process in the unit's cgroup keeps it looking active.
 
 ## 6. Manual: the second OpenVPN environment's config
 
-Drop that environment's `.ovpn` file in as `client-env.ovpn`:
+Drop that environment's `.ovpn` file in as the OpenVPN client config. It
+embeds a private key, so it must be root-owned and not world-readable:
 
 ```sh
-cp /path/to/that-environment.ovpn /opt/claude-env-vpn/config/client-env.ovpn
+sudo install -m 600 -o root -g root \
+  /path/to/that-environment.ovpn /etc/openvpn/client/client-env.conf
 ```
 
-Then either re-run `server-bootstrap.sh` (it detects the file and brings
-gluetun up automatically) or do it directly:
+Re-running `server-bootstrap.sh` also picks it up (and migrates it out of the
+old `/opt/claude-env-vpn/config` location if it's still there).
+
+The tunnel is **not** enabled at boot: that environment's identity is a
+certificate shared with other machines and only one connection can be live at a
+time, so connecting is always deliberate.
 
 ```sh
-cd /opt/claude-env-vpn && docker compose up -d
+client-vpn up      # connect
+client-vpn status  # unit state + tun0 + route count
+client-vpn down    # disconnect, freeing the identity for another machine
 ```
+
+That environment's DNS is applied automatically. It pushes a resolver and a
+search domain, but OpenVPN on Linux only *logs* those — `openvpn-systemd-resolved`
+plus a systemd drop-in (both set up by `server-bootstrap.sh`) is what hands them
+to `systemd-resolved`. The failure mode if that's missing is a tunnel that looks
+completely healthy — routes fine, `dig @<pushed-resolver> <name>` answers — while
+every internal name fails. `client-vpn status` shows the resolver in use, and
+`resolvectl status tun0` reporting `Current Scopes: none` is the tell.
 
 ## 7. Manual: confirm the UDM SE has no port 22 forward to WAN
 
@@ -248,7 +264,8 @@ tmux attach -t claude-main
 
 should show `claude` already running, with no manual steps — systemd's
 `claude-tmux.service` starts it on boot, and `tmux-continuum` restores the
-prior session layout. If a second OpenVPN environment was configured before
-the reboot, `docker compose ps` in `/opt/claude-env-vpn` should show
-`gluetun` and `claude-env-shell` both `Up` (`restart: unless-stopped`
-handles this).
+prior session layout.
+
+The second OpenVPN environment is deliberately *not* restored by a reboot —
+it is on-demand only, because its identity is shared with other machines.
+Bring it back with `client-vpn up` when you need it.
