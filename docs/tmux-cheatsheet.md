@@ -44,15 +44,25 @@ tmux keeps running on the server either way.
 
 Claude Code owns the whole screen, so you can't type shell commands into its
 window. To run something alongside it — `vscode-here`, `git status`, a log
-tail — you need a second **window** or **pane**.
+tail — you need a second **window** or **pane**. These are different things:
+
+- A **window** is a separate full screen. You switch between them; only one is
+  visible at a time. This is usually what you want — Claude's UI gets the full
+  terminal width.
+- A **pane** is a split *within* one window, so you see both at once. Useful
+  for watching a log next to Claude, cramped otherwise.
+
+`prefix + w` lists your windows, which is the quickest way to see what you
+actually have. Don't assume window numbering: this config sets `base-index 1`,
+so the session's first window is **1**, not 0, and `tmux-resurrect` can restore
+extra windows from earlier sessions.
 
 **Windows** (separate full screens, easiest):
 
 | Binding | Does |
 |---|---|
 | `prefix, then c` | Create a new window (a shell) |
-| `prefix, then 0` | Jump to window 0 — where `claude` runs |
-| `prefix, then 1` | Jump to window 1 |
+| `prefix, then <number>` | Jump to that window |
 | `prefix, then n` / `p` | Next / previous window |
 | `prefix, then w` | Pick a window from a list |
 | `prefix, then &` | Close the current window (asks to confirm) |
@@ -93,7 +103,7 @@ it back to full width while you're working in it.
 the command key. See the top of this page.
 
 **"Claude vanished."** Check the window list (`prefix w`) — it's probably in
-another window, not gone. `claude` normally runs in window 0.
+another window, not gone — and not necessarily the window number you expect.
 
 **"tmux says no sessions."** The persistent session is started by
 `claude-tmux.service`. Check it with `systemctl status claude-tmux`, and see
