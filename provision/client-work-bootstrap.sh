@@ -23,32 +23,36 @@ if ! command -v brew >/dev/null 2>&1; then
   exit 1
 fi
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/brew.sh
+source "${SCRIPT_DIR}/lib/brew.sh"
+
 log "Updating Homebrew"
 brew update
 
 # Same general-layer CLI tooling as every other machine — this laptop is
 # excluded from the Claude Code layer, not from the terminal/editor defaults.
-FORMULAE=(mosh chezmoi ripgrep fd bat eza fzf
-          starship zsh-autosuggestions zsh-syntax-highlighting)
-CASKS=(ghostty visual-studio-code font-meslo-lg-nerd-font)
+# Deliberately NO tailscale here (constraint #2).
+log "Installing CLI tools"
+ensure_formula mosh                    mosh
+ensure_formula chezmoi                 chezmoi
+ensure_formula ripgrep                 rg
+ensure_formula fd                      fd
+ensure_formula bat                     bat
+ensure_formula eza                     eza
+ensure_formula fzf                     fzf
+ensure_formula starship                starship
+ensure_formula zsh-autosuggestions
+ensure_formula zsh-syntax-highlighting
 
-for f in "${FORMULAE[@]}"; do
-  if brew list --formula "$f" >/dev/null 2>&1; then
-    log "$f already installed"
-  else
-    log "Installing $f"
-    brew install "$f"
-  fi
-done
-
-for c in "${CASKS[@]}"; do
-  if brew list --cask "$c" >/dev/null 2>&1; then
-    log "$c already installed"
-  else
-    log "Installing $c"
-    brew install --cask "$c"
-  fi
-done
+# ensure_cask skips apps already installed outside brew. A work laptop very
+# likely has VS Code installed by IT or by hand, and `brew install --cask`
+# aborts on an existing app — which under `set -e` would kill this script
+# before it ever reaches chezmoi.
+log "Installing apps"
+ensure_cask ghostty              "Ghostty.app"
+ensure_cask visual-studio-code   "Visual Studio Code.app"
+ensure_cask font-meslo-lg-nerd-font
 
 # The "never auto-install the Claude Code IDE extension" guard is NOT patched
 # in here. chezmoi symlinks the real settings.json at
@@ -59,7 +63,6 @@ done
 # file itself, and the shell config exports CLAUDE_CODE_IDE_SKIP_AUTO_INSTALL=1
 # for the "work" role.
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 # shellcheck source=lib/chezmoi-apply.sh
 source "${SCRIPT_DIR}/lib/chezmoi-apply.sh"

@@ -16,6 +16,31 @@ Installs Tailscale, Ghostty, Mosh, chezmoi, and VS Code + the Remote-SSH
 extension via Homebrew, and ends by applying the dotfiles
 (`chezmoi init --apply`).
 
+### If you already had apps installed
+
+The script skips anything already present — VS Code dragged into
+`/Applications`, an existing Tailscale app, whatever. It does **not** try to
+install a second copy, and it won't abort when it finds one. If you'd rather
+Homebrew manage an app you installed by hand:
+
+```sh
+brew install --cask --adopt visual-studio-code
+```
+
+**Tailscale specifically:** the GUI app and the `tailscale` Homebrew *formula*
+each ship their own daemon, and running both means two `tailscaled` instances
+competing for the same tunnel. The script installs the formula only when no
+Tailscale app exists. If you ended up with both, remove the formula and keep
+the app:
+
+```sh
+sudo brew services stop tailscale
+brew uninstall tailscale
+```
+
+The app bundles the CLI but doesn't put it on `PATH`, so the shell config
+aliases `tailscale` to it — that's why `tailscale status` works below.
+
 ## 2. Manual: sign into Tailscale
 
 ```sh

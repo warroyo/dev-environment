@@ -14,3 +14,11 @@ unset _brew
 
 # Go, when installed.
 [[ -d "$HOME/go/bin" ]] && path=("$HOME/go/bin" $path)
+
+# macOS: the Tailscale GUI app bundles the `tailscale` CLI but doesn't put it
+# on PATH, so `tailscale status` is "command not found" even with the app
+# running. The Homebrew formula would provide it, but installing that alongside
+# the app gives you two competing daemons — so point at the app's copy instead.
+if [[ -x "/Applications/Tailscale.app/Contents/MacOS/Tailscale" ]]; then
+  alias tailscale="/Applications/Tailscale.app/Contents/MacOS/Tailscale"
+fi

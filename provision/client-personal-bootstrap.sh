@@ -10,38 +10,53 @@ if ! command -v brew >/dev/null 2>&1; then
   exit 1
 fi
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/brew.sh
+source "${SCRIPT_DIR}/lib/brew.sh"
+
 log "Updating Homebrew"
 brew update
 
-# The ripgrep/fd/bat/eza/fzf set is the general layer's CLI tooling — the
-# same tools server-bootstrap.sh installs, so the aliases in dot_zshrc.tmpl
-# work identically on every machine.
-FORMULAE=(tailscale mosh chezmoi ripgrep fd bat eza fzf
-          starship zsh-autosuggestions zsh-syntax-highlighting)
-# The Nerd Font is installed on the CLIENTS, not the server: the Mac's
-# terminal is what renders glyphs, the headless server draws nothing.
-CASKS=(ghostty visual-studio-code font-meslo-lg-nerd-font)
+# The ripgrep/fd/bat/eza/fzf set is the general layer's CLI tooling — the same
+# tools server-bootstrap.sh installs, so the aliases work identically
+# everywhere. Second argument is a binary that proves the tool is already
+# present some other way.
+log "Installing CLI tools"
+ensure_formula mosh                    mosh
+ensure_formula chezmoi                 chezmoi
+ensure_formula ripgrep                 rg
+ensure_formula fd                      fd
+ensure_formula bat                     bat
+ensure_formula eza                     eza
+ensure_formula fzf                     fzf
+ensure_formula starship                starship
+ensure_formula zsh-autosuggestions
+ensure_formula zsh-syntax-highlighting
 
-for f in "${FORMULAE[@]}"; do
-  if brew list --formula "$f" >/dev/null 2>&1; then
-    log "$f already installed"
-  else
-    log "Installing $f"
-    brew install "$f"
-  fi
-done
+# Tailscale on macOS: the GUI app (App Store or direct download) and the
+# `tailscale` Homebrew FORMULA are two separate things that each ship their own
+# daemon. Installing the formula alongside an existing app gives you two
+# tailscaled instances fighting over the same tunnel. If the app is present,
+# leave it alone — it is the normal way to run Tailscale on a Mac, and it
+# provides the CLI too (see 40_path.sh, which puts it on PATH).
+log "Tailscale"
+if [ -d "/Applications/Tailscale.app" ] || [ -d "$HOME/Applications/Tailscale.app" ]; then
+  echo "  Tailscale.app already installed — not installing the brew formula"
+  echo "  (the app ships its own daemon; running both would conflict)"
+elif brew list --formula tailscale >/dev/null 2>&1; then
+  echo "  tailscale formula already installed"
+  sudo brew services start tailscale >/dev/null 2>&1 || true
+else
+  echo "  installing the Tailscale app"
+  ensure_cask tailscale-app "Tailscale.app"
+fi
 
-for c in "${CASKS[@]}"; do
-  if brew list --cask "$c" >/dev/null 2>&1; then
-    log "$c already installed"
-  else
-    log "Installing $c"
-    brew install --cask "$c"
-  fi
-done
-
-log "Enabling the Tailscale background service (interactive login is a separate manual step — see docs/client-personal-setup.md)"
-sudo brew services start tailscale >/dev/null 2>&1 || true
+# The Nerd Font is installed on the CLIENTS, not the server: the Mac's terminal
+# renders the glyphs, the headless server draws nothing.
+log "Installing apps"
+ensure_cask ghostty              "Ghostty.app"
+ensure_cask visual-studio-code   "Visual Studio Code.app"
+ensure_cask font-meslo-lg-nerd-font
 
 if command -v code >/dev/null 2>&1; then
   log "Installing VS Code Remote-SSH extension"
@@ -50,7 +65,6 @@ else
   log "WARNING: 'code' CLI not on PATH yet. In VS Code, run 'Shell Command: Install code command in PATH' from the command palette, then re-run this script."
 fi
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 # shellcheck source=lib/chezmoi-apply.sh
 source "${SCRIPT_DIR}/lib/chezmoi-apply.sh"
