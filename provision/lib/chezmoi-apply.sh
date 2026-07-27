@@ -97,6 +97,28 @@ apply_dotfiles() {
   seed_gitconfig_local
   seed_ssh_config_local
   write_chezmoi_config "$role" "$repo_root"
+
+  # The VS Code settings are force-applied first, on their own. Machines
+  # provisioned before the settings file switched from being symlinked to being
+  # copied have VS Code's own writes sitting in chezmoi's target, so a plain
+  # apply stops and asks:
+  #
+  #   .config/vscode/settings.json has changed since chezmoi last wrote it?
+  #   > diff/overwrite/all-overwrite/skip/quit
+  #
+  # and a bootstrap script has no answer for that. The recorded drift does not
+  # clear itself either — anything but "overwrite" leaves it exactly as it was,
+  # so the question comes back on every run until someone overwrites. The repo
+  # is the source of truth for editor settings, so overwrite without asking.
+  #
+  # Once run_onchange_after_install-vscode-settings.sh has converted the
+  # symlink into a copy, VS Code stops writing to this file at all and the flag
+  # never has anything to overwrite. Kept as the migration path for the other
+  # machines, and as a guard against the prompt ever blocking a run again.
+  chezmoi apply --force "$HOME/.config/vscode/settings.json"
+
+  # Everything else keeps the default prompt-on-drift behaviour: being asked
+  # about a file something else has edited is the useful case, not this one.
   # sourceDir and role both come from the config written above, so no flags.
   chezmoi apply
   echo "==> Verifying role exclusions"
