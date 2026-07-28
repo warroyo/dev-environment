@@ -119,6 +119,42 @@ $SUDO usermod -aG docker "$USER" || true
 $SUDO systemctl enable --now docker
 
 # ---------------------------------------------------------------------------
+# kubectl. Not from Ubuntu's repos (they don't carry it), and not from the
+# pkgs.k8s.io apt repo either: that repo's URL pins a Kubernetes minor
+# version, so every bump means editing both this script and the sources.list
+# already on the box. The upstream release channel bakes no version in here.
+#
+# Like starship and chezmoi this goes in ~/.local/bin, so it needs no sudo and
+# is already on PATH for both interactive shells and claude-tmux.service.
+#
+# Only installed when missing — re-running this script does NOT upgrade an
+# existing kubectl. To move to current stable, delete the binary and re-run.
+if ! command -v kubectl >/dev/null 2>&1; then
+  log "Installing kubectl"
+  # dpkg's names (amd64/arm64) are the same ones the release channel uses.
+  KUBECTL_ARCH="$(dpkg --print-architecture)"
+  KUBECTL_TMP="$(mktemp -d)"
+  # Checksum-verified: this is a raw binary over plain HTTPS with no package
+  # manager doing signature checking for us.
+  if KUBECTL_VERSION="$(curl -fsSL https://dl.k8s.io/release/stable.txt)" \
+    && curl -fsSL -o "${KUBECTL_TMP}/kubectl" \
+         "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${KUBECTL_ARCH}/kubectl" \
+    && curl -fsSL -o "${KUBECTL_TMP}/kubectl.sha256" \
+         "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${KUBECTL_ARCH}/kubectl.sha256" \
+    && (cd "$KUBECTL_TMP" && echo "$(cat kubectl.sha256)  kubectl" | sha256sum --check --status)
+  then
+    install -m 755 "${KUBECTL_TMP}/kubectl" "$HOME/.local/bin/kubectl"
+    log "kubectl ${KUBECTL_VERSION} installed"
+  else
+    # Not fatal: nothing else in this script depends on kubectl.
+    log "WARNING: kubectl install failed — re-run this script to retry."
+  fi
+  rm -rf "$KUBECTL_TMP"
+else
+  log "kubectl already installed ($(kubectl version --client 2>/dev/null | head -n1))"
+fi
+
+# ---------------------------------------------------------------------------
 log "Installing chezmoi"
 if ! command -v chezmoi >/dev/null 2>&1; then
   sh -c "$(curl -fsLS get.chezmoi.io)" -- -b "$HOME/.local/bin"
