@@ -203,10 +203,11 @@ if [ -f "${LEGACY_GLUETUN_DIR}/docker-compose.yml" ]; then
            "${LEGACY_GLUETUN_DIR}/docker-compose.yml.retired"
 fi
 
-# Move docker0 off 172.17.0.0/16 so the pushed 172.17.0.0/24 cannot capture
-# it. 172.18/19 are chosen because the pushed set (10.0.0.0/10, 10.77/16,
-# 10.88/16, 172.17.0.0/24, 172.21/16, 172.29/16) leaves them free, as do the
-# LAN (10.10.2.0/24) and the wireless net (192.168.1.0/24).
+# Move docker0 off 172.17.0.0/16 so the 172.17.0.0/24 the tunnel pushes cannot
+# capture it: /24 beats /16, so the tunnel would otherwise take exactly the
+# addresses the bridge hands out. 172.18/19 are picked because nothing the
+# tunnel pushes overlaps them, and neither does either local network. Check
+# `ip route` against the live tunnel before changing these.
 DOCKER_DAEMON_JSON="/etc/docker/daemon.json"
 if [ ! -f "$DOCKER_DAEMON_JSON" ]; then
   log "Moving docker0 off the subnet the client VPN pushes"
@@ -249,11 +250,13 @@ fi
 
 # Hand the tunnel's pushed DNS to systemd-resolved.
 #
-# The server pushes `dhcp-option DNS 172.21.0.90` and `DOMAIN-SEARCH set.lab`,
-# but OpenVPN on Linux only logs those — it has no built-in way to apply them.
-# The symptom is a tunnel that looks completely healthy while every internal
-# name fails: `resolvectl status tun0` reports "Current Scopes: none", and a
-# direct `dig @172.21.0.90 <name>` answers correctly the whole time.
+# The server pushes a resolver and a search domain (dhcp-option DNS and
+# DOMAIN-SEARCH), but OpenVPN on Linux only logs those — it has no built-in way
+# to apply them. The symptom is a tunnel that looks completely healthy while
+# every internal name fails: `resolvectl status tun0` reports "Current Scopes:
+# none", while a direct `dig @<pushed-resolver> <name>` answers correctly the
+# whole time. `journalctl -u openvpn-client@client-env | grep PUSH_REPLY` shows
+# what the server actually sent.
 #
 # This is a drop-in rather than extra directives appended to the .conf so that
 # the dropped-in .ovpn stays byte-for-byte what that environment handed us —
@@ -261,8 +264,9 @@ fi
 # silently drop them.
 #
 # systemd-resolved treats a search domain as a routing domain too, so the
-# pushed DOMAIN-SEARCH is what keeps this split: *.set.lab goes to the tunnel's
-# resolver and the rest of the box's DNS is untouched while connected.
+# pushed DOMAIN-SEARCH is what keeps this split: only that environment's own
+# domain resolves through the tunnel, and the rest of the box's DNS is
+# untouched while connected.
 OVPN_DROPIN_DIR="/etc/systemd/system/openvpn-client@client-env.service.d"
 # Probed rather than hardcoded: Debian/Ubuntu's openvpn-systemd-resolved puts
 # this straight in /etc/openvpn, while other packagings use a scripts/ subdir or
