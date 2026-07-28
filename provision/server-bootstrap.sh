@@ -151,87 +151,158 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# gluetun: isolates the second, unrelated OpenVPN environment in its own
-# network namespace so it can never contend with Tailscale for the box's
-# default route (constraint: Tailscale and this OpenVPN client must never
-# share a routing table). claude-env-shell shares gluetun's network stack
-# so Claude Code's traffic for that environment actually goes through the
-# tunnel; it's reached via `docker exec` from the claude-env tmux session,
-# never mixed into the main claude-main session.
+# Second (unrelated) OpenVPN environment — runs directly on the host under
+# systemd.
+#
+# This used to live inside a gluetun container, on the theory that the OpenVPN
+# client had to be kept out of the host routing table so it could never contend
+# with Tailscale for the default route. That does not apply to this particular
+# client-env.ovpn:
+#
+#   - it sets no redirect-gateway, so it never touches the default route;
+#   - Tailscale is a /32 on tailscale0 resolved through its own routing table
+#     (ip rule 5270 -> table 52), and 100.64/10 overlaps none of the pushed
+#     subnets;
+#   - the LAN's 10.10.2.0/24 is more specific than the pushed 10.0.0.0/10, so
+#     the LAN and the default gateway keep winning.
+#
+# The one real collision was the pushed 172.17.0.0/24 against Docker's default
+# bridge (172.17.0.0/16 on docker0): /24 beats /16, so the tunnel would have
+# captured exactly the range docker0 hands out. The daemon.json below moves
+# docker0 out of the way.
+#
+# Running on the host rather than in a namespace reached by `docker exec` also
+# means Claude Code here gets the real home directory, ssh keys, gitconfig and
+# editor instead of a bare node image with none of them.
+#
+# Deliberately NOT enabled at boot: this environment's identity is a
+# certificate shared with other machines and the server accepts only one live
+# connection per identity, so auto-connecting would silently take the session
+# from whoever else is using it. Connect with `client-vpn up`, disconnect with
+# `client-vpn down`.
 # ---------------------------------------------------------------------------
-log "Setting up gluetun for the second (unrelated) OpenVPN environment"
-GLUETUN_DIR="/opt/claude-env-vpn"
-$SUDO mkdir -p "${GLUETUN_DIR}/config"
-$SUDO chown -R "$USER":"$USER" "$GLUETUN_DIR"
+log "Setting up the second (unrelated) OpenVPN environment on the host"
 
-cat >"${GLUETUN_DIR}/docker-compose.yml" <<'EOF'
-# Managed by dev-environment/provision/server-bootstrap.sh — do not edit by hand.
-services:
-  gluetun:
-    # Pinned: an unpinned :latest would silently pick up breaking upstream
-    # changes on the next `compose up`.
-    image: qmcgaw/gluetun:v3.40.0
-    container_name: claude-env-vpn
-    cap_add:
-      - NET_ADMIN
-    devices:
-      - /dev/net/tun:/dev/net/tun
-    environment:
-      - VPN_SERVICE_PROVIDER=custom
-      - VPN_TYPE=openvpn
-      - OPENVPN_CUSTOM_CONFIG=/gluetun/client-env.ovpn
-    volumes:
-      - ./config:/gluetun
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "/gluetun-entrypoint", "healthcheck"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
+# openvpn-systemd-resolved ships update-systemd-resolved, which is what applies
+# the tunnel's pushed DNS. Without it the tunnel comes up fine and internal
+# names still do not resolve — see the drop-in further down.
+$SUDO apt-get install -y --no-install-recommends openvpn openvpn-systemd-resolved
 
-  claude-env-shell:
-    # Full node image, not -slim: Claude Code needs git, which the slim
-    # variant does not ship.
-    image: node:20-bookworm
-    container_name: claude-env-shell
-    network_mode: "service:gluetun"
-    depends_on:
-      gluetun:
-        condition: service_healthy
-    environment:
-      # Global npm installs go to a named volume so Claude Code survives
-      # container recreation (image bump, compose edit) instead of vanishing
-      # into a discarded writable layer.
-      - NPM_CONFIG_PREFIX=/npm-global
-      - PATH=/npm-global/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-    volumes:
-      - claude-env-workspace:/workspace
-      - claude-env-config:/root/.claude
-      - claude-env-npm:/npm-global
-    working_dir: /workspace
-    command: sleep infinity
-    restart: unless-stopped
+OVPN_CONF="/etc/openvpn/client/client-env.conf"
+LEGACY_GLUETUN_DIR="/opt/claude-env-vpn"
 
-volumes:
-  claude-env-workspace:
-  claude-env-config:
-  claude-env-npm:
-EOF
+# Retire the old gluetun stack before starting the host tunnel: both use the
+# same shared certificate, and two live connections is the exact problem this
+# environment already suffers from.
+if [ -f "${LEGACY_GLUETUN_DIR}/docker-compose.yml" ]; then
+  log "Retiring the old gluetun stack"
+  # Volumes are left in place on purpose: `down -v` would discard them, and
+  # they are not this script's to throw away.
+  (cd "$LEGACY_GLUETUN_DIR" && $SUDO docker compose down --remove-orphans) || true
+  $SUDO mv "${LEGACY_GLUETUN_DIR}/docker-compose.yml" \
+           "${LEGACY_GLUETUN_DIR}/docker-compose.yml.retired"
+fi
 
-if [ -f "${GLUETUN_DIR}/config/client-env.ovpn" ]; then
-  (cd "$GLUETUN_DIR" && $SUDO docker compose up -d)
-  if $SUDO docker ps --format '{{.Names}}' | grep -qx claude-env-shell; then
-    if ! $SUDO docker exec claude-env-shell sh -c 'command -v claude' >/dev/null 2>&1; then
-      log "Installing Claude Code CLI inside claude-env-shell"
-      $SUDO docker exec claude-env-shell npm install -g @anthropic-ai/claude-code
-    else
-      log "Claude Code already installed in claude-env-shell"
-    fi
-  fi
+# Move docker0 off 172.17.0.0/16 so the pushed 172.17.0.0/24 cannot capture
+# it. 172.18/19 are chosen because the pushed set (10.0.0.0/10, 10.77/16,
+# 10.88/16, 172.17.0.0/24, 172.21/16, 172.29/16) leaves them free, as do the
+# LAN (10.10.2.0/24) and the wireless net (192.168.1.0/24).
+DOCKER_DAEMON_JSON="/etc/docker/daemon.json"
+if [ ! -f "$DOCKER_DAEMON_JSON" ]; then
+  log "Moving docker0 off the subnet the client VPN pushes"
+  $SUDO mkdir -p /etc/docker
+  $SUDO tee "$DOCKER_DAEMON_JSON" >/dev/null <<'JSON'
+{
+  "bip": "172.19.255.1/24",
+  "default-address-pools": [
+    { "base": "172.18.0.0/16", "size": 24 },
+    { "base": "172.19.0.0/17", "size": 24 }
+  ]
+}
+JSON
+  $SUDO systemctl restart docker
+elif ! grep -q '"bip"' "$DOCKER_DAEMON_JSON" 2>/dev/null; then
+  # Not ours to rewrite — merging blind could silently drop settings.
+  log "WARNING: ${DOCKER_DAEMON_JSON} exists but sets no \"bip\"."
+  log "  docker0 is likely still on 172.17.0.0/16, which the client VPN's"
+  log "  pushed 172.17.0.0/24 will capture, breaking host<->container traffic"
+  log "  on the default bridge. Add a bip outside that range by hand."
+fi
+
+if [ ! -f "$OVPN_CONF" ] && [ -f "${LEGACY_GLUETUN_DIR}/config/client-env.ovpn" ]; then
+  log "Migrating client-env.ovpn out of ${LEGACY_GLUETUN_DIR}/config"
+  $SUDO install -m 600 -o root -g root \
+    "${LEGACY_GLUETUN_DIR}/config/client-env.ovpn" "$OVPN_CONF"
+fi
+
+if [ -f "$OVPN_CONF" ]; then
+  # The file embeds <key>, so it must not be world-readable.
+  $SUDO chown root:root "$OVPN_CONF"
+  $SUDO chmod 600 "$OVPN_CONF"
+  log "OpenVPN client config in place at ${OVPN_CONF}"
+  log "  Connect with 'client-vpn up' — not enabled at boot, shared identity."
 else
-  log "No client-env.ovpn in ${GLUETUN_DIR}/config yet — drop it there, then run:"
-  log "  (cd ${GLUETUN_DIR} && docker compose up -d)"
-  log "See docs/server-setup.md."
+  log "WARNING: no OpenVPN config at ${OVPN_CONF}."
+  log "  Copy that environment's .ovpn there, then re-run this script."
+  log "  See docs/server-setup.md."
+fi
+
+# Hand the tunnel's pushed DNS to systemd-resolved.
+#
+# The server pushes `dhcp-option DNS 172.21.0.90` and `DOMAIN-SEARCH set.lab`,
+# but OpenVPN on Linux only logs those — it has no built-in way to apply them.
+# The symptom is a tunnel that looks completely healthy while every internal
+# name fails: `resolvectl status tun0` reports "Current Scopes: none", and a
+# direct `dig @172.21.0.90 <name>` answers correctly the whole time.
+#
+# This is a drop-in rather than extra directives appended to the .conf so that
+# the dropped-in .ovpn stays byte-for-byte what that environment handed us —
+# re-running this script can't accumulate edits in it, and replacing it can't
+# silently drop them.
+#
+# systemd-resolved treats a search domain as a routing domain too, so the
+# pushed DOMAIN-SEARCH is what keeps this split: *.set.lab goes to the tunnel's
+# resolver and the rest of the box's DNS is untouched while connected.
+OVPN_DROPIN_DIR="/etc/systemd/system/openvpn-client@client-env.service.d"
+# Probed rather than hardcoded: Debian/Ubuntu's openvpn-systemd-resolved puts
+# this straight in /etc/openvpn, while other packagings use a scripts/ subdir or
+# libexec. Guessing wrong here is silent — the drop-in never gets written and
+# the tunnel comes up with no DNS.
+UPDATE_RESOLVED=""
+for _candidate in \
+  /etc/openvpn/update-systemd-resolved \
+  /etc/openvpn/scripts/update-systemd-resolved \
+  /usr/libexec/openvpn/update-systemd-resolved
+do
+  if [ -x "$_candidate" ]; then
+    UPDATE_RESOLVED="$_candidate"
+    break
+  fi
+done
+unset _candidate
+
+if [ -n "$UPDATE_RESOLVED" ]; then
+  log "Wiring the tunnel's pushed DNS into systemd-resolved"
+  $SUDO mkdir -p "$OVPN_DROPIN_DIR"
+  # ExecStart is cleared first because systemd otherwise *appends* to it. The
+  # base command is copied from the packaged openvpn-client@.service; keep it in
+  # step if that unit ever changes.
+  $SUDO tee "${OVPN_DROPIN_DIR}/dns.conf" >/dev/null <<EOF
+# Managed by dev-environment/provision/server-bootstrap.sh — do not edit by hand.
+[Service]
+ExecStart=
+ExecStart=/usr/sbin/openvpn --suppress-timestamps --nobind --config %i.conf \\
+  --script-security 2 \\
+  --up ${UPDATE_RESOLVED} \\
+  --up-restart \\
+  --down ${UPDATE_RESOLVED} \\
+  --down-pre
+EOF
+  $SUDO systemctl daemon-reload
+else
+  log "WARNING: no update-systemd-resolved found, so the tunnel's pushed DNS"
+  log "  will not be applied and internal names will not resolve while"
+  log "  connected. Install openvpn-systemd-resolved and re-run this script."
 fi
 
 # ---------------------------------------------------------------------------

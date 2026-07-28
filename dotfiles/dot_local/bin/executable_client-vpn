@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# Connect/disconnect the second, unrelated OpenVPN environment (server only).
+#
+# Deliberately manual, and deliberately not enabled at boot: that environment's
+# identity is a certificate shared with other machines, and the server accepts
+# only one live connection per identity. Auto-connecting would silently take
+# the session away from whoever else is on it. So bring the tunnel up when you
+# need it and drop it when you're done.
+#
+# The tunnel is a split one — it pushes a handful of private subnets and never
+# touches the default route — so `up` does not reroute this box's normal
+# traffic. See provision/server-bootstrap.sh for why it runs on the host
+# rather than in a container.
+set -euo pipefail
+
+UNIT="openvpn-client@client-env"
+
+usage() {
+  printf 'usage: %s {up|down|status}\n' "${0##*/}" >&2
+  exit 2
+}
+
+# Report the interface, not the unit: openvpn forks early, so the unit reads
+# "active" a second or two before the tunnel is actually usable.
+tun_addr() { ip -4 -brief addr show tun0 2>/dev/null | awk '{print $3}'; }
+tun_up() { ip link show tun0 >/dev/null 2>&1; }
+
+[ $# -eq 1 ] || usage
+
+case "$1" in
+  up)
+    if tun_up; then
+      printf 'client VPN already up (tun0 %s)\n' "$(tun_addr)"
+      exit 0
+    fi
+    sudo systemctl start "$UNIT"
+    for _ in $(seq 1 20); do
+      tun_up && break
+      sleep 0.5
+    done
+    if tun_up; then
+      printf 'client VPN up (tun0 %s)\n' "$(tun_addr)"
+    else
+      printf 'client VPN did not come up. Check:\n  journalctl -u %s -n 50\n' "$UNIT" >&2
+      exit 1
+    fi
+    ;;
+  down)
+    sudo systemctl stop "$UNIT"
+    printf 'client VPN down\n'
+    ;;
+  status)
+    if systemctl is-active --quiet "$UNIT"; then
+      printf 'unit: active\n'
+    else
+      printf 'unit: inactive\n'
+    fi
+    if tun_up; then
+      printf 'tun0: %s\n' "$(tun_addr)"
+      printf 'routes via tun0: %s\n' "$(ip route | grep -c 'dev tun0' || true)"
+      # Worth surfacing: a tunnel with no DNS scope routes fine but fails every
+      # internal name lookup, which reads as "the VPN is broken".
+      dns="$(resolvectl status tun0 2>/dev/null | sed -n 's/.*DNS Servers: *//p' | head -n1)"
+      if [ -n "$dns" ]; then
+        printf 'tun0 DNS: %s' "$dns"
+        dom="$(resolvectl status tun0 2>/dev/null | sed -n 's/.*DNS Domain: *//p' | head -n1)"
+        [ -n "$dom" ] && printf ' (domain %s)' "$dom"
+        printf '\n'
+      else
+        printf 'tun0 DNS: none — internal names will not resolve\n'
+      fi
+    else
+      printf 'tun0: absent\n'
+    fi
+    ;;
+  *)
+    usage
+    ;;
+esac

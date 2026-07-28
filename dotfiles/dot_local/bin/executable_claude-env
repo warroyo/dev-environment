@@ -1,14 +1,44 @@
 #!/usr/bin/env bash
 # Attach to the tmux session dedicated to the second, unrelated OpenVPN
-# environment. That environment's traffic is isolated inside the gluetun
-# container's network namespace (see provision/server-bootstrap.sh) so it
-# never contends with Tailscale for the server's default route; the
-# claude-env-shell container shares gluetun's network stack, and Claude Code
-# runs inside it via `docker exec`.
+# environment. Kept separate from claude-main so that work never mixes into
+# the main session.
+#
+# Claude Code here runs directly on the server, not inside a container: the
+# tunnel this environment needs is a split one that never takes over the host's
+# default route, so there is nothing to isolate it from (see
+# provision/server-bootstrap.sh). That also means this session gets the real
+# home directory, ssh keys, gitconfig and editor.
+#
+# The tunnel is deliberately not brought up here. That environment's identity
+# is a certificate shared with other machines and only one connection can be
+# live at a time, so connecting is always an explicit act — this only warns
+# when it's down.
 set -euo pipefail
 
 HOST="${CLAUDE_SERVER_HOST:-claude-server}"
 SESSION="claude-env"
-CONTAINER="claude-env-shell"
 
-ssh -t "$HOST" "tput reset; tmux new-session -A -s '${SESSION}' 'docker exec -it ${CONTAINER} claude'"
+# Optional starting directory, resolved on the server. tmux's `new-session -A`
+# *attaches* to an existing session, so this only takes effect when the session
+# is actually being created; for a session that is already running, cd once
+# you're in.
+DIR="${1:-}"
+
+# tput reset before attaching: a session that drops mid-tmux can leave
+# terminal modes (mouse tracking, alternate screen) stuck on, which then makes
+# the *next* connection spew raw escape-sequence garbage.
+REMOTE='tput reset'
+
+# Warn rather than connect: bringing the tunnel up implicitly could kick
+# another machine off the shared identity.
+REMOTE="${REMOTE}; if ! ip link show tun0 >/dev/null 2>&1; then"
+REMOTE="${REMOTE} echo; echo '  client VPN is down — run: client-vpn up'; echo; fi"
+
+REMOTE="${REMOTE}; tmux new-session -A -s '${SESSION}'"
+[ -n "$DIR" ] && REMOTE="${REMOTE} -c '${DIR}'"
+# claude-session rather than a bare `claude`, for the same reason claude-main
+# uses it: tmux kills a session when its command exits, so a bare claude means
+# quitting it destroys the session.
+REMOTE="${REMOTE} claude-session"
+
+ssh -t "$HOST" "$REMOTE"
