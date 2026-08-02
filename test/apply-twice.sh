@@ -35,7 +35,7 @@ echo "OK: idempotent"
 # nothing locally, so every role gets them, including the restricted ones that
 # must never have the CLI installed. What a restricted role must NOT get is
 # claude-session, the wrapper that execs claude in the current shell.
-client_files=(.local/bin/claude-attach .local/bin/claude-env .config/shell/source/70_claude.sh)
+client_files=(.local/bin/claude-attach .local/bin/claude-env .local/bin/claude-vscode .config/shell/source/70_claude.sh)
 fail=0
 
 expect_absent() {

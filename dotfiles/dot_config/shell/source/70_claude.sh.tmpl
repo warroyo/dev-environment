@@ -1,9 +1,12 @@
 [[ -o interactive ]] || return
 
-# Shortcuts for reaching the Claude Code session ON THE SERVER. Both targets
-# are SSH clients — they execute nothing locally — so they ship on every
-# machine, including the restricted ones that must never have the CLI
-# installed. See the header of .chezmoiignore.tmpl for where that line is drawn.
+# Shortcuts for reaching the Claude Code session ON THE SERVER. All three
+# targets are SSH clients — they execute nothing claude-related locally — so
+# they ship on every machine, including the restricted ones that must never
+# have the CLI installed. See the header of .chezmoiignore.tmpl for where
+# that line is drawn. claude-vscode also runs the local `code` CLI, which is
+# fine even on restricted clients: VS Code itself is allowed there, only the
+# Claude Code CLI/extension isn't.
 #
 # Which host they SSH to comes from $CLAUDE_SERVER_HOST, default `claude-server`.
 # That Host block is only in the managed ~/.ssh/config on the mesh-VPN roles;
@@ -12,6 +15,7 @@
 
 alias ca='claude-attach'
 alias ce='claude-env'
+alias cv='claude-vscode'
 
 {{ if eq .role "server" -}}
 # Claude Code deliberately downgrades colour output whenever $TMUX is set, as a

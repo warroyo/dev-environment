@@ -70,7 +70,7 @@ if [ -f "$HOME/.ssh/config" ]; then
   [ "$perms" = "600" ] && ok ".ssh/config is 0600" \
     || bad ".ssh/config is 0$perms — OpenSSH rejects group/world-writable configs"
 fi
-for s in claude-attach claude-env; do
+for s in claude-attach claude-env claude-vscode; do
   [ -x "$HOME/.local/bin/$s" ] && ok "$s installed and executable" || bad "$s missing from ~/.local/bin"
 done
 

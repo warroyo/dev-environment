@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# One shortcut for both halves of the workflow: open VS Code Remote-SSH on
+# the Claude Code server, then attach this terminal to the persistent
+# claude-main tmux session (same as claude-attach).
+#
+# The two are independent connections, not a paired one. Claude Code's live
+# IDE integration (inline diffs, selection context) only pairs with a VS Code
+# window when `claude` itself is launched from *that window's* integrated
+# terminal. claude-main was started by claude-tmux.service, not from inside
+# VS Code, so the window this opens is a manual file/diff browser only — it
+# won't light up with live diffs from what happens in the tmux session.
+set -euo pipefail
+
+HOST="${CLAUDE_SERVER_HOST:-claude-server}"
+
+if ! command -v code >/dev/null 2>&1; then
+  echo "claude-vscode: the 'code' CLI isn't on PATH." >&2
+  echo "  In VS Code: Cmd-Shift-P -> 'Shell Command: Install code command in PATH'" >&2
+  exit 1
+fi
+
+# Optional starting folder, resolved on the SERVER, not here — pass an
+# absolute remote path. Left off, VS Code just opens connected to the host
+# with no folder; ~/workspace won't tilde-expand to the right home from this
+# side, since $HOME here is the client's, not the server's.
+if [ -n "${1:-}" ]; then
+  code --remote "ssh-remote+${HOST}" "$1"
+else
+  code --remote "ssh-remote+${HOST}"
+fi
+
+exec claude-attach

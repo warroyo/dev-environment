@@ -17,7 +17,7 @@ run `ssh` locally and `claude` on the server.
 
 | Ships here | Doesn't |
 |---|---|
-| `claude-attach`, `claude-env`, the `ca`/`ce` aliases — SSH clients | `claude-session` — the wrapper that execs `claude` in the current shell (server only) |
+| `claude-attach`, `claude-env`, `claude-vscode`, the `ca`/`ce`/`cv` aliases — SSH clients (`claude-vscode` also runs the local `code` CLI, which is fine here) | `claude-session` — the wrapper that execs `claude` in the current shell (server only) |
 | `70_work_guard.sh` — exports `CLAUDE_CODE_IDE_SKIP_AUTO_INSTALL=1` | the CLI itself, by any install path |
 | | the Claude Code VS Code extension |
 
