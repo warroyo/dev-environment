@@ -37,6 +37,13 @@
   Runs claude in-process, so it only belongs where the CLI exists.
 */}}
 .local/bin/claude-session
+{{/*
+  Dev session log: the shared writer, the /log-session command, and the
+  CLAUDE.md priming note all only make sense where Claude Code itself runs.
+*/}}
+.local/bin/dev-log-entry
+.claude/commands/log-session.md
+.claude/CLAUDE.md
 {{- end }}
 
 {{- if or (eq .role "server") (eq .role "personal") }}

@@ -235,6 +235,36 @@ activation** (this is what changed in 22.10). If that happens, the old
 script detects the new mechanism and configures `ssh.socket` instead. Always
 verify with `sudo ss -tlnp | grep :22` rather than trusting `sshd -T`.
 
+## Dev session log
+
+A standalone, **private** `~/dev-log` git repo (local only, no remote
+configured) collects short, curated notes from Claude Code sessions across
+every project on this machine — decisions, pitfalls, reusable commands,
+follow-ups. It's raw material for later blog posts and skills, not a
+transcript dump. See [`~/dev-log/README.md`](../../dev-log/README.md) for
+the entry format.
+
+Two chezmoi-managed, server-only files handle it, applied by
+`server-bootstrap.sh` like the rest of the dotfiles — nothing manual:
+
+- The shared writer
+  ([`dev-log-entry`](../dotfiles/dot_local/bin/executable_dev-log-entry)),
+  invoked by...
+- ...the on-demand
+  [`/log-session`](../dotfiles/dot_claude/commands/log-session.md) command,
+  the only way entries get written.
+
+A note in the global [`CLAUDE.md`](../dotfiles/dot_claude/CLAUDE.md) primes
+every session to keep a running sense of what's worth keeping and
+proactively suggest `/log-session` at a natural point — priming, not
+automatic writing. An earlier version tried a `Stop`-hook safety net
+instead, but Claude Code's `Stop` event fires once per *turn*, not once per
+session, which doesn't map cleanly onto `claude-main` being an always-on
+tmux session that may never see a true "session end" — it would have fired
+(and had to be debounced) dozens of times a day. `CLAUDE.md` guidance,
+loaded automatically at the start of every session, does the same priming
+job without an event/script to maintain.
+
 ## Verification: automated health check
 
 ```sh
