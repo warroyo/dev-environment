@@ -4,4 +4,14 @@
 {{- else -}}
 [credential]
     helper = cache --timeout=3600
+# github.com/gist.github.com go through `gh` instead of the generic cache
+# helper above, so pushes (e.g. dev-log's auto-push) work off `gh auth
+# login` without re-prompting every hour. Matches what `gh auth setup-git`
+# writes.
+[credential "https://github.com"]
+    helper =
+    helper = !/usr/bin/gh auth git-credential
+[credential "https://gist.github.com"]
+    helper =
+    helper = !/usr/bin/gh auth git-credential
 {{- end }}

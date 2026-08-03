@@ -20,13 +20,18 @@ if ! command -v code >/dev/null 2>&1; then
 fi
 
 # Optional starting folder, resolved on the SERVER, not here — pass an
-# absolute remote path. Left off, VS Code just opens connected to the host
-# with no folder; ~/workspace won't tilde-expand to the right home from this
-# side, since $HOME here is the client's, not the server's.
-if [ -n "${1:-}" ]; then
-  code --remote "ssh-remote+${HOST}" "$1"
-else
-  code --remote "ssh-remote+${HOST}"
+# absolute remote path. ~/workspace won't tilde-expand to the right home from
+# this side, since $HOME here is the client's, not the server's.
+#
+# A folder is required, not just nice-to-have: `code --remote ssh-remote+host`
+# with no path doesn't reliably open a remote window at all — it can silently
+# fall back to a plain local window with no connection and no error. So when
+# no argument is given, ask the server for its own $HOME over ssh first.
+folder="${1:-}"
+if [ -z "$folder" ]; then
+  folder="$(ssh "$HOST" 'echo $HOME')"
 fi
+
+code --remote "ssh-remote+${HOST}" "$folder"
 
 exec claude-attach

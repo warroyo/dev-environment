@@ -2,7 +2,8 @@
 # Shared writer for the dev session log (server only). Both the manual
 # /log-session command and the automatic Stop-hook safety net funnel through
 # this one script, so there is exactly one place that knows the file naming,
-# the append-with-separator rule, and the commit step. See ~/dev-log/README.md.
+# the append-with-separator rule, and the commit/push step. See
+# ~/dev-log/README.md.
 #
 # Usage: dev-log-entry [-p project-slug] <<'EOF'
 #   ## Decision
@@ -61,6 +62,8 @@ fi
 if git -C "$DEV_LOG_DIR" rev-parse --git-dir >/dev/null 2>&1; then
   git -C "$DEV_LOG_DIR" add -- "$target" >/dev/null 2>&1 || true
   git -C "$DEV_LOG_DIR" commit -q -m "log: ${project_slug} $(date +%F)" >/dev/null 2>&1 || true
+  # Best-effort: push shouldn't fail the write (e.g. offline).
+  git -C "$DEV_LOG_DIR" push -q >/dev/null 2>&1 || true
 fi
 
 printf '%s\n' "$target"
