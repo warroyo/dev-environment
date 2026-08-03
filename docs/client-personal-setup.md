@@ -91,3 +91,8 @@ Ghostty + tmux (via `claude-attach`) is the primary surface for actually
 working with Claude Code. VS Code Remote-SSH is for diffs and file
 browsing — open it on demand when you want a GUI diff view or to browse the
 tree, not left running as the main interface.
+
+`claude-vscode` (alias `cv`) does both in one command: opens VS Code
+Remote-SSH to the server, then attaches this terminal to the same
+`claude-main` session `claude-attach` would. See
+[`docs/terminal-and-editor-defaults.md`](terminal-and-editor-defaults.md#claude-vscode).

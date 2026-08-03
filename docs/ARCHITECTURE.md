@@ -8,9 +8,10 @@ This repo has two independent layers:
    restricted work laptop.
 2. **The remote Claude Code layer** — the persistent, always-on Claude Code
    host, and the clients that reach it. The *host* half is the server alone.
-   The *client* half — `claude-attach`, `claude-env`, their aliases — applies
-   everywhere, including the work laptop: those are SSH clients that execute
-   nothing locally, and reaching the server is what a client machine is for.
+   The *client* half — `claude-attach`, `claude-env`, `claude-vscode`, their
+   aliases — applies everywhere, including the work laptop: those are SSH
+   clients that execute nothing Claude-related locally, and reaching the
+   server is what a client machine is for.
 
 A single chezmoi source directory ([`dotfiles/`](../dotfiles)) manages both at
 once: layer 1 is unconditional, layer 2 is excluded by

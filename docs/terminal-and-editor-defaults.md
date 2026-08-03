@@ -188,6 +188,31 @@ Terminals choose which URI schemes they linkify, and many handle only
 correct the OSC8 sequence is. So the command also prints the raw URI and a
 copy-pasteable `code --remote ...` line — use those if clicking does nothing.
 
+## `claude-vscode`
+
+The reverse direction from `vscode-here`: run it **on a client** (Ghostty,
+not SSH'd into anything) and it opens VS Code Remote-SSH on
+`$CLAUDE_SERVER_HOST` directly, then attaches the current terminal to the
+`claude-main` tmux session — one command instead of opening VS Code by hand
+and separately running `claude-attach`. Aliased to `cv`.
+
+```sh
+claude-vscode              # or: cv
+claude-vscode ~/some/dir   # open VS Code to a specific remote folder
+```
+
+The path, if given, is resolved **on the server**, so it needs to be an
+absolute remote path — `~` here would expand to the client's home directory,
+not the server's, since VS Code's CLI runs locally.
+
+**The VS Code window and the tmux session are independent connections, not a
+paired one.** Claude Code's live IDE integration (inline diffs, selection
+context) only pairs with a VS Code window when `claude` is launched from
+*that window's own* integrated terminal. `claude-main` was started by
+`claude-tmux.service`, not from inside VS Code, so the window this opens is a
+manual file/diff browser — same as opening it via `vscode-here` yourself, just
+without needing to already be SSH'd in first.
+
 ## Prompt and shell plugins
 
 The bootstrap scripts set zsh as the login shell. zsh's *built-in* default

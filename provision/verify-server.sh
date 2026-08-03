@@ -16,7 +16,7 @@ section() { printf '\n\033[1m%s\033[0m\n' "$1"; }
 
 # ---------------------------------------------------------------------------
 section "Tooling"
-for c in zsh tmux git docker chezmoi tailscale mosh-server rg fzf eza; do
+for c in zsh tmux git docker kubectl chezmoi tailscale mosh-server rg fzf eza; do
   if command -v "$c" >/dev/null 2>&1; then ok "$c present"; else bad "$c MISSING"; fi
 done
 # Ubuntu ships these under different binary names; server-bootstrap.sh
@@ -70,7 +70,7 @@ if [ -f "$HOME/.ssh/config" ]; then
   [ "$perms" = "600" ] && ok ".ssh/config is 0600" \
     || bad ".ssh/config is 0$perms — OpenSSH rejects group/world-writable configs"
 fi
-for s in claude-attach claude-env; do
+for s in claude-attach claude-env claude-vscode; do
   [ -x "$HOME/.local/bin/$s" ] && ok "$s installed and executable" || bad "$s missing from ~/.local/bin"
 done
 

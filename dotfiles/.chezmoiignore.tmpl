@@ -21,7 +21,10 @@
     claude-attach / claude-env   pure SSH clients. They run `ssh` locally and
                                  `claude` on the SERVER. Ship everywhere — this
                                  is how a restricted client reaches the session.
-    70_claude.sh                 the ca/ce aliases for the above. Same.
+    claude-vscode                same idea: runs the local `code` CLI (VS Code
+                                 itself is fine on restricted clients) plus
+                                 claude-attach. Ships everywhere too.
+    70_claude.sh                 the ca/ce/cv aliases for the above. Same.
     claude-session               runs `claude` in the current shell. Server only
                                  (it is what claude-tmux.service execs).
 

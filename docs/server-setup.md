@@ -13,7 +13,7 @@ cd ~/dev-environment
 ```
 
 Installs zsh (and sets it as your login shell), tmux + tpm, mosh,
-`ripgrep`/`fd`/`bat`/`eza`/`fzf`, Tailscale, Docker, and chezmoi, and writes
+`ripgrep`/`fd`/`bat`/`eza`/`fzf`, Tailscale, Docker, kubectl, and chezmoi, and writes
 the `claude-tmux.service` systemd unit and the OpenVPN client config.
 
 Two warnings are expected on this first run and are not errors:
