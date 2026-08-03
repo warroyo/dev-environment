@@ -237,12 +237,12 @@ verify with `sudo ss -tlnp | grep :22` rather than trusting `sshd -T`.
 
 ## Dev session log
 
-A standalone, **private** `~/dev-log` git repo (local only, no remote
-configured) collects short, curated notes from Claude Code sessions across
-every project on this machine — decisions, pitfalls, reusable commands,
-follow-ups. It's raw material for later blog posts and skills, not a
-transcript dump. See [`~/dev-log/README.md`](../../dev-log/README.md) for
-the entry format.
+A standalone, **private** `~/dev-log` git repo, pushed to a private GitHub
+repo (`warroyo/dev-log`) via the `origin` remote, collects short, curated
+notes from Claude Code sessions across every project on this machine —
+decisions, pitfalls, reusable commands, follow-ups. It's raw material for
+later blog posts and skills, not a transcript dump. See
+[`~/dev-log/README.md`](../../dev-log/README.md) for the entry format.
 
 Two chezmoi-managed, server-only files handle it, applied by
 `server-bootstrap.sh` like the rest of the dotfiles — nothing manual:
@@ -253,6 +253,19 @@ Two chezmoi-managed, server-only files handle it, applied by
 - ...the on-demand
   [`/log-session`](../dotfiles/dot_claude/commands/log-session.md) command,
   the only way entries get written.
+
+Usage: run `/log-session` (optionally with a note, e.g.
+`/log-session remember the flaky DNS workaround`) at a natural stopping
+point, or when Claude proactively suggests it per the `CLAUDE.md` priming
+below. It drafts an entry from the conversation so far, derives the project
+slug from the current repo's directory name, and pipes the entry to
+`dev-log-entry`, which appends it to `entries/YYYY-MM-DD-<slug>.md`,
+commits, and pushes to `origin` — best-effort, so a write never fails just
+because the box is offline. Pushing relies on `gh` being authenticated
+(`gh auth login`); the git credential helper for `github.com`/
+`gist.github.com` is wired to `gh` in
+[`dot_gitconfig.platform.tmpl`](../dotfiles/dot_gitconfig.platform.tmpl) so
+non-interactive pushes work without a stored token.
 
 A note in the global [`CLAUDE.md`](../dotfiles/dot_claude/CLAUDE.md) primes
 every session to keep a running sense of what's worth keeping and
