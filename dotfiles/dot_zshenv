@@ -15,6 +15,11 @@ typeset -U path PATH
 # anything pip/pipx/uv --user drops there.
 [[ -d "$HOME/.local/bin" ]] && path=("$HOME/.local/bin" $path)
 
+# npm's global install prefix (set to this by server-bootstrap.sh, since the
+# default is root-owned). Covers `npm install -g` binaries; npx itself comes
+# from the system-wide Node.js package and needs no PATH entry of its own.
+[[ -d "$HOME/.npm-global/bin" ]] && path=("$HOME/.npm-global/bin" $path)
+
 export PATH
 
 # Editor belongs in this tier: git, cron jobs and remote commands all need it,

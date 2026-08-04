@@ -155,6 +155,35 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# Node.js — provides npm and npx. Needed for npx-based CLIs (e.g. `npx skills
+# add <repo>`, for installing Claude Code skills from a GitHub repo). Via
+# NodeSource's apt repo rather than nvm: this is a single always-on system,
+# not a per-project version matrix, so one system-wide LTS is enough and apt
+# keeps it patched like everything else installed this way (Docker, Tailscale).
+log "Installing Node.js"
+if ! command -v node >/dev/null 2>&1; then
+  curl -fsSL https://deb.nodesource.com/setup_lts.x | $SUDO -E bash -
+  $SUDO apt-get install -y nodejs
+else
+  log "Node.js already installed ($(node --version))"
+fi
+
+# npm's default global prefix is root-owned, so `npm install -g` (and some of
+# npx's own caching) would need sudo. Point it at a per-user prefix instead —
+# this is also why claude-tmux.service's PATH already lists ~/.npm-global/bin
+# (see the systemd unit further down): that entry has had nothing to point at
+# until now.
+if command -v npm >/dev/null 2>&1; then
+  if [ "$(npm config get prefix 2>/dev/null)" != "$HOME/.npm-global" ]; then
+    log "Setting npm's global prefix to ~/.npm-global"
+    npm config set prefix "$HOME/.npm-global"
+  else
+    log "npm global prefix already set to ~/.npm-global"
+  fi
+  mkdir -p "$HOME/.npm-global/bin"
+fi
+
+# ---------------------------------------------------------------------------
 log "Installing chezmoi"
 if ! command -v chezmoi >/dev/null 2>&1; then
   sh -c "$(curl -fsLS get.chezmoi.io)" -- -b "$HOME/.local/bin"

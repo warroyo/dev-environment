@@ -13,8 +13,9 @@ cd ~/dev-environment
 ```
 
 Installs zsh (and sets it as your login shell), tmux + tpm, mosh,
-`ripgrep`/`fd`/`bat`/`eza`/`fzf`, Tailscale, Docker, kubectl, and chezmoi, and writes
-the `claude-tmux.service` systemd unit and the OpenVPN client config.
+`ripgrep`/`fd`/`bat`/`eza`/`fzf`, Tailscale, Docker, kubectl, Node.js, and
+chezmoi, and writes the `claude-tmux.service` systemd unit and the OpenVPN
+client config.
 
 Two warnings are expected on this first run and are not errors:
 
@@ -178,6 +179,22 @@ impossible to escape, and would fight you when you quit on purpose.
 Note that `systemctl is-active claude-tmux` is **not** proof the session
 exists — any lingering process in the unit's cgroup keeps it looking active.
 `verify-server.sh` checks `tmux has-session`, which is the real signal.
+
+### Node.js / npx-based CLIs
+
+The script installs Node.js (via NodeSource's apt repo — a system-wide LTS,
+not nvm, since this is a single always-on box) and points npm's global
+prefix at `~/.npm-global` so `npm install -g` needs no sudo. Both
+`~/.local/bin` and `~/.npm-global/bin` are on `PATH` for every shell,
+scripted or interactive (`dot_zshenv`), and the `claude-tmux.service` unit.
+
+This is what makes `npx`-based install CLIs usable directly in the
+`claude-main` session, e.g. [`skills`](https://www.npmjs.com/package/skills)
+for pulling a Claude Code skill from a GitHub repo:
+
+```sh
+npx skills add <owner>/<repo>
+```
 
 ## 6. Manual: the second OpenVPN environment's config
 
