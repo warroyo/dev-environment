@@ -26,10 +26,11 @@ fi
 # A folder is required, not just nice-to-have: `code --remote ssh-remote+host`
 # with no path doesn't reliably open a remote window at all — it can silently
 # fall back to a plain local window with no connection and no error. So when
-# no argument is given, ask the server for its own $HOME over ssh first.
+# no argument is given, default to $HOME/workspace on the server (resolved
+# over ssh, since $HOME here is the client's, not the server's).
 folder="${1:-}"
 if [ -z "$folder" ]; then
-  folder="$(ssh "$HOST" 'echo $HOME')"
+  folder="$(ssh "$HOST" 'echo $HOME/workspace')"
 fi
 
 code --remote "ssh-remote+${HOST}" "$folder"

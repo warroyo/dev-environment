@@ -206,9 +206,9 @@ absolute remote path — `~` here would expand to the client's home directory,
 not the server's, since VS Code's CLI runs locally.
 
 If no path is given, `claude-vscode` asks the server for its own `$HOME` over
-`ssh` first and opens that. A folder is required for the remote connection to
-actually happen — `code --remote ssh-remote+host` with no path can silently
-open a disconnected local window instead of erroring.
+`ssh` first and opens `$HOME/workspace`. A folder is required for the remote
+connection to actually happen — `code --remote ssh-remote+host` with no path
+can silently open a disconnected local window instead of erroring.
 
 **The VS Code window and the tmux session are independent connections, not a
 paired one.** Claude Code's live IDE integration (inline diffs, selection
