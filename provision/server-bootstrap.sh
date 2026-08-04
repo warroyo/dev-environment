@@ -184,6 +184,23 @@ if command -v npm >/dev/null 2>&1; then
 fi
 
 # ---------------------------------------------------------------------------
+# Terraform — via HashiCorp's apt repo, same pattern as eza's: add the repo
+# once, then let apt track and patch it like everything else installed this
+# way (Docker, Tailscale, Node.js).
+log "Installing Terraform"
+if ! command -v terraform >/dev/null 2>&1; then
+  $SUDO mkdir -p /etc/apt/keyrings
+  wget -qO- https://apt.releases.hashicorp.com/gpg \
+    | $SUDO gpg --dearmor -o /etc/apt/keyrings/hashicorp-archive-keyring.gpg
+  echo "deb [signed-by=/etc/apt/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" \
+    | $SUDO tee /etc/apt/sources.list.d/hashicorp.list >/dev/null
+  $SUDO apt-get update -qq
+  $SUDO apt-get install -y terraform
+else
+  log "Terraform already installed ($(terraform version | head -n1))"
+fi
+
+# ---------------------------------------------------------------------------
 log "Installing chezmoi"
 if ! command -v chezmoi >/dev/null 2>&1; then
   sh -c "$(curl -fsLS get.chezmoi.io)" -- -b "$HOME/.local/bin"

@@ -16,7 +16,7 @@ section() { printf '\n\033[1m%s\033[0m\n' "$1"; }
 
 # ---------------------------------------------------------------------------
 section "Tooling"
-for c in zsh tmux git docker kubectl chezmoi tailscale mosh-server rg fzf eza; do
+for c in zsh tmux git docker kubectl terraform chezmoi tailscale mosh-server rg fzf eza; do
   if command -v "$c" >/dev/null 2>&1; then ok "$c present"; else bad "$c MISSING"; fi
 done
 # Ubuntu ships these under different binary names; server-bootstrap.sh

@@ -13,9 +13,9 @@ cd ~/dev-environment
 ```
 
 Installs zsh (and sets it as your login shell), tmux + tpm, mosh,
-`ripgrep`/`fd`/`bat`/`eza`/`fzf`, Tailscale, Docker, kubectl, Node.js, and
-chezmoi, and writes the `claude-tmux.service` systemd unit and the OpenVPN
-client config.
+`ripgrep`/`fd`/`bat`/`eza`/`fzf`, Tailscale, Docker, kubectl, Node.js,
+Terraform, and chezmoi, and writes the `claude-tmux.service` systemd unit and
+the OpenVPN client config.
 
 Two warnings are expected on this first run and are not errors:
 
@@ -195,6 +195,13 @@ for pulling a Claude Code skill from a GitHub repo:
 ```sh
 npx skills add <owner>/<repo>
 ```
+
+### Terraform
+
+Installed from HashiCorp's apt repo (same pattern as `eza`'s repo add): the
+script adds the repo's signing key and source list once, then apt tracks and
+patches Terraform like everything else installed this way (Docker,
+Tailscale, Node.js).
 
 ## 6. Manual: the second OpenVPN environment's config
 
