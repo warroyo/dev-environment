@@ -119,3 +119,29 @@ here.
 Alternatively, set `export CLAUDE_SERVER_HOST=192.168.1.50` in `~/.zsh.local`
 and skip the SSH entry, or add a local DNS record on the UDM SE so
 `ubuntu-home` resolves over the VPN.
+
+## 6. Browse sites on the server's other VPN (`client-env`), without opening a second connection to it
+
+That environment's identity only allows **one live connection at a time**
+(`docs/server-setup.md`, §6). If this laptop opened its own client for it,
+that would kick whichever connection is already live. Instead, reuse the
+server's connection: open a local SOCKS5 proxy to `claude-server` over SSH and
+point only this laptop's browser at it.
+
+Prerequisite: `client-vpn up` has already been run on the server (e.g. over
+`ca`/`claude-attach`).
+
+```sh
+browser-vpn up      # opens socks5://127.0.0.1:1080 to claude-server
+browser-vpn status
+browser-vpn down    # closes it; does not touch the server's client-vpn tunnel
+```
+
+`CLAUDE_SERVER_HOST` and `BROWSER_VPN_PORT` work the same as elsewhere if you
+need non-default values.
+
+Then in the browser, install FoxyProxy (or similar) and add a SOCKS5 proxy at
+`127.0.0.1:1080` with **"Proxy DNS via SOCKS5" enabled** — without it, hostname
+lookups happen locally instead of on the server and internal names won't
+resolve. Scope it to a URL pattern matching that VPN's domain(s) so only that
+traffic is proxied; everything else browses normally, unaffected.

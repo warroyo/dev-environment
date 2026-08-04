@@ -234,6 +234,11 @@ completely healthy — routes fine, `dig @<pushed-resolver> <name>` answers — 
 every internal name fails. `client-vpn status` shows the resolver in use, and
 `resolvectl status tun0` reporting `Current Scopes: none` is the tell.
 
+To reach this network from a second device without opening a second
+connection to it (that identity only allows one live connection at a time),
+see `browser-vpn` in `docs/client-work-setup.md` §6 — a local SOCKS5 proxy
+over SSH that reuses this connection instead of duplicating it.
+
 ## 7. Manual: confirm the UDM SE has no port 22 forward to WAN
 
 In the UDM SE web UI, under port forwarding rules, confirm there is **no**
