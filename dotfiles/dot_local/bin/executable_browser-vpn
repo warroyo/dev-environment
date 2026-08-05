@@ -20,7 +20,7 @@ case "$1" in
     fi
     ssh -f -N -M -S "$CTRL" -D "127.0.0.1:${PORT}" "$HOST"
     printf 'browser VPN proxy up on socks5://127.0.0.1:%s\n' "$PORT"
-    printf 'point FoxyProxy at it (enable "Proxy DNS via SOCKS5")\n'
+    printf 'point Zero Omega at it (enable "Proxy DNS via SOCKS5")\n'
     ;;
   down)
     if ssh -S "$CTRL" -O exit "$HOST" 2>/dev/null; then

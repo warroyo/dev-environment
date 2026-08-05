@@ -140,7 +140,7 @@ browser-vpn down    # closes it; does not touch the server's client-vpn tunnel
 `CLAUDE_SERVER_HOST` and `BROWSER_VPN_PORT` work the same as elsewhere if you
 need non-default values.
 
-Then in the browser, install FoxyProxy (or similar) and add a SOCKS5 proxy at
+Then in the browser, install Zero Omega Proxy Switcher (or similar) and add a SOCKS5 proxy at
 `127.0.0.1:1080` with **"Proxy DNS via SOCKS5" enabled** — without it, hostname
 lookups happen locally instead of on the server and internal names won't
 resolve. Scope it to a URL pattern matching that VPN's domain(s) so only that
