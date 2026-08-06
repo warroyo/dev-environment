@@ -1,30 +1,38 @@
 #!/usr/bin/env bash
-# Shared writer for the dev session log (server only). Both the manual
-# /log-session command and the automatic Stop-hook safety net funnel through
-# this one script, so there is exactly one place that knows the file naming,
-# the append-with-separator rule, and the commit/push step. See
-# ~/dev-log/README.md.
+# Shared writer for the dev session log (server only). The /log-session
+# command funnels through this one script, so there is exactly one place that
+# knows the file naming, the append-with-separator rule, and the commit/push
+# step. See ~/dev-log/README.md.
 #
-# Usage: dev-log-entry [-p project-slug] <<'EOF'
+# Usage: dev-log-entry [-p project-slug] [-s session-id] <<'EOF'
 #   ## Decision
 #   ...
 # EOF
 #
 # The entry body is read from stdin verbatim (already-formatted markdown —
 # this script does no templating of its own) and written to
-# ~/dev-log/entries/YYYY-MM-DD-<project-slug>.md, creating the file or
-# appending with a `---` separator as needed. Prints the path it wrote to.
+# ~/dev-log/entries/YYYY-MM-DD-<project-slug>-<session>.md, creating the file
+# or appending with a `---` separator as needed. Prints the path it wrote to.
+#
+# The session component keeps entries from *different* Claude Code sessions in
+# separate files even on the same day for the same project, while repeated
+# /log-session calls within one session keep appending to that session's file.
+# It comes from -s, else $CLAUDE_CODE_SESSION_ID (set by Claude Code in every
+# session's environment); with neither, the file falls back to the old
+# date+project name.
 set -euo pipefail
 
 DEV_LOG_DIR="${DEV_LOG_DIR:-$HOME/dev-log}"
 ENTRIES_DIR="$DEV_LOG_DIR/entries"
 
 project_slug=""
-while getopts "p:" opt; do
+session_id="${CLAUDE_CODE_SESSION_ID:-}"
+while getopts "p:s:" opt; do
   case "$opt" in
     p) project_slug="$OPTARG" ;;
+    s) session_id="$OPTARG" ;;
     *)
-      printf 'usage: %s [-p project-slug] < entry.md\n' "${0##*/}" >&2
+      printf 'usage: %s [-p project-slug] [-s session-id] < entry.md\n' "${0##*/}" >&2
       exit 2
       ;;
   esac
@@ -43,15 +51,23 @@ if [ -z "$project_slug" ]; then
 fi
 
 body="$(cat)"
-# Nothing to write is not an error — callers (especially the Stop hook's
-# judgment call) may legitimately decide there's nothing worth logging.
+# Nothing to write is not an error — a caller may legitimately decide there's
+# nothing worth logging.
 if [ -z "${body//[[:space:]]/}" ]; then
   echo "dev-log-entry: empty entry body, nothing written" >&2
   exit 0
 fi
 
+# A short prefix of the session UUID is enough to keep same-day sessions apart
+# and keeps the filename readable.
+session_suffix=""
+if [ -n "$session_id" ]; then
+  clean_session="$(printf '%s' "$session_id" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-' | sed -E 's/-+/-/g; s/^-|-$//g')"
+  [ -n "$clean_session" ] && session_suffix="-${clean_session:0:8}"
+fi
+
 mkdir -p "$ENTRIES_DIR"
-target="$ENTRIES_DIR/$(date +%F)-${project_slug}.md"
+target="$ENTRIES_DIR/$(date +%F)-${project_slug}${session_suffix}.md"
 
 if [ -s "$target" ]; then
   { printf '\n---\n\n'; printf '%s\n' "$body"; } >> "$target"

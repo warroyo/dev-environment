@@ -4,8 +4,7 @@ argument-hint: [note to include]
 ---
 
 Write a dev session log entry for the current project to the standalone
-`~/dev-log` repo, right now — don't wait for the automatic Stop-hook safety
-net (see `~/dev-log/README.md` for how the two relate).
+`~/dev-log` repo, right now (see `~/dev-log/README.md` for the format).
 
 1. Determine the project slug: the current git repo's top-level directory
    name (`basename "$(git rev-parse --show-toplevel)"`), lowercased and
@@ -22,13 +21,16 @@ net (see `~/dev-log/README.md` for how the two relate).
    Skip routine tool calls (Read/Grep/Glob-equivalent reconnaissance) —
    capture decisions, pitfalls, outcomes, and reusable commands only. This
    should read well months from now, not like a transcript.
-3. Pipe that markdown body to the shared writer, which handles creating
-   today's file or appending to it with a `---` separator:
+3. Pipe that markdown body to the shared writer, which handles creating this
+   session's file or appending to it with a `---` separator:
    ```
    dev-log-entry -p <slug> <<'EOF'
    ...
    EOF
    ```
+   Each Claude Code session gets its own file — the writer reads
+   `$CLAUDE_CODE_SESSION_ID` from the environment itself, so don't pass `-s`
+   and don't try to look the session id up.
 4. Tell the user what was written and where (the writer prints the path).
 
 If there is genuinely nothing worth logging yet this session, say so plainly
