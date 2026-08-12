@@ -599,6 +599,28 @@ done
 # Docker sets the FORWARD policy to DROP, so the return direction needs saying
 # out loud even though conntrack knows the flow.
 iptables -A "$CHAIN" -i tun0 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+
+# Clamp the TCP MSS on anything entering the tunnel.
+#
+# tun0's MTU is 1500 — the same as the physical link — so a full-size segment
+# plus OpenVPN's encapsulation exceeds the real path MTU. The server's own
+# traffic survives on OpenVPN's mssfix, but forwarded traffic should not depend
+# on a setting in a config file this script does not own. Without clamping the
+# failure is nasty to diagnose: ping works, DNS works, small requests work, and
+# large transfers or HTTPS pages hang forever.
+#
+# --set-mss, NOT --clamp-mss-to-pmtu: clamping derives the value from the
+# outgoing route's MTU, which here is tun0's 1500, giving MSS 1460 — precisely
+# the value that blackholes. 1350 leaves comfortable room for OpenVPN's header,
+# packet id and AEAD tag on top of the outer IP/UDP headers.
+#
+# mangle, not filter: the TCPMSS target is only valid in the mangle table, so
+# this one rule cannot live in the chain above. It is guarded rather than
+# flushed, like the MASQUERADE.
+iptables -t mangle -C FORWARD -o tun0 -p tcp --tcp-flags SYN,RST SYN \
+  -j TCPMSS --set-mss 1350 2>/dev/null \
+  || iptables -t mangle -A FORWARD -o tun0 -p tcp --tcp-flags SYN,RST SYN \
+       -j TCPMSS --set-mss 1350
 LABRULES
 $SUDO chmod 755 "$LAB_RULES_BIN"
 

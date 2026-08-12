@@ -416,6 +416,16 @@ if [ -n "$LAB_SUDO" ]; then
     bad "no return rule — replies from the lab are dropped;"
     bad "  systemctl restart lab-routing.service"
   fi
+
+  # Without this, ping and DNS work while large transfers hang — the failure
+  # that looks like anything except an MTU problem.
+  if $LAB_SUDO iptables -t mangle -C FORWARD -o tun0 -p tcp \
+       --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 1350 2>/dev/null; then
+    ok "TCP MSS clamped on traffic entering tun0"
+  else
+    bad "no MSS clamp for tun0 — tun0's MTU is 1500, so forwarded TCP will"
+    bad "  blackhole on large segments; systemctl restart lab-routing.service"
+  fi
 else
   warn "skipped the firewall checks — no usable sudo. Check by hand with:"
   warn "  sudo iptables -t nat -S POSTROUTING | grep tun0"

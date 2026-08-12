@@ -238,8 +238,17 @@ Other devices reach this network **through** the server rather than opening
 their own connection (that identity only allows one live connection at a
 time). `server-bootstrap.sh` sets that up: IP forwarding via
 `/etc/sysctl.d/99-lab-routing.conf`, plus `lab-routing.service`, a oneshot that
-runs `/usr/local/sbin/lab-routing-rules` to install a MASQUERADE on `tun0` and
-`FORWARD` rules for `10.47.0.0/16` and the lab resolver `172.21.0.90`.
+runs `/usr/local/sbin/lab-routing-rules` to install a MASQUERADE on `tun0`,
+`FORWARD` rules for `10.47.0.0/16` and the lab resolver `172.21.0.90`, and a
+TCP MSS clamp on traffic entering the tunnel.
+
+The MSS clamp is not optional decoration. `tun0`'s MTU is 1500 — the same as
+the physical link — so a full-size segment plus OpenVPN's encapsulation exceeds
+the real path MTU. Unclamped, the failure looks like anything but MTU: ping
+works, DNS works, small requests work, and large transfers or HTTPS pages hang
+forever. It uses `--set-mss 1350` rather than `--clamp-mss-to-pmtu`, because
+clamping derives the value from the outgoing route's MTU — `tun0`'s 1500 —
+which yields MSS 1460, exactly the value that blackholes.
 
 Nothing is added to this box's routing table: both prefixes already sit inside
 routes the tunnel installs. Only forwarding and NAT were missing.
