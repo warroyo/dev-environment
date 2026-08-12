@@ -13,9 +13,9 @@ cd ~/dev-environment
 ```
 
 Installs zsh (and sets it as your login shell), tmux + tpm, mosh,
-`ripgrep`/`fd`/`bat`/`eza`/`fzf`, Tailscale, Docker, kubectl, Node.js,
-Terraform, and chezmoi, and writes the `claude-tmux.service` systemd unit and
-the OpenVPN client config.
+`ripgrep`/`fd`/`bat`/`eza`/`fzf`, Tailscale, Docker, kubectl + krew +
+`kubectx`/`kubens`, Node.js, Terraform, and chezmoi, and writes the
+`claude-tmux.service` systemd unit and the OpenVPN client config.
 
 Two warnings are expected on this first run and are not errors:
 
@@ -234,10 +234,37 @@ completely healthy — routes fine, `dig @<pushed-resolver> <name>` answers — 
 every internal name fails. `client-vpn status` shows the resolver in use, and
 `resolvectl status tun0` reporting `Current Scopes: none` is the tell.
 
-To reach this network from a second device without opening a second
-connection to it (that identity only allows one live connection at a time),
-see `browser-vpn` in `docs/client-work-setup.md` §6 — a local SOCKS5 proxy
-over SSH that reuses this connection instead of duplicating it.
+Other devices reach this network **through** the server rather than opening
+their own connection (that identity only allows one live connection at a
+time). `server-bootstrap.sh` sets that up: IP forwarding via
+`/etc/sysctl.d/99-lab-routing.conf`, plus `lab-routing.service`, a oneshot that
+runs `/usr/local/sbin/lab-routing-rules` to install a MASQUERADE on `tun0` and
+`FORWARD` rules for `10.47.0.0/16` and the lab resolver `172.21.0.90`.
+
+Nothing is added to this box's routing table: both prefixes already sit inside
+routes the tunnel installs. Only forwarding and NAT were missing.
+
+**This does not go through `ufw`, on purpose.** ufw is installed here but
+disabled (`ENABLED=no` in `/etc/ufw/ufw.conf`), which is easy to misread —
+`systemctl is-active ufw` still says `active`, because the unit is a oneshot
+that reads that flag and exits. While disabled ufw applies nothing, so
+`before.rules` and `ufw route` rules are written but inert. Enabling it would
+turn on `INPUT DROP` on a box only reachable over SSH/Tailscale/mosh, which is
+a bigger decision than routing one subnet. If you ever do enable ufw, re-run
+`systemctl restart lab-routing.service` afterwards — enabling ufw rebuilds the
+filter table and drops these rules.
+
+`verify-server.sh` checks all of it under "Lab subnet routing", asking the
+kernel with `iptables -C` rather than trusting any config file — that is
+exactly the failure the ufw attempt hid. Run it **as yourself, never under
+`sudo`**: it inspects your shell, PATH and dotfiles, none of which root has,
+and it now refuses to start as root. The checks that need root escalate on
+their own and will ask for a password.
+
+The client side is manual and lives in `docs/client-work-setup.md` §6: static
+routes on the UDM SE pointing at this box, and a `/etc/resolver/set.lab` entry
+on the laptop. The older `browser-vpn` SOCKS5 proxy is documented there too,
+as the fallback for networks where the routed path isn't available.
 
 ## 7. Manual: confirm the UDM SE has no port 22 forward to WAN
 

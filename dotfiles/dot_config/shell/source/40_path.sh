@@ -15,6 +15,13 @@ unset _brew
 # Go, when installed.
 [[ -d "$HOME/go/bin" ]] && path=("$HOME/go/bin" $path)
 
+# krew, the kubectl plugin manager. Plugins land in ~/.krew/bin as
+# `kubectl-<name>` binaries, and kubectl discovers them by scanning PATH — so
+# without this entry `kubectl krew` itself reports "unknown command", and so
+# does every plugin it installed. KREW_ROOT is krew's own override for the
+# install location; honour it if it's set.
+[[ -d "${KREW_ROOT:-$HOME/.krew}/bin" ]] && path=("${KREW_ROOT:-$HOME/.krew}/bin" $path)
+
 # macOS: the Tailscale GUI app bundles the `tailscale` CLI but doesn't put it
 # on PATH, so `tailscale status` is "command not found" even with the app
 # running. The Homebrew formula would provide it, but installing that alongside

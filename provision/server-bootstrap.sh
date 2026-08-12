@@ -155,6 +155,106 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# krew — kubectl's plugin manager. Same shape as the kubectl block above: a raw
+# binary from a GitHub release over plain HTTPS with no package manager
+# checking signatures, so verify the published sha256 before running it.
+#
+# krew installs ITSELF: the downloaded binary's `install krew` subcommand is the
+# documented bootstrap, and it puts everything under ~/.krew (no sudo). Plugins
+# then land in ~/.krew/bin, which 40_path.sh adds to PATH — kubectl finds
+# plugins by scanning PATH, so without that entry even `kubectl krew` is an
+# unknown command.
+#
+# Only installed when missing. To upgrade later: `kubectl krew upgrade krew`.
+if [ ! -x "$HOME/.krew/bin/kubectl-krew" ]; then
+  log "Installing krew"
+  # krew's asset names use Go's arch spelling, which matches dpkg's for both
+  # architectures this box could be (amd64/arm64).
+  KREW_ARCH="$(dpkg --print-architecture)"
+  KREW_TARBALL="krew-linux_${KREW_ARCH}"
+  KREW_TMP="$(mktemp -d)"
+  # latest/download resolves to the newest release, so no version is pinned
+  # here — same reasoning as kubectl's stable.txt channel.
+  KREW_URL="https://github.com/kubernetes-sigs/krew/releases/latest/download"
+  if curl -fsSL -o "${KREW_TMP}/${KREW_TARBALL}.tar.gz" "${KREW_URL}/${KREW_TARBALL}.tar.gz" \
+    && curl -fsSL -o "${KREW_TMP}/${KREW_TARBALL}.tar.gz.sha256" \
+         "${KREW_URL}/${KREW_TARBALL}.tar.gz.sha256" \
+    && (
+         cd "$KREW_TMP" \
+         && echo "$(awk '{print $1}' "${KREW_TARBALL}.tar.gz.sha256")  ${KREW_TARBALL}.tar.gz" \
+            | sha256sum --check --status
+       ) \
+    && tar -xzf "${KREW_TMP}/${KREW_TARBALL}.tar.gz" -C "$KREW_TMP" \
+    && "${KREW_TMP}/${KREW_TARBALL}" install krew
+  then
+    log "krew installed to ~/.krew"
+  else
+    # Not fatal: nothing else in this script depends on krew.
+    log "WARNING: krew install failed — re-run this script to retry."
+  fi
+  rm -rf "$KREW_TMP"
+else
+  log "krew already installed"
+fi
+
+# ---------------------------------------------------------------------------
+# kubectx / kubens — switch clusters and namespaces without editing kubeconfig.
+#
+# NOT the Ubuntu `kubectx` package: that one is universe-only and lags the
+# upstream releases badly. NOT the krew `ctx`/`ns` plugins either — those are
+# the same author's code, but they're only reachable as `kubectl ctx`, and the
+# point of these is the short standalone names.
+#
+# The release assets carry the version in their filename, so unlike krew there
+# is no fixed latest/download URL — resolve the tag from the redirect that
+# /releases/latest issues, then build the asset names from it.
+if ! command -v kubectx >/dev/null 2>&1; then
+  log "Installing kubectx / kubens"
+  # This project's assets use uname's arch spelling (x86_64), not dpkg's.
+  case "$(dpkg --print-architecture)" in
+    amd64) KCTX_ARCH="x86_64" ;;
+    arm64) KCTX_ARCH="arm64" ;;
+    *)     KCTX_ARCH="" ;;
+  esac
+  KCTX_TMP="$(mktemp -d)"
+  KCTX_VERSION="$(curl -fsSLI -o /dev/null -w '%{url_effective}' \
+    https://github.com/ahmetb/kubectx/releases/latest 2>/dev/null | sed 's#.*/tag/##')"
+  if [ -z "$KCTX_ARCH" ]; then
+    log "WARNING: unsupported architecture for kubectx — skipping."
+  elif [ -z "$KCTX_VERSION" ]; then
+    log "WARNING: could not resolve the latest kubectx release — re-run to retry."
+  else
+    KCTX_URL="https://github.com/ahmetb/kubectx/releases/download/${KCTX_VERSION}"
+    # One checksums.txt covers every asset in the release, so fetch it once and
+    # let sha256sum --ignore-missing check just the two files we downloaded.
+    if curl -fsSL -o "${KCTX_TMP}/kubectx.tar.gz" \
+         "${KCTX_URL}/kubectx_${KCTX_VERSION}_linux_${KCTX_ARCH}.tar.gz" \
+      && curl -fsSL -o "${KCTX_TMP}/kubens.tar.gz" \
+           "${KCTX_URL}/kubens_${KCTX_VERSION}_linux_${KCTX_ARCH}.tar.gz" \
+      && curl -fsSL -o "${KCTX_TMP}/checksums.txt" "${KCTX_URL}/checksums.txt" \
+      && (
+           cd "$KCTX_TMP" \
+           && mv kubectx.tar.gz "kubectx_${KCTX_VERSION}_linux_${KCTX_ARCH}.tar.gz" \
+           && mv kubens.tar.gz  "kubens_${KCTX_VERSION}_linux_${KCTX_ARCH}.tar.gz" \
+           && sha256sum --check --status --ignore-missing checksums.txt \
+           && tar -xzf "kubectx_${KCTX_VERSION}_linux_${KCTX_ARCH}.tar.gz" \
+           && tar -xzf "kubens_${KCTX_VERSION}_linux_${KCTX_ARCH}.tar.gz"
+         )
+    then
+      install -m 755 "${KCTX_TMP}/kubectx" "$HOME/.local/bin/kubectx"
+      install -m 755 "${KCTX_TMP}/kubens"  "$HOME/.local/bin/kubens"
+      log "kubectx / kubens ${KCTX_VERSION} installed"
+    else
+      # Not fatal: nothing else in this script depends on them.
+      log "WARNING: kubectx install failed — re-run this script to retry."
+    fi
+  fi
+  rm -rf "$KCTX_TMP"
+else
+  log "kubectx already installed ($(kubectx --version 2>/dev/null || echo 'version unknown'))"
+fi
+
+# ---------------------------------------------------------------------------
 # Node.js — provides npm and npx. Needed for npx-based CLIs (e.g. `npx skills
 # add <repo>`, for installing Claude Code skills from a GitHub repo). Via
 # NodeSource's apt repo rather than nvm: this is a single always-on system,
@@ -392,6 +492,154 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# Route the lab subnet for LAN and Teleport clients.
+#
+# The work laptop used to reach that environment through `browser-vpn` — an
+# `ssh -D` SOCKS5 proxy to this box. Over office wifi that path is SOCKS over
+# SSH over the gateway's WireGuard tunnel: TCP inside TCP, where every
+# handshake and every DNS lookup pays a full round trip. This makes the box a
+# router for the one subnet that is actually needed instead, so the laptop gets
+# a real network path and no proxy at all.
+#
+# Only 10.47.0.0/16 and the lab resolver are forwarded, deliberately. The
+# tunnel also pushes 10.0.0.0/10, which contains this LAN, and 172.17.0.0/24,
+# which is Docker's usual bridge — see docs/ARCHITECTURE.md. Neither is
+# something to hand a laptop that has to keep working on someone else's
+# network.
+#
+# Nothing needs adding to this box's routing table: both prefixes already sit
+# inside routes the tunnel installs itself. What is missing is forwarding and
+# NAT — the lab has no route back to this LAN, let alone to the gateway's
+# Teleport pool, so replies would otherwise never come home.
+#
+# This deliberately does NOT go through ufw. ufw is installed here but
+# DISABLED (ENABLED=no in /etc/ufw/ufw.conf), which is easy to misread: the
+# ufw systemd unit still reports "active" because it is a oneshot that reads
+# that flag and exits. While disabled, ufw applies nothing — not before.rules,
+# not `ufw route` rules — so anything written through it is inert. Enabling it
+# to fix that would turn on INPUT DROP on a box only reachable over
+# SSH/Tailscale/mosh, which is a much larger decision than routing one subnet.
+# So the rules are installed directly instead, by a unit that owns them.
+# ---------------------------------------------------------------------------
+LAB_SUBNET="10.47.0.0/16"
+LAB_DNS="172.21.0.90"
+LAB_RULES_BIN="/usr/local/sbin/lab-routing-rules"
+LAB_UNIT="lab-routing.service"
+
+log "Routing ${LAB_SUBNET} and the lab resolver (${LAB_DNS}) to LAN clients"
+
+# IP forwarding is on at runtime already, but only because dockerd sets it when
+# it starts — nothing configures it. That is a side effect, not a setting, and
+# it disappears the moment Docker does.
+echo 'net.ipv4.ip_forward=1' | $SUDO tee /etc/sysctl.d/99-lab-routing.conf >/dev/null
+$SUDO sysctl -q -w net.ipv4.ip_forward=1
+
+# The rules live in a script rather than inline ExecStart= lines so they can be
+# re-applied by hand after anything that rebuilds the filter table (a Docker
+# restart, or enabling ufw later) with a single `systemctl restart`.
+#
+# Every rule is added through an `-C || -A` guard, so this is safe to run any
+# number of times and will not stack duplicates. That also means it stays
+# correct if ufw is ever enabled and installs an identical MASQUERADE from
+# before.rules: -C matches it and the add is skipped.
+$SUDO tee "$LAB_RULES_BIN" >/dev/null <<'LABRULES'
+#!/bin/sh
+# Managed by dev-environment/provision/server-bootstrap.sh — do not edit by hand.
+#
+# Forwards the lab subnet and the lab resolver between the LAN and the
+# client-env OpenVPN tunnel, and NATs them so the lab can answer.
+set -eu
+
+LAB_SUBNET="10.47.0.0/16"
+LAB_DNS="172.21.0.90"
+
+CHAIN="LAB-ROUTING"
+
+# The forward rules live in a chain of their own, flushed and rebuilt on every
+# run. Rules appended straight to FORWARD cannot be cleaned up safely — a rule
+# whose shape changed between versions no longer matches `-C`, so it is neither
+# recognised nor removed and just accumulates. Owning a chain makes that
+# impossible: whatever was here before is gone before anything is added.
+iptables -N "$CHAIN" 2>/dev/null || true
+iptables -F "$CHAIN"
+iptables -C FORWARD -j "$CHAIN" 2>/dev/null || iptables -I FORWARD 1 -j "$CHAIN"
+
+# Retire rules left in FORWARD by earlier versions of this script, which pinned
+# the LAN side to the default-route interface. Looping because -D removes one
+# match at a time.
+for _if in $(ip -o link show | awk -F': ' '{print $2}' | grep -vE '^(lo|tun0)$'); do
+  for _dest in "$LAB_SUBNET" "$LAB_DNS"; do
+    while iptables -D FORWARD -i "$_if" -o tun0 -d "$_dest" -j ACCEPT 2>/dev/null
+      do :; done
+  done
+  while iptables -D FORWARD -i tun0 -o "$_if" -m conntrack \
+      --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null
+    do :; done
+done
+
+# No source match on purpose: the source is whatever the gateway hands a
+# Teleport client (or whatever a travel router NATs its LAN behind), and that
+# is not knowable from here. Matching only `-o tun0` covers every client
+# without guessing. Inert while the tunnel is down, and a no-op for this box's
+# own traffic, which already leaves with tun0's address.
+iptables -t nat -C POSTROUTING -o tun0 -j MASQUERADE 2>/dev/null \
+  || iptables -t nat -A POSTROUTING -o tun0 -j MASQUERADE
+
+# Scoped by DESTINATION, not by inbound interface. An earlier version pinned
+# these to the default-route interface on the theory that lab clients always
+# arrive from the UDM SE. They do not: this box has LAN legs on two VLANs, and
+# a client on the other one had its requests forwarded out fine while every
+# reply was dropped on the way back — the return rule named the wrong -o. The
+# destination match is the constraint that actually matters, and it holds no
+# matter which leg a client arrives on.
+for _dest in "$LAB_SUBNET" "$LAB_DNS"; do
+  iptables -A "$CHAIN" -o tun0 -d "$_dest" -j ACCEPT
+done
+
+# Docker sets the FORWARD policy to DROP, so the return direction needs saying
+# out loud even though conntrack knows the flow.
+iptables -A "$CHAIN" -i tun0 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+LABRULES
+$SUDO chmod 755 "$LAB_RULES_BIN"
+
+# After docker.service because Docker rebuilds its chains and re-inserts its
+# jumps at the top of FORWARD on start; running after it keeps the ordering
+# predictable on boot.
+$SUDO tee "/etc/systemd/system/${LAB_UNIT}" >/dev/null <<EOF
+# Managed by dev-environment/provision/server-bootstrap.sh — do not edit by hand.
+[Unit]
+Description=Forward the lab subnet to the client-env OpenVPN tunnel
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=${LAB_RULES_BIN}
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+$SUDO systemctl daemon-reload
+$SUDO systemctl enable "$LAB_UNIT" >/dev/null 2>&1 || true
+# restart, not `enable --now`: the unit is Type=oneshot with RemainAfterExit,
+# so it reads as "active" forever after its first run and `--now` would decline
+# to start it again. Rewriting the rules script would then have no effect until
+# the next reboot — which is exactly how a fixed rule set sat on disk unused.
+# Re-running is cheap and safe: the script flushes its own chain first.
+$SUDO systemctl restart "$LAB_UNIT" >/dev/null 2>&1 || true
+if $SUDO systemctl is-active --quiet "$LAB_UNIT"; then
+  log "  ${LAB_UNIT} active — forwarding and NAT in place"
+else
+  log "  WARNING: ${LAB_UNIT} did not start. Check:"
+  log "    journalctl -u ${LAB_UNIT} -n 20"
+fi
+
+log "  Gateway side is manual: static routes for ${LAB_SUBNET} and ${LAB_DNS}"
+log "  pointing at this box, plus split DNS on the client. See"
+log "  docs/client-work-setup.md."
+
 # ---------------------------------------------------------------------------
 # Apply dotfiles, same as the two client bootstrap scripts do. This must come
 # before the tpm plugin install below, since tpm reads the plugin list out of
@@ -493,8 +741,11 @@ User=${USER}
 WorkingDirectory=${CLAUDE_WORKDIR}
 Environment=HOME=${HOME}
 # systemd's default PATH excludes ~/.local/bin and npm's global bin dir, so
-# without this the unit fails with "claude: command not found".
-Environment=PATH=${HOME}/.local/bin:${HOME}/.npm-global/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+# without this the unit fails with "claude: command not found". ~/.krew/bin is
+# here for the same reason it is in 40_path.sh: kubectl discovers plugins by
+# scanning PATH, so without it Claude Code in this session sees no krew plugins
+# (and no `kubectl krew`) even though they are installed.
+Environment=PATH=${HOME}/.local/bin:${HOME}/.krew/bin:${HOME}/.npm-global/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 # -A is attach-or-create: tmux-continuum's restore may have already created
 # claude-main by the time this runs, and plain \`new-session\` would fail with
 # "duplicate session".

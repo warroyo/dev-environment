@@ -51,6 +51,16 @@ ensure_formula starship                starship
 ensure_formula zsh-autosuggestions
 ensure_formula zsh-syntax-highlighting
 
+# Kubernetes tooling — general layer, nothing Claude-related, so it applies here
+# exactly as on the other two machines. The probe argument matters more on this
+# laptop than elsewhere: IT-managed machines often already have a kubectl
+# installed outside Homebrew, and `brew install` would otherwise add a second
+# copy that shadows it.
+log "Installing Kubernetes tools"
+ensure_formula kubernetes-cli          kubectl
+ensure_formula krew
+ensure_formula kubectx                 kubectx
+
 # ensure_cask skips apps already installed outside brew. A work laptop very
 # likely has VS Code installed by IT or by hand, and `brew install --cask`
 # aborts on an existing app — which under `set -e` would kill this script
@@ -76,6 +86,13 @@ source "${SCRIPT_DIR}/lib/chezmoi-apply.sh"
 # the VS Code auto-install guard. No hostname has to match for this to work —
 # and an unset role falls back to "restricted", which resolves identically.
 apply_dotfiles work "$REPO_ROOT"
+
+# Split DNS for the lab's internal zone. This machine is the one that actually
+# needs it: it reaches the lab over Teleport, through the routing the server
+# provides, and without this a browser can only use bare addresses.
+# shellcheck source=lib/lab-dns.sh
+source "${SCRIPT_DIR}/lib/lab-dns.sh"
+install_lab_resolver
 
 # What gets verified here is constraint #1 itself — that no Claude Code CLI or
 # IDE extension is INSTALLED — not the absence of files with "claude" in the

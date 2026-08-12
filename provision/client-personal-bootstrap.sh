@@ -33,6 +33,16 @@ ensure_formula starship                starship
 ensure_formula zsh-autosuggestions
 ensure_formula zsh-syntax-highlighting
 
+# Kubernetes tooling, matching what server-bootstrap.sh installs by hand there
+# (no Homebrew on the server, so those are release tarballs). The `k` alias and
+# krew's PATH entry are in the shared shell config, so they light up as soon as
+# these exist. kubectl's formula is named kubernetes-cli; kubectx's ships both
+# kubectx and kubens.
+log "Installing Kubernetes tools"
+ensure_formula kubernetes-cli          kubectl
+ensure_formula krew
+ensure_formula kubectx                 kubectx
+
 # Tailscale on macOS: the GUI app (App Store or direct download) and the
 # `tailscale` Homebrew FORMULA are two separate things that each ship their own
 # daemon. Installing the formula alongside an existing app gives you two
@@ -69,5 +79,13 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 # shellcheck source=lib/chezmoi-apply.sh
 source "${SCRIPT_DIR}/lib/chezmoi-apply.sh"
 apply_dotfiles personal "$REPO_ROOT"
+
+# Split DNS for the lab's internal zone. Useful here only while this machine is
+# on the home LAN, where the server routes the lab for it — the mesh VPN does
+# not carry those routes. Off the LAN the entry is harmless but dead, which is
+# what the short timeout in the lib is for.
+# shellcheck source=lib/lab-dns.sh
+source "${SCRIPT_DIR}/lib/lab-dns.sh"
+install_lab_resolver
 
 log "Done. See docs/client-personal-setup.md for the remaining manual steps (tailscale up, etc.)."

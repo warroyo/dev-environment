@@ -14,11 +14,35 @@ bad()  { printf '  \033[31mFAIL\033[0m  %s\n' "$1"; FAIL=$((FAIL+1)); }
 warn() { printf '  \033[33mWARN\033[0m  %s\n' "$1"; WARN=$((WARN+1)); }
 section() { printf '\n\033[1m%s\033[0m\n' "$1"; }
 
+# Refuse to run as root. Almost everything here is a question about the
+# invoking USER's environment — their dotfiles, their PATH, their tmux session,
+# their git identity. Under sudo, HOME becomes /root and secure_path drops
+# ~/.local/bin, so the run turns into a wall of failures describing root's
+# missing setup rather than anything actually wrong. The two checks that
+# genuinely need root escalate on their own, further down.
+if [ "$(id -u)" -eq 0 ]; then
+  printf 'Run this as your normal user, not with sudo — it checks YOUR shell,\n' >&2
+  printf 'dotfiles and PATH, and root has none of them. The couple of checks\n' >&2
+  printf 'that need root escalate by themselves.\n' >&2
+  exit 2
+fi
+
 # ---------------------------------------------------------------------------
 section "Tooling"
-for c in zsh tmux git docker kubectl terraform chezmoi tailscale mosh-server rg fzf eza; do
+for c in zsh tmux git docker kubectl terraform chezmoi tailscale mosh-server rg fzf eza kubectx kubens; do
   if command -v "$c" >/dev/null 2>&1; then ok "$c present"; else bad "$c MISSING"; fi
 done
+# krew is not a command of its own — it is a kubectl plugin, so "installed" and
+# "reachable" are two separate questions. This is the first one. The second
+# (does kubectl actually find it on PATH) can only be answered from an
+# interactive shell and lives in the Shell + dotfiles section below: 40_path.sh
+# is sourced from .zshrc, so `kubectl krew version` run from *this* script would
+# report "unknown command" no matter how correct the config is.
+if [ -x "${KREW_ROOT:-$HOME/.krew}/bin/kubectl-krew" ]; then
+  ok "krew present"
+else
+  bad "krew MISSING"
+fi
 # Ubuntu ships these under different binary names; server-bootstrap.sh
 # symlinks them into ~/.local/bin under the names the aliases expect.
 check_renamed() {
@@ -34,6 +58,31 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# Everything that can only be observed from an INTERACTIVE shell is probed here,
+# once, because that probe is by far the most expensive thing this script does.
+#
+# setsid is load-bearing, and redirecting stdin is not enough on its own.
+# `zsh -i` starts zle, and zle opens /dev/tty *directly* — so run from a
+# terminal it grabs the tty and blocks even with all three fds redirected.
+# `timeout` alone cannot rescue it either, because interactive shells ignore
+# SIGTERM. setsid drops the controlling terminal so there is no /dev/tty to
+# open; -k adds a SIGKILL backstop. Without this the substitution yields
+# nothing and every check below reports a failure no matter how well the shell
+# is configured.
+#
+# The shell does not exit on its own even with -c, so `timeout` killing it is
+# the NORMAL outcome — the output has already been flushed by then. Each value
+# is tagged so one hung line can't be mistaken for another's answer.
+INTERACTIVE_PROBE="$(
+  setsid timeout -k 2 10 zsh -i -c '
+    print -r -- "PROMPTLEN=${#PROMPT}"
+    print -r -- "KALIAS=${aliases[k]:-}"
+    print -r -- "KREWPATH=${commands[kubectl-krew]:-}"
+  ' </dev/null 2>/dev/null
+)"
+probe_value() { printf '%s\n' "$INTERACTIVE_PROBE" | sed -n "s/^$1=//p" | tail -n1; }
+
+# ---------------------------------------------------------------------------
 section "Shell + dotfiles"
 [ "$(getent passwd "$USER" | cut -d: -f7)" = "$(command -v zsh)" ] \
   && ok "login shell is zsh" || bad "login shell is not zsh"
@@ -47,6 +96,25 @@ if zsh -c 'case ":$PATH:" in *":$HOME/.local/bin:"*) exit 0;; *) exit 1;; esac' 
 else
   bad "~/.local/bin missing from non-interactive PATH — check ~/.zshenv"
 fi
+# The `k` alias is interactive-only (50_kube.sh is guarded), so it cannot be
+# checked with `zsh -c` — that never reads .zshrc at all and would always
+# report it missing. Hence the interactive probe above.
+case "$(probe_value KALIAS)" in
+  *kubectl*) ok "kubectl is aliased to 'k' in interactive shells" ;;
+  *) bad "'k' is not aliased to kubectl — check ~/.config/shell/source/50_kube.sh" ;;
+esac
+# Same reason this is probed rather than tested directly: 40_path.sh is sourced
+# from .zshrc, so ~/.krew/bin is on the interactive PATH only. kubectl finds
+# plugins by scanning PATH for `kubectl-<name>`, so resolving `kubectl-krew` in
+# the interactive shell is exactly the question — an installed binary that PATH
+# never exposes leaves `kubectl krew` reporting "unknown command".
+if [ -n "$(probe_value KREWPATH)" ]; then
+  ok "kubectl finds krew on the interactive PATH"
+elif [ -x "${KREW_ROOT:-$HOME/.krew}/bin/kubectl-krew" ]; then
+  bad "krew is installed but not on the interactive PATH — check the krew entry"
+  bad "  in ~/.config/shell/source/40_path.sh, then 'chezmoi apply'"
+fi
+
 # Identity must resolve through the include chain, not be blank.
 if [ -n "$(git config user.email 2>/dev/null)" ]; then
   ok "git identity resolves ($(git config user.email))"
@@ -84,17 +152,10 @@ else
   warn "starship not installed — zsh falls back to the plain built-in prompt"
 fi
 # Confirm the prompt is actually wired up, not just that the binary exists.
-# A bare zsh prompt is "%m%# " (6 chars); starship's is far longer.
-#
-# setsid is load-bearing, and redirecting stdin is not enough on its own.
-# `zsh -i` starts zle, and zle opens /dev/tty *directly* — so run from a
-# terminal it grabs the tty and blocks even with all three fds redirected.
-# `timeout` alone cannot rescue it either, because interactive shells ignore
-# SIGTERM. setsid drops the controlling terminal so there is no /dev/tty to
-# open; -k adds a SIGKILL backstop. Without this the substitution yields
-# nothing and the branch below reports a bare prompt no matter how well
-# starship is configured.
-PROMPT_LEN="$(setsid timeout -k 2 10 zsh -i -c 'print -r -- ${#PROMPT}' </dev/null 2>/dev/null | tail -n1)"
+# A bare zsh prompt is "%m%# " (6 chars); starship's is far longer. Measured by
+# the single interactive probe near the top of this script — see the comment
+# there for why that needs setsid.
+PROMPT_LEN="$(probe_value PROMPTLEN)"
 if [ -z "${PROMPT_LEN:-}" ]; then
   bad "could not measure the interactive prompt — 'zsh -i' timed out or failed"
 elif [ "$PROMPT_LEN" -gt 20 ] 2>/dev/null; then
@@ -272,6 +333,108 @@ if [ -f "$OVPN_CONF" ]; then
   fi
 else
   warn "no client-env.conf yet — the second environment is not configured (expected if unused)"
+fi
+
+# ---------------------------------------------------------------------------
+section "Lab subnet routing (LAN/Teleport clients -> tun0)"
+LAB_SUBNET="10.47.0.0/16"
+LAB_DNS="172.21.0.90"
+
+# ip_forward being 1 right now proves nothing on its own: dockerd sets it at
+# start-up, so the box can read as "forwarding" while no config asks for it and
+# a Docker-less boot silently drops it. The config file is the real check.
+if [ "$(cat /proc/sys/net/ipv4/ip_forward 2>/dev/null)" = "1" ]; then
+  if grep -qE '^[[:space:]]*net\.ipv4\.ip_forward=1' /etc/sysctl.d/99-lab-routing.conf 2>/dev/null; then
+    ok "IP forwarding on and set in /etc/sysctl.d/99-lab-routing.conf"
+  else
+    warn "IP forwarding is on at runtime but nothing configures it — that is"
+    warn "  dockerd's side effect, and it does not survive a Docker-less boot;"
+    warn "  re-run server-bootstrap.sh"
+  fi
+else
+  bad "IP forwarding is off — lab traffic cannot be routed through this box"
+fi
+
+# The unit owns the rules, so its state is the first thing to ask about.
+if systemctl is-enabled --quiet lab-routing.service 2>/dev/null; then
+  ok "lab-routing.service enabled (rules reinstalled on boot)"
+else
+  bad "lab-routing.service not enabled — forwarding will not survive a reboot"
+fi
+if systemctl is-active --quiet lab-routing.service 2>/dev/null; then
+  ok "lab-routing.service active"
+else
+  bad "lab-routing.service not active — check: journalctl -u lab-routing.service"
+fi
+
+# Reading the live filter/nat tables is the only root-only thing this script
+# does, so escalation is scoped to exactly here — never the whole script, which
+# would take root's empty environment as evidence of a broken setup.
+# Interactively that means one password prompt; unattended it falls back to
+# `sudo -n` and, failing that, skips rather than fails.
+if [ -t 0 ] && sudo -v 2>/dev/null; then
+  LAB_SUDO="sudo"
+elif sudo -n true 2>/dev/null; then
+  LAB_SUDO="sudo -n"
+else
+  LAB_SUDO=""
+fi
+
+if [ -n "$LAB_SUDO" ]; then
+  # -C asks the kernel whether the exact rule is loaded, which is the only
+  # question that matters. Config files can say anything — that is precisely
+  # how the ufw attempt failed: rules written, ufw disabled, nothing applied.
+  if $LAB_SUDO iptables -t nat -C POSTROUTING -o tun0 -j MASQUERADE 2>/dev/null; then
+    ok "MASQUERADE on tun0 is loaded"
+  else
+    bad "no MASQUERADE on tun0 — the lab has no route back to LAN/Teleport"
+    bad "  clients, so forwarded traffic dies on the return trip"
+  fi
+
+  if $LAB_SUDO iptables -C FORWARD -j LAB-ROUTING 2>/dev/null; then
+    ok "FORWARD jumps to the LAB-ROUTING chain"
+  else
+    bad "FORWARD does not jump to LAB-ROUTING — the rules exist but are never"
+    bad "  reached; systemctl restart lab-routing.service"
+  fi
+
+  # Deliberately not matched on an inbound interface: clients arrive on either
+  # VLAN leg, and pinning these to one silently broke the other.
+  for dest in "$LAB_SUBNET" "$LAB_DNS"; do
+    if $LAB_SUDO iptables -C LAB-ROUTING -o tun0 -d "$dest" -j ACCEPT 2>/dev/null; then
+      ok "forwarding to $dest allowed"
+    else
+      bad "no forward rule for $dest — Docker sets the FORWARD policy to DROP,"
+      bad "  so this is dropped silently; systemctl restart lab-routing.service"
+    fi
+  done
+
+  if $LAB_SUDO iptables -C LAB-ROUTING -i tun0 -m conntrack \
+       --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null; then
+    ok "return path from tun0 allowed"
+  else
+    bad "no return rule — replies from the lab are dropped;"
+    bad "  systemctl restart lab-routing.service"
+  fi
+else
+  warn "skipped the firewall checks — no usable sudo. Check by hand with:"
+  warn "  sudo iptables -t nat -S POSTROUTING | grep tun0"
+  warn "  sudo iptables -S LAB-ROUTING"
+fi
+
+# Only meaningful while the tunnel is up: the prefixes are covered by routes
+# OpenVPN installs itself, so with tun0 down there is nothing to look at.
+if ip link show tun0 >/dev/null 2>&1; then
+  for dest in "10.47.0.224" "$LAB_DNS"; do
+    if ip route get "$dest" 2>/dev/null | grep -q 'dev tun0'; then
+      ok "$dest routes via tun0"
+    else
+      bad "$dest does not route via tun0 — check what the tunnel pushed:"
+      bad "  journalctl -u openvpn-client@client-env | grep PUSH_REPLY"
+    fi
+  done
+else
+  ok "tun0 absent — skipping route checks (normal; 'client-vpn up' to connect)"
 fi
 
 # ---------------------------------------------------------------------------

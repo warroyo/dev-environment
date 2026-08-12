@@ -16,6 +16,13 @@ Installs Tailscale, Ghostty, Mosh, chezmoi, and VS Code + the Remote-SSH
 extension via Homebrew, and ends by applying the dotfiles
 (`chezmoi init --apply`).
 
+It also writes `/etc/resolver/set.lab` so the lab's internal zone — and only
+that zone — resolves through the lab's own DNS server. That needs `sudo`, so
+the run will prompt. It's useful on this machine only while you're on the home
+LAN, where the server routes the lab; the mesh VPN doesn't carry those routes,
+so off the LAN the entry is dead but harmless. Delete the file if you'd rather
+not have it. See [`docs/client-work-setup.md`](client-work-setup.md) §6.
+
 ### If you already had apps installed
 
 The script skips anything already present — VS Code dragged into

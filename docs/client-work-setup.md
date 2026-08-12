@@ -120,16 +120,80 @@ Alternatively, set `export CLAUDE_SERVER_HOST=192.168.1.50` in `~/.zsh.local`
 and skip the SSH entry, or add a local DNS record on the UDM SE so
 `ubuntu-home` resolves over the VPN.
 
-## 6. Browse sites on the server's other VPN (`client-env`), without opening a second connection to it
+## 6. Reach the server's other VPN (`client-env`) as a routed network
 
 That environment's identity only allows **one live connection at a time**
 (`docs/server-setup.md`, §6). If this laptop opened its own client for it,
-that would kick whichever connection is already live. Instead, reuse the
-server's connection: open a local SOCKS5 proxy to `claude-server` over SSH and
-point only this laptop's browser at it.
+that would kick whichever connection is already live. So the server keeps the
+one connection and **routes** `10.47.0.0/16` and the lab resolver
+`172.21.0.90` for LAN clients — including anything arriving over the UDM SE's
+Teleport tunnel. No proxy, no browser extension: the laptop just has a route.
 
-Prerequisite: `client-vpn up` has already been run on the server (e.g. over
-`ca`/`claude-attach`).
+Only those two prefixes are routed. The tunnel also pushes `10.0.0.0/10`,
+which contains the home LAN and quite possibly whatever wifi you're sitting
+on, and `172.17.0.0/24`, which is Docker's usual bridge. Neither belongs in a
+laptop's routing table.
+
+### Prerequisites
+
+1. On the server: `client-vpn up` (e.g. over `ca`/`claude-attach`), and
+   `lab-routing.service` running — `./provision/verify-server.sh` reports the
+   "Lab subnet routing" section clean. Run `server-bootstrap.sh` if it doesn't.
+2. On the UDM SE (Settings → Routing → **Static Routes**), two routes with the
+   server's LAN IP as the next hop: `10.47.0.0/16` and `172.21.0.90/32`.
+3. Whatever carries you home — Teleport on a UniFi travel router, or the
+   split-tunnel OpenVPN profile from §2 — has to actually pass those routes on.
+   Check in this order and stop at the first that works:
+   - the gateway already advertises its static routes to the tunnel — nothing
+     to do;
+   - add the same two static routes on the travel router, pointing into its
+     Teleport interface;
+   - set the travel router's Teleport connection to route all traffic home,
+     which makes the specific routes moot at the cost of sending general
+     browsing over the tunnel.
+
+### Split DNS for `set.lab` — automated
+
+`client-work-bootstrap.sh` installs this; there is nothing to do by hand. It
+writes `/etc/resolver/set.lab` (via `provision/lib/lab-dns.sh`) pointing
+`*.set.lab` at `172.21.0.90`, and flushes the DNS cache. Only that zone is
+affected — everything else keeps using the machine's normal resolver, so
+general DNS never depends on the tunnel being up. That is why `172.21.0.90/32`
+is in the routed set.
+
+The file carries `timeout 3` deliberately. It applies unconditionally, so off
+this network every `*.set.lab` lookup goes to an unreachable resolver; the
+short timeout keeps that a brief pause rather than a multi-second hang.
+
+**Testing gotcha:** `dig` and `nslookup` **ignore** `/etc/resolver` entirely —
+they talk to a nameserver directly. They will report failure while Safari,
+Chrome, `curl` and `ping` all work fine. Use the system resolver instead:
+
+```sh
+dscacheutil -q host -a name <host>.set.lab
+```
+
+If MDM overrides `/etc/resolver`, the fallback is to move the split into the
+network instead: run `dnsmasq` on the server with
+`server=/set.lab/172.21.0.90` bound to its LAN address, and point the travel
+router's DHCP DNS at the server.
+
+### Verify
+
+With Teleport up and **no proxy configured anywhere**:
+
+```sh
+netstat -rn | grep 10.47                 # route present, via the tunnel
+traceroute 10.47.<host>                  # first hop is the tunnel, not the local gw
+dscacheutil -q host -a name <name>.set.lab
+```
+
+### Fallback: the SOCKS proxy
+
+`browser-vpn` still exists for networks where the routed path isn't available
+— someone else's wifi, no travel router. It's slower by construction (SOCKS
+over SSH, and over a VPN it becomes TCP inside TCP), so it's the fallback, not
+the default.
 
 ```sh
 browser-vpn up      # opens socks5://127.0.0.1:1080 to claude-server
@@ -144,4 +208,5 @@ Then in the browser, install Zero Omega Proxy Switcher (or similar) and add a SO
 `127.0.0.1:1080` with **"Proxy DNS via SOCKS5" enabled** — without it, hostname
 lookups happen locally instead of on the server and internal names won't
 resolve. Scope it to a URL pattern matching that VPN's domain(s) so only that
-traffic is proxied; everything else browses normally, unaffected.
+traffic is proxied; everything else browses normally, unaffected. Turn it back
+to "direct" when you go back to the routed path.

@@ -3,9 +3,9 @@
 This repo has two independent layers:
 
 1. **General terminal and editor defaults** — shell config, Ghostty, tmux,
-   general VS Code settings, common CLI tools (`ripgrep`/`fd`/`bat`/`eza`/`fzf`),
-   and everyday aliases/scripts. Applies to **every** machine, including the
-   restricted work laptop.
+   general VS Code settings, common CLI tools (`ripgrep`/`fd`/`bat`/`eza`/`fzf`,
+   plus `kubectl`/krew/`kubectx`), and everyday aliases/scripts. Applies to
+   **every** machine, including the restricted work laptop.
 2. **The remote Claude Code layer** — the persistent, always-on Claude Code
    host, and the clients that reach it. The *host* half is the server alone.
    The *client* half — `claude-attach`, `claude-env`, `claude-vscode`, their
@@ -140,6 +140,34 @@ client-vpn down    # disconnect, freeing the shared identity
 
 `claude-env` warns when the tunnel is down but never brings it up, for the same
 reason.
+
+### The server routes that environment for other machines
+
+Because only one connection to it may exist, the server holds it and forwards
+for everyone else: `10.47.0.0/16` and the lab resolver `172.21.0.90` are routed
+out `tun0`, masqueraded so the lab — which has no route back to this LAN, let
+alone to the gateway's Teleport pool — can answer. The forward rules are scoped
+by destination rather than by inbound interface on purpose: this box has LAN
+legs on two VLANs, and pinning them to one silently broke clients on the other
+(requests forwarded, every reply dropped). The
+work laptop reaches both over the gateway, with a `/etc/resolver/set.lab` entry
+for names. `lab-routing.service` owns the `FORWARD` and NAT rules and
+reinstalls them on boot; `verify-server.sh` checks them against the kernel.
+
+The rules are installed directly rather than through `ufw`, which is present
+but disabled here — see [`docs/server-setup.md`](server-setup.md) §6 for why
+that is not as obvious as `systemctl is-active ufw` makes it look.
+
+Only those two prefixes, deliberately: the pushed `10.0.0.0/10` and
+`172.17.0.0/24` are exactly the collisions described above, and handing them to
+a laptop that has to keep working on other people's networks would move the
+problem rather than solve it.
+
+This replaced an `ssh -D` SOCKS proxy (`browser-vpn`), which is SOCKS over SSH
+over the gateway's WireGuard tunnel — TCP inside TCP, one full round trip per
+handshake and per name lookup. It's kept as a fallback for networks where the
+routed path isn't available; see
+[`docs/client-work-setup.md`](client-work-setup.md).
 
 ## Definition of Done
 
