@@ -44,13 +44,28 @@ fi
 export SSH_AUTH_SOCK="$_agent_link"
 timeout 2 ssh-add -l >/dev/null 2>&1
 if [[ $? -ge 2 ]]; then
-  flock "${_agent_link}.lock" sh -c '
+  # -o is load-bearing, not a nicety. ssh-agent DAEMONIZES: the process that
+  # survives is a grandchild that inherits every open file descriptor,
+  # including the one flock holds the lock on. A lock is only released when the
+  # last fd referring to it closes, so without -o the freshly started agent
+  # pins this lock for its entire lifetime — and since nothing below has a
+  # timeout, every later interactive shell that reaches this branch blocks in
+  # flock FOREVER. The symptom is a new tmux window, VS Code shell or ssh login
+  # that hangs with no prompt until you hit Ctrl-C. -o closes that fd before
+  # exec'ing the command, so the agent never holds it.
+  #
+  # -w 5 is the belt to that suspenders: whatever else ever manages to sit on
+  # this lock, a shell waits five seconds and moves on rather than hanging. The
+  # cost of losing the race is one redundant agent, which is strictly better
+  # than an unusable terminal — the same trade the `timeout 2` on every
+  # ssh-add probe above makes.
+  flock -o -w 5 "${_agent_link}.lock" sh -c '
     timeout 2 ssh-add -l >/dev/null 2>&1
     if [ $? -ge 2 ]; then
       rm -f "$1"
       ssh-agent -a "$1" >/dev/null 2>&1
     fi
-  ' _ "$_agent_link" 2>/dev/null
+  ' _ "$_agent_link" </dev/null >/dev/null 2>&1
 fi
 unset _agent_link
 
