@@ -658,9 +658,95 @@ else
   log "    journalctl -u ${LAB_UNIT} -n 20"
 fi
 
-log "  Gateway side is manual: static routes for ${LAB_SUBNET} and ${LAB_DNS}"
-log "  pointing at this box, plus split DNS on the client. See"
-log "  docs/client-work-setup.md."
+log "  Gateway side is manual: a static route for ${LAB_SUBNET} pointing at"
+log "  this box. See docs/client-work-setup.md."
+
+# ---------------------------------------------------------------------------
+# Split DNS for the lab zone, served on a port nothing intercepts.
+#
+# Clients used to point /etc/resolver/set.lab straight at the lab's own
+# resolver and let this box route the packets. That works only while every
+# device between the laptop and here leaves port 53 alone, and plenty do not:
+# a UniFi gateway, a hotel AP or a captive-portal router will happily DNAT
+# "anything to port 53" to itself no matter which address was addressed.
+#
+# The failure is a nasty one to read, because nothing times out. The
+# interceptor answers — faster than the real resolver could, since it is
+# nearer — with NXDOMAIN and a root-server SOA. Routing looks perfect and
+# traceroute rides the route to the far end, because traceroute never sends
+# anything on port 53. Only DNS is stolen, so the one address used solely for
+# DNS looks unreachable while every other address on the same route works.
+#
+# So this stops putting port 53 on the wire at all. dnsmasq listens here on
+# 5300, forwards only *.set.lab into the tunnel, and clients ask it instead of
+# asking the lab directly. 5300 rather than 5353, which belongs to mDNS.
+#
+# It also retires the 172.21.0.90/32 static route the gateway needed: the lab
+# resolver is now reached only by this box, which already has it via tun0.
+# ---------------------------------------------------------------------------
+LAB_DNS_PORT="5300"
+LAB_ZONE="set.lab"
+DNSMASQ_CONF="/etc/dnsmasq.d/lab-split-dns.conf"
+
+log "Serving split DNS for *.${LAB_ZONE} on port ${LAB_DNS_PORT}"
+
+# Bind every LAN address, for the reason the sshd section below binds them
+# all: this box has legs on two VLANs and a client may arrive on either.
+mapfile -t DNS_LISTEN_IPS < <(
+  ip -o -4 addr show scope global 2>/dev/null \
+    | awk '{split($4,a,"/"); print $2" "a[1]}' \
+    | grep -vE '^(lo|docker|br-|veth|virbr|tailscale|tun|wg)' \
+    | awk '{print $2}' \
+    | grep -E '^(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.)' \
+    | sort -u
+)
+DNS_LISTEN="127.0.0.1"
+for ip in "${DNS_LISTEN_IPS[@]}"; do
+  DNS_LISTEN="${DNS_LISTEN},${ip}"
+done
+
+# The config is written BEFORE the package is installed, deliberately. Ubuntu's
+# dnsmasq starts on install with an empty config, which means port 53 on the
+# wildcard address — and that collides with systemd-resolved's 127.0.0.53:53
+# and fails. Having port=${LAB_DNS_PORT} on disk first means its very first
+# start is the correct one.
+$SUDO mkdir -p /etc/dnsmasq.d
+$SUDO tee "$DNSMASQ_CONF" >/dev/null <<EOF
+# Managed by dev-environment/provision/server-bootstrap.sh — do not edit by hand.
+
+# Not 53: that port is intercepted on networks this laptop has to work from.
+port=${LAB_DNS_PORT}
+
+# bind-dynamic rather than bind-interfaces: these addresses come from DHCP
+# reservations, and bind-interfaces makes a missing one a start-up failure at
+# boot. bind-dynamic picks addresses up as they appear.
+bind-dynamic
+listen-address=${DNS_LISTEN}
+
+# Never serve into the tunnel itself — the lab does not need a resolver from
+# us, and offering one to a third-party network is not a favour.
+except-interface=tun0
+
+# no-resolv plus a single domain-scoped upstream is what keeps this from being
+# an open resolver: ${LAB_ZONE} is forwarded, and there is no upstream for
+# anything else, so every other query is refused rather than recursed.
+no-resolv
+no-hosts
+server=/${LAB_ZONE}/${LAB_DNS}
+
+cache-size=1000
+EOF
+
+$SUDO apt-get install -y --no-install-recommends dnsmasq
+$SUDO systemctl enable dnsmasq >/dev/null 2>&1 || true
+# restart, not start: picks up an edited config on a re-run.
+$SUDO systemctl restart dnsmasq || \
+  log "WARNING: dnsmasq failed to start — check 'journalctl -u dnsmasq -n 30'."
+
+if $SUDO systemctl is-active --quiet dnsmasq; then
+  log "  dnsmasq listening on ${DNS_LISTEN} port ${LAB_DNS_PORT}"
+  log "  clients point /etc/resolver/${LAB_ZONE} here — see provision/lib/lab-dns.sh"
+fi
 
 # ---------------------------------------------------------------------------
 # Apply dotfiles, same as the two client bootstrap scripts do. This must come

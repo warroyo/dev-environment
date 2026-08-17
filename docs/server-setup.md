@@ -270,10 +270,20 @@ exactly the failure the ufw attempt hid. Run it **as yourself, never under
 and it now refuses to start as root. The checks that need root escalate on
 their own and will ask for a password.
 
-The client side is manual and lives in `docs/client-work-setup.md` §6: static
-routes on the UDM SE pointing at this box, and a `/etc/resolver/set.lab` entry
-on the laptop. The older `browser-vpn` SOCKS5 proxy is documented there too,
-as the fallback for networks where the routed path isn't available.
+Names come from dnsmasq, which `server-bootstrap.sh` installs here listening on
+**port 5300** with `server=/set.lab/172.21.0.90` and `no-resolv`, so it
+forwards that one zone into the tunnel and is not an open resolver for
+anything else. Clients point `/etc/resolver/set.lab` at this box instead of at
+the lab resolver: on port 53 the queries were being DNAT'd by the gateway for
+Teleport clients and answered by it, which reads as a broken route until you
+notice the reply arrives faster than the real resolver could send it. Full
+write-up in `docs/client-work-setup.md` §6.
+
+The client side is manual and lives in `docs/client-work-setup.md` §6: a static
+route for `10.47.0.0/16` on the UDM SE pointing at this box, and a
+`/etc/resolver/set.lab` entry on the laptop. The older `browser-vpn` SOCKS5
+proxy is documented there too, as the fallback for networks where the routed
+path isn't available.
 
 ## 7. Manual: confirm the UDM SE has no port 22 forward to WAN
 

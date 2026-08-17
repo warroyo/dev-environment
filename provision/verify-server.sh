@@ -478,5 +478,78 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+section "Split DNS for set.lab (dnsmasq on :5300)"
+LAB_ZONE="set.lab"
+LAB_DNS_PORT="5300"
+DNSMASQ_CONF="/etc/dnsmasq.d/lab-split-dns.conf"
+
+if [ -f "$DNSMASQ_CONF" ]; then
+  ok "$DNSMASQ_CONF present"
+
+  # Port 53 here would defeat the entire point of this: the reason the zone
+  # moved off 53 is that gateways and hotel APs DNAT it to themselves.
+  if grep -qE "^[[:space:]]*port=${LAB_DNS_PORT}[[:space:]]*$" "$DNSMASQ_CONF"; then
+    ok "listening port is ${LAB_DNS_PORT}, not 53"
+  else
+    bad "dnsmasq is not configured for port ${LAB_DNS_PORT} — on 53 it will be"
+    bad "  intercepted by any gateway that redirects DNS; re-run server-bootstrap.sh"
+  fi
+
+  # An upstream for anything other than the lab zone would make this an open
+  # recursive resolver on every LAN address it binds.
+  if grep -qE "^[[:space:]]*no-resolv[[:space:]]*$" "$DNSMASQ_CONF" \
+     && ! grep -qE '^[[:space:]]*server=[^/]' "$DNSMASQ_CONF"; then
+    ok "no general upstream — forwards ${LAB_ZONE} only, not an open resolver"
+  else
+    bad "dnsmasq has a general upstream — this box would answer recursive"
+    bad "  queries for anyone on the LAN; re-run server-bootstrap.sh"
+  fi
+else
+  bad "no $DNSMASQ_CONF — clients have nothing to point at; run server-bootstrap.sh"
+fi
+
+systemctl is-enabled --quiet dnsmasq 2>/dev/null \
+  && ok "dnsmasq enabled (starts on boot)" \
+  || bad "dnsmasq NOT enabled — split DNS dies at the next reboot"
+systemctl is-active --quiet dnsmasq 2>/dev/null \
+  && ok "dnsmasq active" \
+  || bad "dnsmasq not active — check: journalctl -u dnsmasq -n 30"
+
+# Bound where clients actually arrive. Loopback-only would pass every check
+# above and still answer nobody.
+dns_listeners="$(ss -lnu 2>/dev/null \
+  | awk -v p=":${LAB_DNS_PORT}\$" '$4 ~ p {print $4}' | sort -u)"
+if [ -n "$dns_listeners" ]; then
+  ok "UDP listeners on ${LAB_DNS_PORT}: $(printf '%s ' $dns_listeners)"
+  if printf '%s\n' "$dns_listeners" | grep -qv '^127\.'; then
+    ok "  at least one LAN address is bound"
+  else
+    bad "  loopback ONLY — no client can reach this. The LAN address probably"
+    bad "  changed since bootstrap; re-run server-bootstrap.sh"
+  fi
+else
+  bad "nothing is listening on UDP ${LAB_DNS_PORT}"
+fi
+
+# The end-to-end question, and the only one that catches a tunnel that is up
+# but no longer carrying the lab resolver.
+if ip link show tun0 >/dev/null 2>&1; then
+  if command -v dig >/dev/null 2>&1; then
+    if dig +short +time=3 +tries=1 -p "$LAB_DNS_PORT" @127.0.0.1 \
+         "auto.gpu.${LAB_ZONE}" 2>/dev/null | grep -qE '^10\.47\.'; then
+      ok "auto.gpu.${LAB_ZONE} resolves through dnsmasq into the tunnel"
+    else
+      bad "auto.gpu.${LAB_ZONE} did not resolve via 127.0.0.1:${LAB_DNS_PORT} —"
+      bad "  check the tunnel reaches the lab resolver:"
+      bad "    dig @${LAB_DNS} auto.gpu.${LAB_ZONE}"
+    fi
+  else
+    warn "no dig — skipping the live resolution check"
+  fi
+else
+  ok "tun0 absent — skipping the live resolution check ('client-vpn up' first)"
+fi
+
+# ---------------------------------------------------------------------------
 printf '\n\033[1mSummary:\033[0m %d passed, %d failed, %d warnings\n' "$PASS" "$FAIL" "$WARN"
 [ "$FAIL" -eq 0 ] || exit 1

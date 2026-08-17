@@ -159,9 +159,19 @@ alone to the gateway's Teleport pool — can answer. The forward rules are scope
 by destination rather than by inbound interface on purpose: this box has LAN
 legs on two VLANs, and pinning them to one silently broke clients on the other
 (requests forwarded, every reply dropped). The
-work laptop reaches both over the gateway, with a `/etc/resolver/set.lab` entry
-for names. `lab-routing.service` owns the `FORWARD` and NAT rules and
-reinstalls them on boot; `verify-server.sh` checks them against the kernel.
+work laptop reaches the subnet over the gateway. `lab-routing.service` owns the
+`FORWARD` and NAT rules and reinstalls them on boot; `verify-server.sh` checks
+them against the kernel.
+
+Names are a separate mechanism, because routing alone was not enough. dnsmasq
+runs here on **port 5300** forwarding `set.lab` into the tunnel, and clients
+point `/etc/resolver/set.lab` at this box rather than at the lab resolver.
+Pointing at `172.21.0.90:53` directly is what it did first, and it failed the
+moment the laptop sat behind a gateway that DNAT's all port-53 traffic to
+itself — the route was intact and traceroute proved it, but traceroute never
+sends anything on 53. See [`docs/client-work-setup.md`](client-work-setup.md)
+§6 for the full diagnosis; the reusable part is that the interceptor answers
+*faster* than the real resolver can, so latency is the tell.
 
 The rules are installed directly rather than through `ufw`, which is present
 but disabled here — see [`docs/server-setup.md`](server-setup.md) §6 for why
