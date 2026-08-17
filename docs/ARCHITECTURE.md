@@ -71,6 +71,15 @@ nothing Claude-related runs on a laptop.
   needing physical presence.
 - **Second VPN environment**: an on-demand OpenVPN client on the server,
   reached via the dedicated `claude-env` tmux session.
+- **Phone → server**: a Telegram bot on the server
+  (`claude-telegram-bot.service`) starts a detached tmux session running
+  `claude --remote-control` in a directory under `~/workspace`; the
+  conversation then happens in the Claude app over Remote Control. This is the
+  one access path that isn't SSH, so it's also the one with a credential that
+  can leak — the bot answers **only** chat ids in an allow-list kept in
+  `~/.secrets/telegram-bot`, and drops everything else without replying. It
+  starts and stops sessions; it never relays messages. See
+  [`docs/server-setup.md`](server-setup.md#9-manual-the-telegram-bot-start-sessions-from-your-phone).
 
 ## sshd binding
 

@@ -300,6 +300,108 @@ activation** (this is what changed in 22.10). If that happens, the old
 script detects the new mechanism and configures `ssh.socket` instead. Always
 verify with `sudo ss -tlnp | grep :22` rather than trusting `sshd -T`.
 
+## 9. Manual: the Telegram bot (start sessions from your phone)
+
+Optional. It exists so a phone can say "open Claude Code in
+`~/workspace/whatever`" without SSH: the bot starts a detached tmux session
+running `claude --remote-control`, and the conversation then happens in the
+Claude app over Remote Control. The bot itself never relays messages — it
+starts, lists and stops sessions, nothing else. That's the whole design
+decision: Remote Control already gives the real session (tools, permission
+prompts, full output), so a chat-shaped reimplementation would only be worse.
+
+**Create the bot and find your chat id.** Do this *before* the service is
+enabled: only one client may long-poll a token at a time, so once the bot is
+running it consumes the updates and the `getUpdates` below returns nothing (or
+a 409 `Conflict`).
+
+1. Message [@BotFather](https://t.me/BotFather) → `/newbot`, follow the
+   prompts, keep the token it gives you. The username must end in `bot`.
+2. Open `t.me/<username>` and press Start — a bot cannot message you first, so
+   with no message from you there is no chat id to find. Then, on the server:
+
+   ```sh
+   curl -s "https://api.telegram.org/bot<TOKEN>/getUpdates" | jq '.result[].message.chat.id'
+   ```
+
+3. Optional, for autocomplete in the app: BotFather → `/setcommands` → pick the
+   bot → paste (note BotFather wants them **without** the leading slash):
+
+   ```
+   cc_ls - directories in ~/workspace
+   cc_open - start Claude Code in a directory
+   cc_sessions - what is running now
+   cc_kill - stop a session
+   help - all commands
+   ```
+
+**Store both values outside git**, like every other credential here:
+
+```sh
+mkdir -p ~/.secrets && chmod 700 ~/.secrets
+cat > ~/.secrets/telegram-bot <<'EOF'
+export TELEGRAM_BOT_TOKEN=123456:ABC...
+export TELEGRAM_ALLOWED_CHAT_IDS="123456789"
+EOF
+chmod 600 ~/.secrets/telegram-bot
+./provision/server-bootstrap.sh          # writes + enables claude-telegram-bot.service
+```
+
+The bootstrap script writes the unit whether or not that file exists, but only
+**enables** it once it does — an unconfigured bot would fail on start and
+`Restart=always` would turn that into a permanent restart loop in the journal.
+
+**The allow-list is the entire security model.** A bot token is a bearer
+credential: anyone who learns it can message the bot, and Telegram has no
+concept of a private bot. Messages from a chat id that isn't listed are dropped
+with no reply — so a stranger who finds the bot can't even confirm it's live,
+let alone run `claude-open` on this box. `verify-server.sh` fails if that
+variable is empty. Treat losing the token as "someone can open Claude Code
+sessions in `~/workspace`" and rotate it via BotFather.
+
+**Commands.** They're namespaced by family — this bot is the phone entry point
+to the server, not a Claude-only bot, so `/open` and `/ls` would be the wrong
+names to burn on the first family that wanted them. Telegram command names
+allow only `a-z`, `0-9` and `_`, hence `cc_`.
+
+| Command | Does |
+|---|---|
+| `/cc_ls` | directories in `~/workspace`, marked if a session is running |
+| `/cc_open <dir>` | start Claude Code there with Remote Control on; creates the directory if missing |
+| `/cc_sessions` | what's running now |
+| `/cc_kill <dir>` | stop a session (its conversation is gone) |
+| `/help` | all families (global, unprefixed) |
+
+Adding a family later means new handlers plus two lines — one in the
+dispatcher's `case`, one in `bot_help` — and nothing existing gets renamed.
+
+The `/cc_open` reply carries the session's `https://claude.ai/code/session_…`
+link, so it's one tap from Telegram into the live session. That link is
+scraped out of the Remote Control banner in the tmux pane — there's no file or
+flag that reports it — with `capture-pane -S -500`, because Claude Code redraws
+as it works and the banner scrolls out of the visible pane within a minute or
+two. If the scrape comes up empty the reply falls back to naming the session,
+which is still findable in the app's Remote Control list.
+
+Sessions are named `cc-<dir>` so they're distinguishable from `claude-main`
+and `claude-env`, and so the same directory always maps to the same session —
+which is what makes `/cc_open` idempotent. Opening a directory that's already
+running reports it rather than restarting, so a second tap from the phone can
+never destroy a live conversation. Attach from a terminal with
+`tmux attach -t cc-<dir>` like any other session.
+
+[`claude-open`](../dotfiles/dot_local/bin/executable_claude-open) is a normal
+command, not bot-only plumbing — `ssh claude-server claude-open foo` does the
+same thing. It takes the same trust-prompt precaution as
+`claude-tmux.service` ([above](#where-the-session-starts-and-why-it-stays-alive)):
+a directory Claude Code has never seen would otherwise stop on an interactive
+"do you trust this folder?" that nobody is there to answer. It also refuses
+anything outside `~/workspace`, including via symlink, because its argument
+comes straight from a Telegram message.
+
+Watch it work with `journalctl -u claude-telegram-bot -f`. Unauthorized
+attempts are logged there with their chat id.
+
 ## Dev session log
 
 A standalone, **private** `~/dev-log` git repo, pushed to a private GitHub

@@ -27,6 +27,11 @@
     70_claude.sh                 the ca/ce/cv aliases for the above. Same.
     claude-session               runs `claude` in the current shell. Server only
                                  (it is what claude-tmux.service execs).
+    claude-open                  starts a tmux session running `claude` here.
+                                 Server only, same rule.
+    claude-telegram-bot          long-polls Telegram and calls claude-open.
+                                 Server only — it is the phone entry point to
+                                 the machine that actually runs the CLI.
 
   Enforcement of the never-install rule lives where an install would actually
   happen: no CLI install step in client-work-bootstrap.sh (which verifies the
@@ -40,6 +45,13 @@
   Runs claude in-process, so it only belongs where the CLI exists.
 */}}
 .local/bin/claude-session
+.local/bin/claude-open
+{{/*
+  Starts sessions via claude-open, and its systemd unit only exists on the
+  server. Shipping it elsewhere would put a bot token's worth of attack surface
+  on a laptop for no gain.
+*/}}
+.local/bin/claude-telegram-bot
 {{/*
   Dev session log: the shared writer, the /log-session command, and the
   CLAUDE.md priming note all only make sense where Claude Code itself runs.

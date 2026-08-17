@@ -1,0 +1,230 @@
+#!/usr/bin/env bash
+# A Telegram bot for driving this server from a phone. Today it starts Claude
+# Code sessions; it is meant to grow other things.
+#
+# The bot does no conversation: it opens a tmux session running
+# `claude --remote-control` in a directory under ~/workspace and replies with
+# the name. The actual conversation happens in the Claude app over Remote
+# Control — which is the point, because that gives the full session (tools,
+# permissions prompts, output) instead of a chat-shaped imitation of it.
+#
+# Commands are NAMESPACED BY FAMILY — /cc_ls, /cc_open, and so on — so a later
+# family (say /vpn_up, /host_df) can be added without renaming anything or
+# colliding here. Only /help and /start are global. Telegram allows a-z, 0-9
+# and underscore in command names, hence `cc_` rather than `cc:` or `cc-`.
+#
+# Commands: /cc_ls  /cc_open <dir>  /cc_sessions  /cc_kill <dir>  /help
+#
+# Configuration comes from ~/.secrets/telegram-bot (sourced by 55_secrets.sh
+# for interactive shells; read directly here, because this runs under systemd
+# with no shell):
+#
+#   export TELEGRAM_BOT_TOKEN=123456:ABC...
+#   export TELEGRAM_ALLOWED_CHAT_IDS="123456789"     # space or comma separated
+#
+# The allow-list is the whole security model. A bot token is a bearer
+# credential that anyone who learns it can message, and Telegram has no other
+# notion of "my bot is private" — so every update from a chat id that is not
+# listed is dropped silently (no reply, so a stranger cannot even confirm the
+# bot is live). Get your own id by messaging the bot once and reading the
+# journal: journalctl -u claude-telegram-bot -f
+set -euo pipefail
+
+SECRETS="${TELEGRAM_SECRETS_FILE:-$HOME/.secrets/telegram-bot}"
+# shellcheck source=/dev/null
+[ -r "$SECRETS" ] && . "$SECRETS"
+
+: "${TELEGRAM_BOT_TOKEN:?set TELEGRAM_BOT_TOKEN in ~/.secrets/telegram-bot}"
+: "${TELEGRAM_ALLOWED_CHAT_IDS:?set TELEGRAM_ALLOWED_CHAT_IDS in ~/.secrets/telegram-bot}"
+
+API="https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}"
+WORKSPACE="${CLAUDE_WORKSPACE:-$HOME/workspace}"
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/claude-telegram-bot"
+OFFSET_FILE="${STATE_DIR}/offset"
+POLL_TIMEOUT=60          # Telegram long-poll: it holds the request open this long
+
+mkdir -p "$STATE_DIR"
+for c in curl jq tmux; do
+  command -v "$c" >/dev/null 2>&1 || { printf 'claude-telegram-bot: %s is required\n' "$c" >&2; exit 1; }
+done
+
+log() { printf '%s claude-telegram-bot: %s\n' "$(date -Is)" "$1"; }
+
+# ---------------------------------------------------------------------------
+api() {                                   # api <method> [curl args...]
+  local method="$1"; shift
+  curl -sS --max-time $((POLL_TIMEOUT + 15)) -G "${API}/${method}" "$@"
+}
+
+send() {                                  # send <chat_id> <text>
+  # No parse_mode on purpose: Markdown/HTML modes reject unbalanced characters
+  # in ordinary output (a lone `_` in a directory name, a `<` in an error) and
+  # the whole message is silently lost. Plain text always sends.
+  api sendMessage --data-urlencode "chat_id=$1" --data-urlencode "text=$2" >/dev/null || \
+    log "sendMessage failed for chat $1"
+}
+
+authorized() {                            # authorized <chat_id>
+  local id
+  for id in ${TELEGRAM_ALLOWED_CHAT_IDS//,/ }; do
+    [ "$id" = "$1" ] && return 0
+  done
+  return 1
+}
+
+running_sessions() { tmux list-sessions -F '#{session_name}' 2>/dev/null | grep '^cc-' || true; }
+
+# ---------------------------------------------------------------------------
+# Claude Code family (/cc_*). Each handler prints its reply on stdout; the
+# dispatcher sends whatever comes back. A new family means new cc_-style
+# handlers plus entries in the dispatcher and bot_help — nothing else.
+cc_ls() {
+  local out="" d name
+  for d in "$WORKSPACE"/*/; do
+    [ -d "$d" ] || continue               # no match: the glob stays literal
+    name="$(basename "$d")"
+    if tmux has-session -t "=cc-${name}" 2>/dev/null; then
+      out+="• ${name}  [running]"$'\n'
+    else
+      out+="• ${name}"$'\n'
+    fi
+  done
+  [ -n "$out" ] || out="(no directories in ${WORKSPACE})"
+  printf '%s' "$out"
+}
+
+cc_open() {                               # cc_open <dir>
+  local dir="$1" out rc
+  [ -n "$dir" ] || { printf 'usage: /cc_open <dir>'; return; }
+  # stderr is folded in: claude-open reports "already running" there, and that
+  # is exactly the answer worth relaying.
+  set +e
+  out="$(claude-open "$dir" 2>&1)"
+  rc=$?
+  set -e
+  if [ $rc -ne 0 ]; then
+    printf 'failed to open %s:\n%s' "$dir" "$out"
+    return
+  fi
+  local session url verb
+  session="$(printf '%s' "$out" | head -n1)"
+  # claude-open scrapes this out of the Remote Control banner. It may be
+  # absent (slow start, banner changed), so the reply has to work without it.
+  url="$(printf '%s' "$out" | grep -oE 'https://claude\.ai/code/session_[A-Za-z0-9_-]+' | head -n1)"
+  if printf '%s' "$out" | grep -q 'already running'; then
+    verb="Already running: ${session}"
+  else
+    verb="Started ${session} in ${WORKSPACE}/${dir}"
+  fi
+  if [ -n "$url" ]; then
+    printf '%s\n\n%s' "$verb" "$url"
+  else
+    printf '%s\n\nOpen the Claude app → Remote Control and pick "%s".' "$verb" "${session#cc-}"
+  fi
+}
+
+cc_sessions() {
+  local s out=""
+  while read -r s; do
+    [ -n "$s" ] || continue
+    out+="• ${s}  (${s#cc-})"$'\n'
+  done <<<"$(running_sessions)"
+  [ -n "$out" ] || out="(no Claude sessions running)"
+  printf '%s' "$out"
+}
+
+cc_kill() {                               # cc_kill <dir-or-session>
+  local arg="$1" session
+  [ -n "$arg" ] || { printf 'usage: /cc_kill <dir>'; return; }
+  case "$arg" in cc-*) session="$arg" ;; *) session="cc-${arg//\//-}" ;; esac
+  if ! tmux has-session -t "=${session}" 2>/dev/null; then
+    printf 'No session %s.' "$session"; return
+  fi
+  tmux kill-session -t "=${session}"
+  printf 'Killed %s. Its conversation is gone; /cc_open starts a fresh one.' "$session"
+}
+
+bot_help() {
+  cat <<EOF
+$(hostname -s)
+
+Claude Code (cc_):
+/cc_ls              directories in ~/workspace
+/cc_open <dir>      start Claude Code there with Remote Control on
+                    (creates the directory if it does not exist)
+/cc_sessions        what is running now
+/cc_kill <dir>      stop a session
+EOF
+}
+
+handle() {                                # handle <chat_id> <text>
+  local chat="$1" text="$2" cmd arg
+  cmd="${text%% *}"
+  arg="${text#"$cmd"}"; arg="${arg# }"
+  # Telegram appends @botname to commands in groups, and to tapped commands in
+  # some clients — strip it or every command misses.
+  cmd="${cmd%%@*}"
+  case "$cmd" in
+    # --- Claude Code family. New families go alongside, not inside: keep the
+    #     prefix in the command name so nothing here has to be renamed later.
+    /cc_open)     send "$chat" "$(cc_open "$arg")" ;;
+    /cc_ls)       send "$chat" "$(cc_ls)" ;;
+    /cc_sessions) send "$chat" "$(cc_sessions)" ;;
+    /cc_kill)     send "$chat" "$(cc_kill "$arg")" ;;
+    # --- global
+    /start|/help) send "$chat" "$(bot_help)" ;;
+    *)            send "$chat" "Unknown command."$'\n\n'"$(bot_help)" ;;
+  esac
+}
+
+# ---------------------------------------------------------------------------
+# Offset: Telegram redelivers every update until it is acknowledged by asking
+# for a higher offset, so this file is what stops already-handled commands from
+# running twice. On a first run (or after the state was lost) the backlog is
+# skipped rather than replayed: a `/open` sent hours ago should not fire when
+# the server comes back from a reboot.
+if [ -r "$OFFSET_FILE" ]; then
+  OFFSET="$(cat "$OFFSET_FILE")"
+else
+  # offset=-1 with no wait returns only the most recent pending update.
+  OFFSET="$(api getUpdates --data-urlencode "offset=-1" --data-urlencode "timeout=0" \
+            | jq -r '(.result[-1].update_id // 0) + 1')"
+  printf '%s\n' "$OFFSET" >"$OFFSET_FILE"
+  log "skipping backlog, starting at offset ${OFFSET}"
+fi
+
+log "polling as $(api getMe | jq -r '.result.username // "unknown"')"
+
+while :; do
+  if ! RESP="$(api getUpdates --data-urlencode "offset=${OFFSET}" \
+                              --data-urlencode "timeout=${POLL_TIMEOUT}" 2>&1)"; then
+    log "getUpdates failed: ${RESP}"
+    sleep 5
+    continue
+  fi
+  if [ "$(jq -r '.ok // false' <<<"$RESP" 2>/dev/null)" != "true" ]; then
+    # 409 here means a second copy of the bot is polling the same token
+    # (Telegram allows exactly one). Backing off rather than exiting keeps
+    # whichever instance survives a redeploy working.
+    log "telegram error: $(jq -rc '.description // .' <<<"$RESP" 2>/dev/null || printf '%s' "$RESP")"
+    sleep 10
+    continue
+  fi
+
+  while read -r update; do
+    [ -n "$update" ] || continue
+    id="$(jq -r '.update_id' <<<"$update")"
+    OFFSET=$((id + 1))
+    printf '%s\n' "$OFFSET" >"$OFFSET_FILE"   # ack first: a command that crashes
+                                              # the handler must not loop forever
+    chat="$(jq -r '.message.chat.id // empty' <<<"$update")"
+    text="$(jq -r '.message.text // empty' <<<"$update")"
+    [ -n "$chat" ] && [ -n "$text" ] || continue
+    if ! authorized "$chat"; then
+      log "ignored message from unauthorized chat ${chat}: ${text:0:40}"
+      continue
+    fi
+    log "chat ${chat}: ${text}"
+    handle "$chat" "$text" || log "handler failed for: ${text}"
+  done <<<"$(jq -c '.result[]' <<<"$RESP")"
+done

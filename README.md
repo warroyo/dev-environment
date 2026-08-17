@@ -9,7 +9,10 @@ Two-layer setup, one repo:
    from a work MacBook Pro over OpenVPN. The host half is the server alone;
    the client half (`claude-attach` and friends, which only SSH) applies
    everywhere. **Claude Code is never installed on the work laptop** — it
-   attaches to the session on the server instead.
+   attaches to the session on the server instead. From a phone, an optional
+   Telegram bot starts a session in any `~/workspace` directory with Remote
+   Control on, and the Claude app drives it from there —
+   [setup](docs/server-setup.md#9-manual-the-telegram-bot-start-sessions-from-your-phone).
 
 Start with [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full
 picture, then follow the setup doc for whichever machine you're on.

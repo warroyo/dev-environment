@@ -277,6 +277,36 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+section "Telegram bot (phone entry point)"
+for s in claude-open claude-telegram-bot; do
+  [ -x "$HOME/.local/bin/$s" ] && ok "$s installed and executable" \
+    || bad "$s missing from ~/.local/bin — run chezmoi apply"
+done
+TG_SECRETS="$HOME/.secrets/telegram-bot"
+if [ -r "$TG_SECRETS" ]; then
+  perms="$(stat -c %a "$TG_SECRETS" 2>/dev/null || echo '?')"
+  [ "$perms" = "600" ] && ok "~/.secrets/telegram-bot is 0600" \
+    || bad "~/.secrets/telegram-bot is 0$perms — it holds a bearer token, chmod 600 it"
+  # Without an allow-list every Telegram user who finds the bot could run
+  # claude-open on this box, so an empty value is a real finding, not a nit.
+  if grep -qE '^[[:space:]]*export[[:space:]]+TELEGRAM_ALLOWED_CHAT_IDS=.+' "$TG_SECRETS"; then
+    ok "TELEGRAM_ALLOWED_CHAT_IDS is set"
+  else
+    bad "TELEGRAM_ALLOWED_CHAT_IDS is empty or missing — the bot would accept"
+    bad "  commands from anyone who messages it"
+  fi
+  systemctl is-enabled --quiet claude-telegram-bot.service 2>/dev/null \
+    && ok "claude-telegram-bot.service enabled (starts on boot)" \
+    || bad "claude-telegram-bot.service NOT enabled — re-run server-bootstrap.sh"
+  systemctl is-active --quiet claude-telegram-bot.service 2>/dev/null \
+    && ok "claude-telegram-bot.service active" \
+    || bad "claude-telegram-bot.service not active — check: journalctl -u claude-telegram-bot"
+else
+  warn "no ~/.secrets/telegram-bot — the phone entry point is not configured"
+  warn "  (expected if unused; see docs/server-setup.md)"
+fi
+
+# ---------------------------------------------------------------------------
 section "Second OpenVPN environment (on-demand)"
 OVPN_CONF="/etc/openvpn/client/client-env.conf"
 if [ -f "$OVPN_CONF" ]; then

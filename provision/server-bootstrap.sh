@@ -800,6 +800,63 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+log "Writing claude-telegram-bot systemd service"
+# The phone entry point: a Telegram bot that runs claude-open, which starts a
+# detached tmux session with `claude --remote-control` in a directory under
+# ~/workspace. The conversation itself then happens in the Claude app over
+# Remote Control — the bot only ever starts, lists and stops sessions.
+#
+# The token and the chat allow-list live in ~/.secrets/telegram-bot, outside
+# git like every other credential here. The unit is written unconditionally so
+# it is ready the moment that file exists, but it is only ENABLED once it does:
+# without a token the service would fail and Restart=always would turn that
+# into a permanent restart loop in the journal.
+TG_UNIT_PATH="/etc/systemd/system/claude-telegram-bot.service"
+TG_SECRETS="$HOME/.secrets/telegram-bot"
+
+cat <<EOF | $SUDO tee "$TG_UNIT_PATH" >/dev/null
+# Managed by dev-environment/provision/server-bootstrap.sh — do not edit by hand.
+[Unit]
+Description=Telegram bot that opens Claude Code sessions in ~/workspace
+After=network-online.target claude-tmux.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=${USER}
+WorkingDirectory=${HOME}
+Environment=HOME=${HOME}
+# Same PATH as claude-tmux.service, and for the same reason: systemd's default
+# omits ~/.local/bin (claude-open, claude-session) and the npm global bin dir
+# (claude itself), so without this every /open fails with "command not found".
+Environment=PATH=${HOME}/.local/bin:${HOME}/.krew/bin:${HOME}/.npm-global/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=${HOME}/.local/bin/claude-telegram-bot
+# Long-polling against api.telegram.org: transient network failures are normal
+# and the bot handles them itself, but a hard exit (bad token, killed process)
+# should still come back.
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+$SUDO systemctl daemon-reload
+if [ -r "$TG_SECRETS" ]; then
+  $SUDO systemctl enable claude-telegram-bot.service >/dev/null 2>&1 || true
+  # restart, not start: picks up an edited token or allow-list on a re-run.
+  $SUDO systemctl restart claude-telegram-bot.service || \
+    log "WARNING: claude-telegram-bot.service failed to start — check 'journalctl -u claude-telegram-bot'."
+else
+  $SUDO systemctl disable claude-telegram-bot.service >/dev/null 2>&1 || true
+  log "  no ${TG_SECRETS} yet — bot left disabled. To enable it:"
+  log "    mkdir -p ~/.secrets && chmod 700 ~/.secrets"
+  log "    printf 'export TELEGRAM_BOT_TOKEN=...\\nexport TELEGRAM_ALLOWED_CHAT_IDS=...\\n' > ${TG_SECRETS}"
+  log "    chmod 600 ${TG_SECRETS} && re-run this script"
+  log "  See docs/server-setup.md for how to get both values."
+fi
+
+# ---------------------------------------------------------------------------
 # sshd bind restriction: Tailscale interface + LAN interface only, never
 # WAN. This is what lets both the Tailscale path (personal Air) and the
 # OpenVPN-to-LAN path (work laptop) reach the box, while it has zero SSH

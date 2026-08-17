@@ -55,6 +55,14 @@ for f in "${client_files[@]}"; do expect_present "$f"; done
 if [ "$ROLE" = "server" ]; then expect_present .local/bin/claude-session
 else expect_absent .local/bin/claude-session; fi
 
+# Same rule, same reason: claude-open starts a session running claude here, and
+# claude-telegram-bot is the phone entry point that calls it. Both are
+# server-only — a bot token on a laptop would be attack surface with nothing to
+# gain, since that laptop has no Claude Code to open.
+for f in .local/bin/claude-open .local/bin/claude-telegram-bot; do
+  if [ "$ROLE" = "server" ]; then expect_present "$f"; else expect_absent "$f"; fi
+done
+
 # The VS Code auto-install guard is the counterpart — deployed exactly where
 # Claude Code must never be installed.
 case "$ROLE" in
