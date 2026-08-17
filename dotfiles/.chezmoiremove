@@ -1,0 +1,15 @@
+# Targets chezmoi should DELETE from a machine, not just stop managing.
+#
+# Deleting a file from the source state only makes chezmoi forget about it —
+# the copy already on disk stays there forever, still on PATH, still runnable.
+# For a retired command that is worse than useless: it keeps working just well
+# enough to be trusted, long after the thing it talks to has moved.
+#
+# Entries here are applied on every `chezmoi apply`, so they are safe to leave
+# in place, and worth leaving in place until every machine has certainly run
+# one.
+
+# browser-vpn: an `ssh -D` SOCKS5 proxy to claude-server, replaced by the
+# routed path (10.47.0.0/16 via the server) plus split DNS on port 5300.
+# Removed 2026-08-17. See docs/client-work-setup.md.
+.local/bin/browser-vpn

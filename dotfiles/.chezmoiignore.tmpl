@@ -81,16 +81,6 @@
 .config/shell/source/60_browser.sh
 {{- end }}
 
-{{- if eq .role "server" }}
-{{/*
-  Client-side SOCKS proxy to claude-server (ssh -D), so another device can
-  browse whatever's routed there (e.g. the client-vpn tunnel) without opening
-  a second connection to it. Pointless on the server itself — it IS the far
-  end. See docs/client-work-setup.md.
-*/}}
-.local/bin/browser-vpn
-{{- end }}
-
 {{- if ne .chezmoi.os "linux" }}
 {{/*
   macOS gets its ssh-agent from launchd, and AddKeysToAgent/UseKeychain in

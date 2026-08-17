@@ -281,9 +281,7 @@ write-up in `docs/client-work-setup.md` §6.
 
 The client side is manual and lives in `docs/client-work-setup.md` §6: a static
 route for `10.47.0.0/16` on the UDM SE pointing at this box, and a
-`/etc/resolver/set.lab` entry on the laptop. The older `browser-vpn` SOCKS5
-proxy is documented there too, as the fallback for networks where the routed
-path isn't available.
+`/etc/resolver/set.lab` entry on the laptop.
 
 ## 7. Manual: confirm the UDM SE has no port 22 forward to WAN
 

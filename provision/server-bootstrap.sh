@@ -495,11 +495,11 @@ fi
 # Route the lab subnet for LAN and Teleport clients.
 #
 # The work laptop used to reach that environment through `browser-vpn` — an
-# `ssh -D` SOCKS5 proxy to this box. Over office wifi that path is SOCKS over
-# SSH over the gateway's WireGuard tunnel: TCP inside TCP, where every
-# handshake and every DNS lookup pays a full round trip. This makes the box a
-# router for the one subnet that is actually needed instead, so the laptop gets
-# a real network path and no proxy at all.
+# `ssh -D` SOCKS5 proxy to this box, since deleted. Over office wifi that path
+# was SOCKS over SSH over the gateway's WireGuard tunnel: TCP inside TCP, where
+# every handshake and every DNS lookup paid a full round trip. This makes the
+# box a router for the one subnet that is actually needed instead, so the
+# laptop gets a real network path and no proxy at all.
 #
 # Only 10.47.0.0/16 and the lab resolver are forwarded, deliberately. The
 # tunnel also pushes 10.0.0.0/10, which contains this LAN, and 172.17.0.0/24,

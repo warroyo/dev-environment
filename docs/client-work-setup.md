@@ -231,25 +231,9 @@ If the `dig` answers but `dscacheutil` doesn't, the problem is
 `/etc/resolver/set.lab`, not the network — re-run `client-work-bootstrap.sh`
 and `sudo killall -HUP mDNSResponder`.
 
-### Fallback: the SOCKS proxy
+### Removed: the SOCKS proxy
 
-`browser-vpn` still exists for networks where the routed path isn't available
-— someone else's wifi, no travel router. It's slower by construction (SOCKS
-over SSH, and over a VPN it becomes TCP inside TCP), so it's the fallback, not
-the default.
-
-```sh
-browser-vpn up      # opens socks5://127.0.0.1:1080 to claude-server
-browser-vpn status
-browser-vpn down    # closes it; does not touch the server's client-vpn tunnel
-```
-
-`CLAUDE_SERVER_HOST` and `BROWSER_VPN_PORT` work the same as elsewhere if you
-need non-default values.
-
-Then in the browser, install Zero Omega Proxy Switcher (or similar) and add a SOCKS5 proxy at
-`127.0.0.1:1080` with **"Proxy DNS via SOCKS5" enabled** — without it, hostname
-lookups happen locally instead of on the server and internal names won't
-resolve. Scope it to a URL pattern matching that VPN's domain(s) so only that
-traffic is proxied; everything else browses normally, unaffected. Turn it back
-to "direct" when you go back to the routed path.
+There used to be a `browser-vpn` script here — an `ssh -D` SOCKS5 proxy to the
+server, driven by a browser extension. The routed path replaced it and it is
+gone. If you find a reference to it, or a Zero Omega profile still pointed at
+`127.0.0.1:1080`, both are stale.

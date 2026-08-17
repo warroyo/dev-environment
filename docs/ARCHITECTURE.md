@@ -182,11 +182,12 @@ Only those two prefixes, deliberately: the pushed `10.0.0.0/10` and
 a laptop that has to keep working on other people's networks would move the
 problem rather than solve it.
 
-This replaced an `ssh -D` SOCKS proxy (`browser-vpn`), which is SOCKS over SSH
+This replaced an `ssh -D` SOCKS proxy (`browser-vpn`), which was SOCKS over SSH
 over the gateway's WireGuard tunnel — TCP inside TCP, one full round trip per
-handshake and per name lookup. It's kept as a fallback for networks where the
-routed path isn't available; see
-[`docs/client-work-setup.md`](client-work-setup.md).
+handshake and per name lookup. It was kept for a while as a fallback and has
+since been deleted: the routed path plus split DNS covers every network the
+laptop actually works from, and a second, slower way to reach the same hosts
+was one more thing to keep true.
 
 ## Definition of Done
 
