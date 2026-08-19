@@ -230,9 +230,9 @@ systemctl is-enabled --quiet herdr-server.service 2>/dev/null \
 systemctl is-active --quiet herdr-server.service 2>/dev/null \
   && ok "herdr-server.service active" || bad "herdr-server.service not active"
 
-# claude-tmux.service is left on disk but disabled — it is the escape hatch
-# `provision/herdr-setup.sh --uninstall` re-enables. Enabled here means both
-# stacks would fight for the session on the next boot.
+# claude-tmux.service is left on disk but disabled — it is the way back to tmux,
+# re-enabled by hand. Enabled here means both stacks would fight for the session
+# on the next boot.
 if systemctl is-enabled --quiet claude-tmux.service 2>/dev/null; then
   warn "claude-tmux.service is still enabled — herdr owns the session now"
   printf '        fix: sudo systemctl disable --now claude-tmux.service\n'

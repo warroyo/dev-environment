@@ -6,7 +6,7 @@
 #   claude-attach --tmux   # escape hatch: a plain tmux session over ssh
 #
 # herdr owns the session (herdr-server.service); the workspace is claude-main
-# and herdr-main-workspace starts claude in it. See provision/herdr-setup.sh.
+# and herdr-main-workspace starts claude in it. See provision/lib/herdr.sh.
 #
 # The two herdr shapes are not a fallback pair — they trade different things:
 #

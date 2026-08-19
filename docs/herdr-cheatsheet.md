@@ -84,11 +84,16 @@ journalctl -u herdr-server -n 50       # why it will not start
 ```
 
 A server restart brings the layout back and relaunches agents within a few
-seconds, but as **fresh** conversations unless the Claude Code integration is
-installed (`provision/herdr-setup.sh --with-claude-integration`).
+seconds. Those resume as the same conversations, because the bootstrap installs
+herdr's Claude Code integration (`~/.claude/hooks/herdr-agent-state.sh`), which
+is what lets `session.resume_agents_on_restore` restore the conversation and not
+just the process.
 
-To hand the session back to tmux entirely:
+To hand the session back to tmux:
 
 ```bash
-./provision/herdr-setup.sh --uninstall
+sudo systemctl disable --now herdr-server.service
+sudo systemctl enable  --now claude-tmux.service
 ```
+
+The tmux unit is left on disk, disabled, for exactly this.

@@ -65,8 +65,8 @@ sidebar showing every session's state at once, `verify-server.sh` asking
 directly whether claude is running rather than walking a pane's process tree,
 and the Telegram bot reporting state instead of a bare "running". tmux is still
 installed for ad-hoc use, and `claude-tmux.service` is still on disk but
-disabled, so `provision/herdr-setup.sh --uninstall` hands the session back in
-one command.
+disabled, so handing the session back is two `systemctl` commands rather than a
+re-provision.
 
 ## Access paths
 

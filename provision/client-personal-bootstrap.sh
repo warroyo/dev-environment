@@ -36,7 +36,8 @@ ensure_formula zsh-autosuggestions
 ensure_formula zsh-syntax-highlighting
 
 # herdr: the terminal multiplexer being A/B'd against tmux for the persistent
-# Claude Code session (see provision/herdr-setup.sh for the server half). It
+# Claude Code session (see install_herdr_service in lib/herdr.sh for the server
+# half). It
 # belongs in the general layer for the same reason mosh does — it is a client
 # that talks to the server and never runs claude locally.
 #

@@ -30,9 +30,8 @@ out and back in — the script uses `sudo docker` internally to work around
 that, but your own `docker` commands will need a fresh login.
 
 The script now also installs the Claude Code CLI, applies the dotfiles via
-chezmoi, installs the tmux plugins, and calls
-[`provision/herdr-setup.sh`](../provision/herdr-setup.sh) to set up the
-persistent session — those are no longer separate manual steps.
+chezmoi, installs the tmux plugins, and sets up the persistent herdr session —
+those are no longer separate manual steps.
 
 ## 2. Authenticate the Claude Code CLI
 
@@ -124,10 +123,17 @@ One ordering detail the script handles: if a tmux server was started at boot
 aborts with "Tmux Plugin Manager not configured in tmux.conf". The script runs
 `tmux source-file ~/.tmux.conf` against the live server first.
 
-It then runs `herdr-setup.sh`, which installs the pinned herdr binary
-(checksum-verified against `herdr.dev/latest.json`), writes and enables
-`herdr-server.service`, disables `claude-tmux.service` if an earlier run had
-enabled it, and creates the `claude-main` workspace with claude running in it.
+It then calls `install_herdr_service` from
+[`provision/lib/herdr.sh`](../provision/lib/herdr.sh), which installs the pinned
+herdr binary (checksum-verified against `herdr.dev/latest.json`), writes and
+enables `herdr-server.service`, installs herdr's Claude Code integration,
+disables `claude-tmux.service` if an earlier run had enabled it, and creates the
+`claude-main` workspace with claude running in it.
+
+That lives in `lib/` rather than in a script of its own because it is one step
+of provisioning this machine, not a thing you run separately — the same reason
+`lib/chezmoi-apply.sh` and `lib/lab-dns.sh` are there. `ensure_herdr`, in the
+same file, is what the two macOS bootstraps call to install the client.
 
 ### Where the session starts, and why it stays alive
 
@@ -552,19 +558,20 @@ should show `claude` already running in `claude-main`, with no manual steps —
 recreates the workspace.
 
 herdr also restores its own layout on start and relaunches agents within a few
-seconds. Those come back as **fresh** conversations, though, unless the Claude
-Code integration is installed:
+seconds — as the same conversations, not fresh ones, because the bootstrap
+installs herdr's Claude Code integration. That writes
+`~/.claude/hooks/herdr-agent-state.sh` plus a `SessionStart` hook in
+`~/.claude/settings.json`, and it is what `session.resume_agents_on_restore`
+needs to put the conversation itself back rather than just the process. It is
+also what makes agent state (`idle`, `working`, `blocked`, `done`) come from
+Claude Code's own lifecycle rather than from herdr reading the screen.
 
-```sh
-./provision/herdr-setup.sh --with-claude-integration
-```
+Worth knowing that this is **global**: every Claude Code session on the box
+reads that settings file, including any started under tmux by hand. herdr owns
+the hook file and overwrites it when the integration updates — custom hooks go
+beside it, never inside it. It replaces what `tmux-continuum` used to do here.
 
-That writes `~/.claude/hooks/herdr-agent-state.sh` and lets
-`session.resume_agents_on_restore` put the conversation itself back, not just
-the process. It is opt-in because it edits the **global** Claude Code config
-that every session on the box reads, including any started under tmux by
-hand — but on a herdr-primary setup it is the recommended state, and it is the
-only thing here that replaces what `tmux-continuum` used to do.
+Check it with `herdr integration status`.
 
 The second OpenVPN environment is deliberately *not* restored by a reboot —
 it is on-demand only, because its identity is shared with other machines.

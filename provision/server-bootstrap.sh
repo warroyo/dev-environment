@@ -755,6 +755,8 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
+# shellcheck source=lib/herdr.sh
+source "${SCRIPT_DIR}/lib/herdr.sh"
 # shellcheck source=lib/chezmoi-apply.sh
 source "${SCRIPT_DIR}/lib/chezmoi-apply.sh"
 apply_dotfiles server "$REPO_ROOT"
@@ -785,10 +787,12 @@ fi
 
 # ---------------------------------------------------------------------------
 # Written, but deliberately NOT enabled. herdr owns the persistent session
-# (herdr-setup.sh, called at the end of this script); this unit stays on disk
-# so `provision/herdr-setup.sh --uninstall` can hand the session back to tmux
-# in one command instead of a re-provision. tmux itself stays installed for
-# ad-hoc use, which is also what `claude-attach --tmux` reaches.
+# (install_herdr_service, below); this unit stays on disk so the way back to
+# tmux is two systemctl commands rather than a re-provision:
+#   sudo systemctl disable --now herdr-server.service
+#   sudo systemctl enable  --now claude-tmux.service
+# tmux itself stays installed for ad-hoc use, which is also what
+# `claude-attach --tmux` reaches.
 log "Writing claude-tmux systemd service (disabled fallback)"
 UNIT_PATH="/etc/systemd/system/claude-tmux.service"
 CLAUDE_BIN="$(command -v claude || true)"
@@ -882,21 +886,20 @@ WantedBy=multi-user.target
 EOF
 
 $SUDO systemctl daemon-reload
-# Left disabled on purpose — see the note above. herdr-setup.sh disables it too
-# if an older provision run had enabled it, so this is belt and braces for a
-# fresh machine that has never had the tmux unit running.
+# Left disabled on purpose — see the note above. install_herdr_service disables
+# it too if an older provision run had enabled it, so this is belt and braces
+# for a fresh machine that has never had the tmux unit running.
 $SUDO systemctl disable claude-tmux.service >/dev/null 2>&1 || true
 
 # ---------------------------------------------------------------------------
-# The persistent session itself. Kept in its own script because it is also the
-# thing you re-run on its own when only this part changes, and because
-# --uninstall there is the documented way back to tmux.
+# The persistent session itself: the herdr binary, the systemd unit that owns
+# claude-main, the Claude Code integration, and the handover from tmux.
 #
-# It runs after the chezmoi apply above on purpose: it needs
+# It runs after the chezmoi apply above on purpose — it needs
 # ~/.local/bin/herdr-main-workspace, which is what creates the claude-main
 # workspace and starts claude in it.
 log "Installing herdr and the persistent session"
-"${SCRIPT_DIR}/herdr-setup.sh"
+install_herdr_service
 
 # ---------------------------------------------------------------------------
 log "Writing claude-telegram-bot systemd service"
