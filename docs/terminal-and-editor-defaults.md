@@ -17,7 +17,29 @@ in this document is Claude-specific.
 - **`copy-on-select = true`** — selecting text copies it immediately, no
   separate Cmd-C needed.
 
+## herdr
+
+The multiplexer that holds the persistent Claude Code session on the server.
+Full reference: [`docs/herdr-cheatsheet.md`](herdr-cheatsheet.md); why it
+replaced tmux is in
+[`ARCHITECTURE.md`](ARCHITECTURE.md#why-one-always-on-host).
+
+Installed by `provision/lib/herdr.sh` on every machine — a pinned,
+checksum-verified release binary rather than a Homebrew formula, because there
+is no official formula and because the pin matters: client and server negotiate
+a protocol version, so a laptop that drifts ahead of the server fails at attach
+time with a symptom that looks like anything but a version mismatch. The
+version constant lives in that one file and is shared by all three bootstraps.
+
+Config is herdr's own `~/.config/herdr/config.toml`, not managed by chezmoi —
+the defaults are what this setup runs, and the one thing worth knowing is that
+the prefix is `Ctrl-b` like tmux but **detach is `Ctrl-b q`, not `Ctrl-b d`**.
+
 ## tmux ([`dotfiles/dot_tmux.conf`](../dotfiles/dot_tmux.conf))
+
+Still installed everywhere, and still configured — for ad-hoc use, and as the
+escape hatch `claude-attach --tmux` reaches when the herdr server itself is
+what's broken. It no longer holds the persistent session.
 
 Full keybinding reference: [`docs/tmux-cheatsheet.md`](tmux-cheatsheet.md).
 
@@ -32,12 +54,13 @@ Two SSH-specific fixes baked into the config:
    modified key sequences by default. `extended-keys on` passes the real key
    sequence through instead of the collapsed form.
 
-Session persistence is handled by the well-established
-[`tmux-resurrect`](https://github.com/tmux-plugins/tmux-resurrect) +
+Session persistence for those ad-hoc sessions is handled by the
+well-established [`tmux-resurrect`](https://github.com/tmux-plugins/tmux-resurrect) +
 [`tmux-continuum`](https://github.com/tmux-plugins/tmux-continuum) plugins
 (managed by [tpm](https://github.com/tmux-plugins/tpm)) rather than a
 custom save/restore script — auto-save every 5 minutes, auto-restore on
-tmux server start.
+tmux server start. The persistent Claude session no longer depends on them:
+herdr restores its own layout and relaunches agents on server start.
 
 ## VS Code ([`dotfiles/dot_config/vscode/settings.json`](../dotfiles/dot_config/vscode/settings.json))
 
@@ -118,8 +141,10 @@ Two things worth knowing:
 - **krew needs `~/.krew/bin` on PATH, not just installed.** kubectl discovers
   plugins by scanning PATH for `kubectl-*` binaries, so without that entry even
   `kubectl krew` itself reports *unknown command*. It's added in `40_path.sh`
-  (unguarded, so scripts get it too) and in `claude-tmux.service`'s `PATH=`, so
-  the Claude Code session on the server sees plugins as well.
+  (unguarded, so scripts get it too) and in `herdr-server.service`'s `PATH=`,
+  so the Claude Code session on the server sees plugins as well — the herdr
+  server hands its environment to every pane it spawns, which is exactly why
+  that unit declares one explicitly.
 
 The server installs krew and kubectx from GitHub releases rather than apt:
 Ubuntu's `kubectx` package lags upstream badly, and neither tool is in the
@@ -232,7 +257,7 @@ copy-pasteable `code --remote ...` line — use those if clicking does nothing.
 The reverse direction from `vscode-here`: run it **on a client** (Ghostty,
 not SSH'd into anything) and it opens VS Code Remote-SSH on
 `$CLAUDE_SERVER_HOST` directly, then attaches the current terminal to the
-`claude-main` tmux session — one command instead of opening VS Code by hand
+`claude-main` herdr workspace — one command instead of opening VS Code by hand
 and separately running `claude-attach`. Aliased to `cv`.
 
 ```sh
@@ -249,11 +274,11 @@ If no path is given, `claude-vscode` asks the server for its own `$HOME` over
 connection to actually happen — `code --remote ssh-remote+host` with no path
 can silently open a disconnected local window instead of erroring.
 
-**The VS Code window and the tmux session are independent connections, not a
+**The VS Code window and the herdr session are independent connections, not a
 paired one.** Claude Code's live IDE integration (inline diffs, selection
 context) only pairs with a VS Code window when `claude` is launched from
 *that window's own* integrated terminal. `claude-main` was started by
-`claude-tmux.service`, not from inside VS Code, so the window this opens is a
+`herdr-server.service`, not from inside VS Code, so the window this opens is a
 manual file/diff browser — same as opening it via `vscode-here` yourself, just
 without needing to already be SSH'd in first.
 
@@ -303,7 +328,7 @@ ghostty +list-fonts | grep -i meslo
 
 ## Applies everywhere
 
-Every piece above — Ghostty, tmux, VS Code, the CLI tools — is part of the
+Every piece above — Ghostty, herdr, tmux, VS Code, the CLI tools — is part of the
 general layer and is installed/applied identically on the work MacBook Pro
 as on the server and the personal Air. See
 [`docs/client-work-setup.md`](client-work-setup.md) for that machine's

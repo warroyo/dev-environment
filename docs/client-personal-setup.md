@@ -16,13 +16,12 @@ Installs Tailscale, Ghostty, Mosh, chezmoi, and VS Code + the Remote-SSH
 extension via Homebrew, and ends by applying the dotfiles
 (`chezmoi init --apply`).
 
-It also installs `herdr`, the multiplexer being evaluated against tmux for the
-persistent session (see [server-setup.md](server-setup.md) for the server
-half). That one comes from a pinned, checksum-verified release binary rather
-than Homebrew — there's no official formula, and the pin matters: client and
-server negotiate a protocol version, so both ends have to agree. The version
-lives in `provision/lib/herdr.sh` and nowhere else. Attach with
-`claude-attach-herdr`; `claude-attach` still gets you the tmux session.
+It also installs `herdr`, the multiplexer holding the persistent session (see
+[server-setup.md](server-setup.md) for the server half). That one comes from a
+pinned, checksum-verified release binary rather than Homebrew — there's no
+official formula, and the pin matters: client and server negotiate a protocol
+version, so both ends have to agree. The version lives in
+`provision/lib/herdr.sh` and nowhere else.
 
 It also writes `/etc/resolver/set.lab` so the lab's internal zone — and only
 that zone — resolves through the lab's own DNS server. That needs `sudo`, so
@@ -97,12 +96,19 @@ with no further config.
 claude-attach
 ```
 
-Should SSH to the server and attach to (or create) the `claude-main` tmux
-session, with `claude` already running via `claude-tmux.service`.
+Runs a herdr client locally and bridges it to the server's session over ssh,
+landing you in the `claude-main` workspace with `claude` already running via
+`herdr-server.service`.
+
+Detach with **`Ctrl-b q`** — the prefix matches tmux, the detach key does not.
+`claude-attach --mosh` runs the client on the server instead (worth it on a
+roaming link, at the cost of clipboard image paste); `claude-attach --tmux` is
+the escape hatch for when the herdr server is what's broken. See
+[herdr-cheatsheet.md](herdr-cheatsheet.md).
 
 ## Primary surface
 
-Ghostty + tmux (via `claude-attach`) is the primary surface for actually
+Ghostty + herdr (via `claude-attach`) is the primary surface for actually
 working with Claude Code. VS Code Remote-SSH is for diffs and file
 browsing — open it on demand when you want a GUI diff view or to browse the
 tree, not left running as the main interface.

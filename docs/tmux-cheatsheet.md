@@ -1,7 +1,17 @@
 # tmux cheatsheet
 
-Practical, not comprehensive — just what you actually need for the
-`claude-attach`/`claude-env` workflow. Reflects the real bindings in
+> **tmux no longer holds the persistent Claude Code session** — herdr does, as
+> of 2026-08-19. See [`herdr-cheatsheet.md`](herdr-cheatsheet.md) for
+> `claude-attach` and `claude-env`, and
+> [`ARCHITECTURE.md`](ARCHITECTURE.md#why-one-always-on-host) for why.
+>
+> tmux is still installed on every machine for ad-hoc use, and
+> `claude-attach --tmux` reaches a plain tmux session on the server as the
+> escape hatch for when the herdr server itself is broken. This page is for
+> those. Watch the prefix: both use `Ctrl-b`, but tmux detaches with
+> `Ctrl-b d` and herdr with `Ctrl-b q`.
+
+Practical, not comprehensive. Reflects the real bindings in
 [`dotfiles/dot_tmux.conf`](../dotfiles/dot_tmux.conf), not generic tmux
 defaults.
 

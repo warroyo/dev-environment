@@ -18,23 +18,23 @@
   So the line this file draws is "does the file run claude locally?", not
   "does the file have claude in its name":
 
-    claude-attach / claude-env   pure SSH clients. They run `ssh` locally and
-                                 `claude` on the SERVER. Ship everywhere — this
-                                 is how a restricted client reaches the session.
-    claude-attach-herdr          same rule, different multiplexer. Its default
-                                 mode runs a herdr CLIENT here, but the client
-                                 only draws a terminal owned by the server —
-                                 claude still never executes locally.
+    claude-attach / claude-env   they run a herdr CLIENT locally (or ssh/mosh
+                                 to one on the server) and `claude` never runs
+                                 here at all — the client only draws terminals
+                                 the SERVER owns. Ship everywhere; this is how
+                                 a restricted client reaches the session.
     claude-vscode                same idea: runs the local `code` CLI (VS Code
                                  itself is fine on restricted clients) plus
                                  claude-attach. Ships everywhere too.
     70_claude.sh                 the ca/ce/cv aliases for the above. Same.
-    claude-session               runs `claude` in the current shell. Server only
-                                 (it is what claude-tmux.service execs).
-    claude-open                  starts a tmux session running `claude` here.
+    claude-session               runs `claude` in the current shell. Server only.
+                                 Now reached only through the disabled
+                                 claude-tmux.service fallback, which is why it
+                                 still ships rather than being retired.
+    claude-open                  starts a herdr workspace running `claude` here.
                                  Server only, same rule.
-    herdr-main-workspace         starts `claude` in a herdr pane here, via the
-                                 socket API. Server only, same rule.
+    herdr-main-workspace         starts `claude` in the claude-main herdr pane,
+                                 over the socket API. Server only, same rule.
     claude-telegram-bot          long-polls Telegram and calls claude-open.
                                  Server only — it is the phone entry point to
                                  the machine that actually runs the CLI.

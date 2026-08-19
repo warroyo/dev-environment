@@ -2,8 +2,8 @@
 
 Two-layer setup, one repo:
 
-1. **General terminal/editor defaults** — shell, Ghostty, tmux, VS Code,
-   common CLI tools. Applies to every machine, work laptop included.
+1. **General terminal/editor defaults** — shell, Ghostty, herdr, tmux, VS
+   Code, common CLI tools. Applies to every machine, work laptop included.
 2. **Remote Claude Code** — a persistent, always-on Claude Code host on an
    Ubuntu server, reachable from a personal MacBook Air over Tailscale and
    from a work MacBook Pro over OpenVPN. The host half is the server alone;
@@ -98,8 +98,11 @@ not source paths — verify with `chezmoi ignored`.
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — roles, rationale, the hard
   constraints this repo is built around, Definition of Done
 - [`docs/terminal-and-editor-defaults.md`](docs/terminal-and-editor-defaults.md) — the general layer
-- [`docs/tmux-cheatsheet.md`](docs/tmux-cheatsheet.md) — the handful of
-  tmux bindings you actually need for this workflow
+- [`docs/herdr-cheatsheet.md`](docs/herdr-cheatsheet.md) — the bindings and
+  commands you actually need for the persistent session (note: detach is
+  `Ctrl-b q`, not `Ctrl-b d`)
+- [`docs/tmux-cheatsheet.md`](docs/tmux-cheatsheet.md) — tmux, still installed
+  for ad-hoc use and as `claude-attach --tmux`
 - [`docs/server-setup.md`](docs/server-setup.md)
 - [`docs/client-personal-setup.md`](docs/client-personal-setup.md)
 - [`docs/client-work-setup.md`](docs/client-work-setup.md)

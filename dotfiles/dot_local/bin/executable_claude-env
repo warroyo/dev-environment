@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
-# Attach to the tmux session dedicated to the second, unrelated OpenVPN
-# environment. Kept separate from claude-main so that work never mixes into
-# the main session.
+# Attach to the session dedicated to the second, unrelated OpenVPN environment.
+# Kept separate from claude-main so that work never mixes into the main session.
+#
+#   claude-env          # herdr client HERE, bridged to the server over ssh
+#   claude-env --mosh   # herdr client on the SERVER, over mosh
+#
+# Separation is a NAMED HERDR SESSION (`--session claude-env`), not a workspace
+# inside claude-main. A named session gets its own server and its own socket, so
+# nothing from this environment shows up in claude-main's sidebar — which is the
+# whole point of keeping it apart. A workspace would have been visible there.
 #
 # Claude Code here runs directly on the server, not inside a container: the
 # tunnel this environment needs is a split one that never takes over the host's
@@ -13,32 +20,61 @@
 # is a certificate shared with other machines and only one connection can be
 # live at a time, so connecting is always an explicit act — this only warns
 # when it's down.
+#
+# KNOWN GAP: this used to take an optional starting directory, which worked
+# because tmux's `new-session -A -c <dir>` sets it at creation time. herdr has
+# no equivalent on `--session` attach: a workspace can be pointed at a cwd, but
+# only over the session's own API socket, which does not exist until the
+# session has been attached at least once. So: attach, then open a workspace
+# where you want it (prefix + shift-N) or just cd.
 set -euo pipefail
 
 HOST="${CLAUDE_SERVER_HOST:-claude-server}"
 SESSION="claude-env"
+MODE=local
 
-# Optional starting directory, resolved on the server. tmux's `new-session -A`
-# *attaches* to an existing session, so this only takes effect when the session
-# is actually being created; for a session that is already running, cd once
-# you're in.
-DIR="${1:-}"
+usage() {
+  cat <<'EOF'
+usage: claude-env [--mosh]
 
-# tput reset before attaching: a session that drops mid-tmux can leave
-# terminal modes (mouse tracking, alternate screen) stuck on, which then makes
-# the *next* connection spew raw escape-sequence garbage.
-REMOTE='tput reset'
+  (default)   run the herdr client locally, bridged to the server over ssh
+  --mosh      run the herdr client on the server, over mosh
+EOF
+}
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --mosh)    MODE=mosh; shift ;;
+    -h|--help) usage; exit 0 ;;
+    *) printf 'claude-env: unknown option %s\n' "$1" >&2; usage >&2; exit 2 ;;
+  esac
+done
+
+if [ -n "${TMUX:-}" ]; then
+  printf 'claude-env: refusing to run inside tmux — detach first (Ctrl-b d).\n' >&2
+  exit 1
+fi
+if [ "${HERDR_ENV:-}" = 1 ]; then
+  printf 'claude-env: already inside a herdr pane.\n' >&2
+  exit 1
+fi
 
 # Warn rather than connect: bringing the tunnel up implicitly could kick
-# another machine off the shared identity.
-REMOTE="${REMOTE}; if ! ip link show tun0 >/dev/null 2>&1; then"
-REMOTE="${REMOTE} echo; echo '  client VPN is down — run: client-vpn up'; echo; fi"
+# another machine off the shared identity. Done as its own ssh call because
+# `herdr --remote` owns its connection and has nowhere to hang a pre-command;
+# ControlMaster makes the second connection cheap anyway.
+if ! ssh -o BatchMode=yes "$HOST" 'ip link show tun0 >/dev/null 2>&1'; then
+  printf '\n  client VPN is down — run: client-vpn up\n\n' >&2
+fi
 
-REMOTE="${REMOTE}; tmux new-session -A -s '${SESSION}'"
-[ -n "$DIR" ] && REMOTE="${REMOTE} -c '${DIR}'"
-# claude-session rather than a bare `claude`, for the same reason claude-main
-# uses it: tmux kills a session when its command exits, so a bare claude means
-# quitting it destroys the session.
-REMOTE="${REMOTE} claude-session"
+if [ "$MODE" = mosh ]; then
+  command -v mosh >/dev/null 2>&1 || {
+    printf 'claude-env: mosh is not installed locally.\n' >&2; exit 1; }
+  exec mosh "$HOST" -- sh -lc "tput reset; exec herdr --session '${SESSION}'"
+fi
 
-ssh -t "$HOST" "$REMOTE"
+command -v herdr >/dev/null 2>&1 || {
+  printf 'claude-env: herdr is not installed locally.\n' >&2
+  printf '  run provision/client-personal-bootstrap.sh, or use --mosh.\n' >&2
+  exit 1; }
+exec herdr --remote "$HOST" --session "$SESSION"

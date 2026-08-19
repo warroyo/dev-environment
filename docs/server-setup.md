@@ -12,10 +12,12 @@ cd ~/dev-environment
 ./provision/server-bootstrap.sh
 ```
 
-Installs zsh (and sets it as your login shell), tmux + tpm, mosh,
+Installs zsh (and sets it as your login shell), herdr, tmux + tpm, mosh,
 `ripgrep`/`fd`/`bat`/`eza`/`fzf`, Tailscale, Docker, kubectl + krew +
-`kubectx`/`kubens`, Node.js, Terraform, and chezmoi, and writes the
-`claude-tmux.service` systemd unit and the OpenVPN client config.
+`kubectx`/`kubens`, Node.js, Terraform, and chezmoi, writes the
+`herdr-server.service` systemd unit that holds the persistent session and the
+OpenVPN client config, and leaves a disabled `claude-tmux.service` on disk as
+the way back to tmux.
 
 Two warnings are expected on this first run and are not errors:
 
@@ -28,8 +30,9 @@ out and back in — the script uses `sudo docker` internally to work around
 that, but your own `docker` commands will need a fresh login.
 
 The script now also installs the Claude Code CLI, applies the dotfiles via
-chezmoi, and installs the tmux plugins — those are no longer separate manual
-steps.
+chezmoi, installs the tmux plugins, and calls
+[`provision/herdr-setup.sh`](../provision/herdr-setup.sh) to set up the
+persistent session — those are no longer separate manual steps.
 
 ## 2. Authenticate the Claude Code CLI
 
@@ -107,21 +110,24 @@ flow that a stateful firewall may drop. Check that the UDM SE permits the
 VPN pool to reach whichever VLAN you're targeting, and prefer connecting to
 the address on the same VLAN the OpenVPN pool routes into.
 
-## 5. Dotfiles and tmux plugins — automated
+## 5. Dotfiles, herdr and tmux plugins — automated
 
-Both are done by the bootstrap script; nothing to run by hand.
+All done by the bootstrap script; nothing to run by hand.
 
 It applies both layers (general + Claude-specific) on the server, including
 the `CLAUDE_CODE_TMUX_TRUECOLOR=1` export specific to this machine, then
 installs `tmux-resurrect` and `tmux-continuum` via tpm's `install_plugins`
 (the scripted equivalent of pressing `prefix + I`).
 
-One ordering detail the script handles: if `claude-tmux.service` started a
-tmux server at boot *before* `~/.tmux.conf` existed, that server never
-sourced the config and tpm aborts with "Tmux Plugin Manager not configured
-in tmux.conf". The script runs `tmux source-file ~/.tmux.conf` against the
-live server first, which both fixes tpm and makes the new settings take
-effect in `claude-main` without restarting your session.
+One ordering detail the script handles: if a tmux server was started at boot
+*before* `~/.tmux.conf` existed, that server never sourced the config and tpm
+aborts with "Tmux Plugin Manager not configured in tmux.conf". The script runs
+`tmux source-file ~/.tmux.conf` against the live server first.
+
+It then runs `herdr-setup.sh`, which installs the pinned herdr binary
+(checksum-verified against `herdr.dev/latest.json`), writes and enables
+`herdr-server.service`, disables `claude-tmux.service` if an earlier run had
+enabled it, and creates the `claude-main` workspace with claude running in it.
 
 ### Where the session starts, and why it stays alive
 
@@ -149,18 +155,21 @@ pre-seeding silently stops working and the prompt comes back — the session
 still survives thanks to the shell fallback below, you'd just answer once by
 hand.
 
-The unit runs [`claude-session`](../dotfiles/dot_local/bin/executable_claude-session)
-rather than `claude` directly. tmux ends a session when its last command exits,
-so running `claude` directly means quitting or crashing it **destroys the
-session**, leaving `claude-attach` nothing to attach to. The wrapper runs
-claude, then drops to a login shell and prints how to get back:
+The unit is only half of it. `herdr-server.service` starts a server that owns
+terminals but creates none; its `ExecStartPost` runs
+[`herdr-main-workspace`](../dotfiles/dot_local/bin/executable_herdr-main-workspace),
+which creates the `claude-main` workspace over herdr's socket API and starts
+claude in it. That split is why the two steps are separate scripts.
 
-```
-  ── claude exited ─────────────────────────────────────────────
-     run  claude      to start it again in this window
-     or   Ctrl-b d    to detach and leave the session running
-  ──────────────────────────────────────────────────────────────
-```
+There is no session-keeping wrapper on this path. herdr starts claude *into* a
+pane's shell, so quitting or crashing claude drops back to that shell and the
+workspace survives — the problem `claude-session` existed to solve under tmux
+does not arise. (`claude-session` still ships, because the disabled
+`claude-tmux.service` fallback still execs it.)
+
+`agent start` also waits for claude to report itself ready for input, so a
+failed start surfaces as a failed unit rather than as an empty session you
+discover on attach.
 
 ### Getting claude back after you've quit it
 
@@ -173,12 +182,16 @@ impossible to escape, and would fight you when you quit on purpose.
   windows and panes you've added):
 
   ```sh
-  sudo systemctl restart claude-tmux.service
+  herdr-main-workspace                       # just restart claude in it
+  sudo systemctl restart herdr-server.service # or reset the whole session
   ```
 
-Note that `systemctl is-active claude-tmux` is **not** proof the session
-exists — any lingering process in the unit's cgroup keeps it looking active.
-`verify-server.sh` checks `tmux has-session`, which is the real signal.
+Unlike the old tmux unit, `systemctl is-active herdr-server` **is** meaningful:
+`Type=exec` means the supervised process is the server itself, not a launcher
+that exits. What it still cannot tell you is whether anything is running inside
+the session — `verify-server.sh` asks herdr directly, and gets the agent's
+lifecycle state (`idle`, `working`, `blocked`, `done`) rather than having to
+walk a pane's process tree.
 
 ### Node.js / npx-based CLIs
 
@@ -186,7 +199,10 @@ The script installs Node.js (via NodeSource's apt repo — a system-wide LTS,
 not nvm, since this is a single always-on box) and points npm's global
 prefix at `~/.npm-global` so `npm install -g` needs no sudo. Both
 `~/.local/bin` and `~/.npm-global/bin` are on `PATH` for every shell,
-scripted or interactive (`dot_zshenv`), and the `claude-tmux.service` unit.
+scripted or interactive (`dot_zshenv`), and the `herdr-server.service` unit.
+That unit declares its environment explicitly for a second reason too: the
+herdr server hands its own environment to every pane it spawns, so anything
+inherited from whatever launched it ends up inside every agent.
 
 This is what makes `npx`-based install CLIs usable directly in the
 `claude-main` session, e.g. [`skills`](https://www.npmjs.com/package/skills)
@@ -311,49 +327,55 @@ verify with `sudo ss -tlnp | grep :22` rather than trusting `sshd -T`.
 ## 9. Manual: the Telegram bot (start sessions from your phone)
 
 Optional. It exists so a phone can say "open Claude Code in
-`~/workspace/whatever`" without SSH: the bot starts a detached tmux session
-running `claude --remote-control`, and the conversation then happens in the
+`~/workspace/whatever`" without SSH: the bot opens a herdr workspace running
+`claude --remote-control`, and the conversation then happens in the
 Claude app over Remote Control. The bot itself never relays messages — it
 starts, lists and stops sessions, nothing else. That's the whole design
 decision: Remote Control already gives the real session (tools, permission
 prompts, full output), so a chat-shaped reimplementation would only be worse.
 
-**Create the bot and find your chat id.** Do this *before* the service is
-enabled: only one client may long-poll a token at a time, so once the bot is
-running it consumes the updates and the `getUpdates` below returns nothing (or
-a 409 `Conflict`).
+**In the app:** message [@BotFather](https://t.me/BotFather) → `/newbot`,
+follow the prompts, keep the token. The username must end in `bot`. Then open
+`t.me/<username>` and press Start — a bot cannot message you first, so with no
+message from you there is no chat id for anything to find.
 
-1. Message [@BotFather](https://t.me/BotFather) → `/newbot`, follow the
-   prompts, keep the token it gives you. The username must end in `bot`.
-2. Open `t.me/<username>` and press Start — a bot cannot message you first, so
-   with no message from you there is no chat id to find. Then, on the server:
-
-   ```sh
-   curl -s "https://api.telegram.org/bot<TOKEN>/getUpdates" | jq '.result[].message.chat.id'
-   ```
-
-3. Optional, for autocomplete in the app: BotFather → `/setcommands` → pick the
-   bot → paste (note BotFather wants them **without** the leading slash):
-
-   ```
-   cc_ls - directories in ~/workspace
-   cc_open - start Claude Code in a directory
-   cc_sessions - what is running now
-   cc_kill - stop a session
-   help - all commands
-   ```
-
-**Store both values outside git**, like every other credential here:
+**On the server**, everything else is one command:
 
 ```sh
-mkdir -p ~/.secrets && chmod 700 ~/.secrets
-cat > ~/.secrets/telegram-bot <<'EOF'
-export TELEGRAM_BOT_TOKEN=123456:ABC...
-export TELEGRAM_ALLOWED_CHAT_IDS="123456789"
-EOF
-chmod 600 ~/.secrets/telegram-bot
-./provision/server-bootstrap.sh          # writes + enables claude-telegram-bot.service
+TELEGRAM_BOT_TOKEN=123456:ABC... ./provision/telegram-bot-setup.sh
 ```
+
+It checks the token against `getMe`, long-polls until your message arrives and
+shows the chat id(s) it saw, asks you to confirm the allow-list, writes
+`~/.secrets/telegram-bot` at `0600`, then enables and restarts the unit. Pass
+the ids yourself with `TELEGRAM_ALLOWED_CHAT_IDS="123456789"` to skip the
+polling. Re-run it to rotate the token or add an id; the old file is kept as
+`~/.secrets/telegram-bot.bak`.
+
+The token comes from the environment, not an argument, so it stays out of `ps`
+and — if you prefix the command with a space — out of shell history. Leave it
+unset and the script asks for it with echo off.
+
+Two things the script handles that are easy to get wrong by hand: only one
+client may long-poll a token at a time, so it stops the running bot first and
+starts it again afterwards (otherwise `getUpdates` returns nothing or a 409
+`Conflict`), and a webhook left set on the bot disables `getUpdates` entirely,
+so it clears one if it finds one.
+
+Optional, for command autocomplete in the app: BotFather → `/setcommands` →
+pick the bot → paste (BotFather wants them **without** the leading slash):
+
+```
+cc_ls - directories in ~/workspace
+cc_open - start Claude Code in a directory
+cc_sessions - what is running now
+cc_kill - stop a session
+help - all commands
+```
+
+If the unit does not exist yet — a first-ever setup, before the bootstrap has
+run — the script writes the secrets file and says so; run
+`./provision/server-bootstrap.sh` afterwards to create and enable it.
 
 The bootstrap script writes the unit whether or not that file exists, but only
 **enables** it once it does — an unconfigured bot would fail on start and
@@ -376,8 +398,8 @@ allow only `a-z`, `0-9` and `_`, hence `cc_`.
 |---|---|
 | `/cc_ls` | directories in `~/workspace`, marked if a session is running |
 | `/cc_open <dir>` | start Claude Code there with Remote Control on; creates the directory if missing |
-| `/cc_sessions` | what's running now |
-| `/cc_kill <dir>` | stop a session (its conversation is gone) |
+| `/cc_sessions` | what's running now, each directory with its session name |
+| `/cc_kill <dir>` | stop a session (its conversation is gone); takes a `cc-…` name too |
 | `/help` | all families (global, unprefixed) |
 
 Adding a family later means new handlers plus two lines — one in the
@@ -385,23 +407,66 @@ dispatcher's `case`, one in `bot_help` — and nothing existing gets renamed.
 
 The `/cc_open` reply carries the session's `https://claude.ai/code/session_…`
 link, so it's one tap from Telegram into the live session. That link is
-scraped out of the Remote Control banner in the tmux pane — there's no file or
-flag that reports it — with `capture-pane -S -500`, because Claude Code redraws
-as it works and the banner scrolls out of the visible pane within a minute or
-two. If the scrape comes up empty the reply falls back to naming the session,
-which is still findable in the app's Remote Control list.
+scraped out of the Remote Control banner in the pane — there's no file or flag
+that reports it — with `herdr pane read --lines 500`, because Claude Code
+redraws as it works and the banner scrolls out of view within a minute or two.
+If the scrape comes up empty the reply falls back to naming the session, which
+is still findable in the app's Remote Control list.
 
-Sessions are named `cc-<dir>` so they're distinguishable from `claude-main`
-and `claude-env`, and so the same directory always maps to the same session —
-which is what makes `/cc_open` idempotent. Opening a directory that's already
-running reports it rather than restarting, so a second tap from the phone can
-never destroy a live conversation. Attach from a terminal with
-`tmux attach -t cc-<dir>` like any other session.
+The scrape strips indentation and joins the lines before matching, and that is
+load-bearing rather than tidying: Claude Code hard-wraps that banner at the
+pane's width, so the URL arrives split across two lines and a plain `grep`
+returns a **truncated** link that looks perfectly valid. The tmux version got
+away without this because a detached tmux session defaults to 80 columns and
+the URL happened to fit.
+
+Each session is a herdr **workspace** in the same server as `claude-main`,
+labelled with the directory's path relative to `~/workspace`. That is the
+substantive gain over tmux: these used to be sibling detached sessions you
+could only visit one at a time, so phone-started work was invisible while you
+were attached elsewhere. Now one `claude-attach` shows every one of them in the
+sidebar with its live agent state.
+
+The same directory always maps to the same label, which is what makes
+`/cc_open` idempotent. Opening a directory that's already running reports it
+rather than restarting, so a second tap from the phone can never destroy a live
+conversation.
+
+herdr labels are free text, so the mapping is the identity function — `a/b` is
+`a/b`. Under tmux it could not be: tmux won't take `/`, `.` or `:` in a session
+name, so paths were flattened to `-`, and that flattening was lossy in a
+dangerous rather than ugly way — `a/b`, `a.b` and `a-b` all became `cc-a-b`, so
+opening one would report another as already running and hand the phone a
+session in the wrong directory, and `/cc_kill a-b` would kill whichever got
+there first. The six-character path digest that defended against that is gone
+with the problem.
+
+One place the flattening survives: herdr **agent** names are constrained to
+`[a-z][a-z0-9_-]{0,31}`, so `claude-open` still derives a sanitised name with a
+digest for the agent itself. Nothing ever looks a session up by agent name — the
+workspace label and the pane's cwd are what get matched — so a collision there
+would cost nothing but a confusing label.
+
+Only `claude-open` knows that mapping, and `claude-open --session-name <dir>`
+prints it without creating or starting anything. The bot calls that for
+`/cc_kill` and never derives a name itself — it used to, flattening `/` but
+not `.`, which meant a directory with a dot in its name could be opened but
+never killed. It still asks rather than assuming even now that the mapping is
+trivial, because `claude-open` also does the path validation, so a hostile
+argument from Telegram is rejected there instead of reaching herdr.
+
+`/cc_ls` doesn't derive names at all: it marks a directory as running by
+comparing each session's working directory, which is also how sessions on
+nested paths show up in a listing that otherwise walks one level. Both `/cc_ls`
+and `/cc_sessions` now report the agent's state — `idle`, `working`, `blocked`,
+`done` — instead of a bare "running", which is the question you actually have
+when checking on something from a phone. `claude-main` is filtered out of both:
+it is not the bot's to list or to kill.
 
 [`claude-open`](../dotfiles/dot_local/bin/executable_claude-open) is a normal
 command, not bot-only plumbing — `ssh claude-server claude-open foo` does the
-same thing. It takes the same trust-prompt precaution as
-`claude-tmux.service` ([above](#where-the-session-starts-and-why-it-stays-alive)):
+same thing. It takes the same trust-prompt precaution as the server bootstrap
+([above](#where-the-session-starts-and-why-it-stays-alive)):
 a directory Claude Code has never seen would otherwise stop on an interactive
 "do you trust this folder?" that nobody is there to answer. It also refuses
 anything outside `~/workspace`, including via symlink, because its argument
@@ -448,7 +513,7 @@ proactively suggest `/log-session` at a natural point — priming, not
 automatic writing. An earlier version tried a `Stop`-hook safety net
 instead, but Claude Code's `Stop` event fires once per *turn*, not once per
 session, which doesn't map cleanly onto `claude-main` being an always-on
-tmux session that may never see a true "session end" — it would have fired
+session that may never see a true "session end" — it would have fired
 (and had to be debounced) dozens of times a day. `CLAUDE.md` guidance,
 loaded automatically at the start of every session, does the same priming
 job without an event/script to maintain.
@@ -463,7 +528,9 @@ Read-only, changes nothing, exits non-zero if anything FAILs. Checks tooling,
 dotfiles (including that chezmoi-managed files haven't drifted, and that
 `~/.ssh/config` is `0600`), tmux plugins, Tailscale, the ssh bindings
 (flagging any wildcard bind or unbound LAN address), and the persistent
-session. Run it after a reboot or an OS upgrade.
+session — including asking herdr for the agent's state, and warning if
+`claude-tmux.service` has been left enabled alongside it. Run it after a reboot
+or an OS upgrade.
 
 WARNs don't fail the run — an unconfigured second OpenVPN environment is
 expected if you don't use it.
@@ -477,12 +544,27 @@ sudo reboot
 After the server comes back up:
 
 ```sh
-tmux attach -t claude-main
+claude-attach
 ```
 
-should show `claude` already running, with no manual steps — systemd's
-`claude-tmux.service` starts it on boot, and `tmux-continuum` restores the
-prior session layout.
+should show `claude` already running in `claude-main`, with no manual steps —
+`herdr-server.service` starts the server on boot and its `ExecStartPost`
+recreates the workspace.
+
+herdr also restores its own layout on start and relaunches agents within a few
+seconds. Those come back as **fresh** conversations, though, unless the Claude
+Code integration is installed:
+
+```sh
+./provision/herdr-setup.sh --with-claude-integration
+```
+
+That writes `~/.claude/hooks/herdr-agent-state.sh` and lets
+`session.resume_agents_on_restore` put the conversation itself back, not just
+the process. It is opt-in because it edits the **global** Claude Code config
+that every session on the box reads, including any started under tmux by
+hand — but on a herdr-primary setup it is the recommended state, and it is the
+only thing here that replaces what `tmux-continuum` used to do.
 
 The second OpenVPN environment is deliberately *not* restored by a reboot —
 it is on-demand only, because its identity is shared with other machines.

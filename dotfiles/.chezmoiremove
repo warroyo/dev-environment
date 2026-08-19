@@ -13,3 +13,9 @@
 # routed path (10.47.0.0/16 via the server) plus split DNS on port 5300.
 # Removed 2026-08-17. See docs/client-work-setup.md.
 .local/bin/browser-vpn
+
+# claude-attach-herdr: existed only for the herdr-vs-tmux comparison. herdr won
+# and claude-attach itself is now the herdr client, with --tmux as the escape
+# hatch, so this one is a second name for the same thing.
+# Removed 2026-08-19. See docs/server-setup.md.
+.local/bin/claude-attach-herdr

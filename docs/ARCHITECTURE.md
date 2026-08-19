@@ -2,7 +2,7 @@
 
 This repo has two independent layers:
 
-1. **General terminal and editor defaults** — shell config, Ghostty, tmux,
+1. **General terminal and editor defaults** — shell config, Ghostty, herdr, tmux,
    general VS Code settings, common CLI tools (`ripgrep`/`fd`/`bat`/`eza`/`fzf`,
    plus `kubectl`/krew/`kubectx`), and everyday aliases/scripts. Applies to
    **every** machine, including the restricted work laptop.
@@ -52,14 +52,30 @@ Two further pieces sit outside the role system:
 ## Why one always-on host
 
 Session state — the running `claude` process, its context, any long-lived
-background work — lives entirely on the server, in a tmux session kept alive by
-systemd. No client holds any of it. Closing a laptop never matters, because
-nothing Claude-related runs on a laptop.
+background work — lives entirely on the server, in a [herdr](https://herdr.dev)
+session kept alive by systemd (`herdr-server.service`). No client holds any of
+it. Closing a laptop never matters, because nothing Claude-related runs on a
+laptop.
+
+herdr replaced tmux here on 2026-08-19. The reason was not multiplexing, which
+tmux did fine, but that herdr tracks each pane's agent as an agent: it knows
+whether claude is idle, working, blocked on a prompt, or done, and exposes that
+over a socket API. That turns three things from guesswork into queries — the
+sidebar showing every session's state at once, `verify-server.sh` asking
+directly whether claude is running rather than walking a pane's process tree,
+and the Telegram bot reporting state instead of a bare "running". tmux is still
+installed for ad-hoc use, and `claude-tmux.service` is still on disk but
+disabled, so `provision/herdr-setup.sh --uninstall` hands the session back in
+one command.
 
 ## Access paths
 
-- **`personal` → server**: mesh VPN, direct. `claude-attach` SSHes to the
-  server and attaches to (or creates) the `claude-main` tmux session.
+- **`personal` → server**: mesh VPN, direct. `claude-attach` runs a herdr
+  client locally and bridges it to the server's herdr session over ssh, so the
+  TUI renders on the laptop and a clipboard image paste reaches the remote
+  pane. `claude-attach --mosh` runs the client on the server instead, which is
+  the shape that survives a roaming link; `claude-attach --tmux` is the escape
+  hatch for when the herdr server itself is what's broken.
 - **`work` → server**: split-tunnel VPN routed to the LAN only — no
   `redirect-gateway`, so it never fights a corporate VPN's routing. Same
   `claude-attach` workflow as `personal`, but `claude-server` has to be defined
@@ -70,14 +86,18 @@ nothing Claude-related runs on a laptop.
   is unavailable — a bad kernel update, a network misconfiguration — without
   needing physical presence.
 - **Second VPN environment**: an on-demand OpenVPN client on the server,
-  reached via the dedicated `claude-env` tmux session.
+  reached via `claude-env`, a separate *named* herdr session. Named rather than
+  a workspace inside `claude-main`: a named session gets its own server and
+  socket, so nothing from that environment appears in the main session's
+  sidebar.
 - **Phone → server**: a Telegram bot on the server
-  (`claude-telegram-bot.service`) starts a detached tmux session running
+  (`claude-telegram-bot.service`) opens a herdr workspace running
   `claude --remote-control` in a directory under `~/workspace`; the
   conversation then happens in the Claude app over Remote Control. This is the
   one access path that isn't SSH, so it's also the one with a credential that
   can leak — the bot answers **only** chat ids in an allow-list kept in
-  `~/.secrets/telegram-bot`, and drops everything else without replying. It
+  `~/.secrets/telegram-bot` (written by `provision/telegram-bot-setup.sh`), and
+  drops everything else without replying. It
   starts and stops sessions; it never relays messages. See
   [`docs/server-setup.md`](server-setup.md#9-manual-the-telegram-bot-start-sessions-from-your-phone).
 
@@ -111,8 +131,8 @@ a manual check in the gateway's UI — it can't be verified from the server.
 ## The second VPN environment
 
 That environment's OpenVPN client runs **directly on the server** under
-systemd (`openvpn-client@client-env`), with its own tmux session (`claude-env`,
-distinct from `claude-main`).
+systemd (`openvpn-client@client-env`), with its own named herdr session
+(`claude-env`, distinct from `claude-main`).
 
 It was originally isolated inside a `gluetun` container in its own network
 namespace, on the stated constraint that this client and the mesh VPN must
@@ -198,7 +218,7 @@ was one more thing to keep true.
       every other machine and can attach to the server's session over SSH.
 - [ ] The two VPN paths never contend for the server's default route.
 - [ ] A server reboot restores everything — mesh VPN, ssh bindings,
-      and the `claude-main` tmux session with `claude` already running — with
+      and the `claude-main` herdr workspace with `claude` already running — with
       no manual steps (verify per [`docs/server-setup.md`](server-setup.md)).
 - [ ] The role scheme fails closed: a machine that never declared a role gets
       the general layer only.

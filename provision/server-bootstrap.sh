@@ -784,7 +784,12 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-log "Writing claude-tmux systemd service"
+# Written, but deliberately NOT enabled. herdr owns the persistent session
+# (herdr-setup.sh, called at the end of this script); this unit stays on disk
+# so `provision/herdr-setup.sh --uninstall` can hand the session back to tmux
+# in one command instead of a re-provision. tmux itself stays installed for
+# ad-hoc use, which is also what `claude-attach --tmux` reaches.
+log "Writing claude-tmux systemd service (disabled fallback)"
 UNIT_PATH="/etc/systemd/system/claude-tmux.service"
 CLAUDE_BIN="$(command -v claude || true)"
 if [ -z "$CLAUDE_BIN" ]; then
@@ -877,13 +882,21 @@ WantedBy=multi-user.target
 EOF
 
 $SUDO systemctl daemon-reload
-$SUDO systemctl enable claude-tmux.service
-if ! $SUDO systemctl is-active --quiet claude-tmux.service; then
-  $SUDO systemctl start claude-tmux.service || \
-    log "WARNING: claude-tmux.service failed to start — check 'journalctl -u claude-tmux'."
-else
-  log "claude-tmux.service already running"
-fi
+# Left disabled on purpose — see the note above. herdr-setup.sh disables it too
+# if an older provision run had enabled it, so this is belt and braces for a
+# fresh machine that has never had the tmux unit running.
+$SUDO systemctl disable claude-tmux.service >/dev/null 2>&1 || true
+
+# ---------------------------------------------------------------------------
+# The persistent session itself. Kept in its own script because it is also the
+# thing you re-run on its own when only this part changes, and because
+# --uninstall there is the documented way back to tmux.
+#
+# It runs after the chezmoi apply above on purpose: it needs
+# ~/.local/bin/herdr-main-workspace, which is what creates the claude-main
+# workspace and starts claude in it.
+log "Installing herdr and the persistent session"
+"${SCRIPT_DIR}/herdr-setup.sh"
 
 # ---------------------------------------------------------------------------
 log "Writing claude-telegram-bot systemd service"
@@ -936,10 +949,9 @@ if [ -r "$TG_SECRETS" ]; then
 else
   $SUDO systemctl disable claude-telegram-bot.service >/dev/null 2>&1 || true
   log "  no ${TG_SECRETS} yet — bot left disabled. To enable it:"
-  log "    mkdir -p ~/.secrets && chmod 700 ~/.secrets"
-  log "    printf 'export TELEGRAM_BOT_TOKEN=...\\nexport TELEGRAM_ALLOWED_CHAT_IDS=...\\n' > ${TG_SECRETS}"
-  log "    chmod 600 ${TG_SECRETS} && re-run this script"
-  log "  See docs/server-setup.md for how to get both values."
+  log "    TELEGRAM_BOT_TOKEN=... ./provision/telegram-bot-setup.sh"
+  log "  That finds your chat id, writes the secrets file and enables the unit."
+  log "  See docs/server-setup.md for the @BotFather half."
 fi
 
 # ---------------------------------------------------------------------------

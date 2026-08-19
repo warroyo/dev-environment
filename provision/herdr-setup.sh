@@ -1,20 +1,19 @@
 #!/usr/bin/env bash
 #
-# Install herdr and run it as a SECOND, parallel persistent-session path
-# alongside claude-tmux.service, so the two can be A/B'd on the same server
-# without either being torn out.
+# Install herdr and make it the persistent-session path: the herdr server owns
+# claude-main, and claude-tmux.service is stopped and disabled.
 #
-# Deliberately standalone rather than folded into server-bootstrap.sh: this is
-# an evaluation, and an evaluation you cannot cleanly reverse is not one.
-# `./provision/herdr-setup.sh --uninstall` removes everything this adds.
+# server-bootstrap.sh calls this, so a normal provision run gets the whole
+# thing. It stays runnable on its own for re-running just this part.
 #
-# What it does NOT touch:
-#   claude-tmux.service, claude-telegram-bot.service, ~/.tmux.conf, tpm and its
-#   plugins, ~/.ssh/config, or ~/.claude (see --with-claude-integration below).
+# tmux itself is NOT removed. It stays installed, ~/.tmux.conf stays managed,
+# and tpm and its plugins stay where they are — tmux is still there for ad-hoc
+# use and as the escape hatch if herdr disappoints. What changes is only which
+# one holds the always-on Claude Code session.
 #
-# Both stacks running at once costs ~16 MB RSS for the herdr server. They are
-# independent: the tmux claude-main session and the herdr claude-main workspace
-# are separate Claude Code processes with separate conversations.
+# `./provision/herdr-setup.sh --uninstall` reverses it: herdr goes away and
+# claude-tmux.service is re-enabled and started. That is the whole reason the
+# tmux unit is disabled rather than deleted.
 #
 # Idempotent. Safe to re-run.
 set -euo pipefail
@@ -39,6 +38,7 @@ UNIT_PATH="/etc/systemd/system/herdr-server.service"
 HERDR_BIN="$HOME/.local/bin/herdr"
 UNINSTALL=0
 CLAUDE_INTEGRATION=0
+KEEP_TMUX_SERVICE=0
 
 usage() {
   cat <<'EOF'
@@ -47,10 +47,14 @@ usage: provision/herdr-setup.sh [--with-claude-integration] [--uninstall]
   --with-claude-integration  also run `herdr integration install claude`, which
                              writes ~/.claude/hooks/herdr-agent-state.sh. OFF by
                              default because it modifies the GLOBAL Claude Code
-                             config that every session on this machine reads,
-                             including the tmux ones. See the note below.
-  --uninstall                stop and remove the unit, the binary and
-                             ~/.config/herdr. Leaves the tmux path untouched.
+                             config every session on this machine reads. See
+                             the note below.
+  --keep-tmux-service        leave claude-tmux.service enabled and running.
+                             Both stacks then hold their own claude-main with
+                             separate conversations, which is what the A/B
+                             comparison did; not the normal state.
+  --uninstall                remove herdr and hand the session back to
+                             claude-tmux.service.
 
   HERDR_VERSION=vX.Y.Z       pin a different release (default: v0.8.0)
 EOF
@@ -59,6 +63,7 @@ EOF
 while [ $# -gt 0 ]; do
   case "$1" in
     --with-claude-integration) CLAUDE_INTEGRATION=1; shift ;;
+    --keep-tmux-service) KEEP_TMUX_SERVICE=1; shift ;;
     --uninstall) UNINSTALL=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) printf 'herdr-setup: unknown option %s\n' "$1" >&2; usage >&2; exit 2 ;;
@@ -78,8 +83,18 @@ if [ "$UNINSTALL" -eq 1 ]; then
   log "Removing $HERDR_BIN and ~/.config/herdr"
   rm -f "$HERDR_BIN"
   rm -rf "$HOME/.config/herdr"
-  log "Done. claude-tmux.service was not touched:"
-  systemctl is-active claude-tmux.service || true
+
+  # Hand the session back. The tmux unit was disabled rather than deleted
+  # precisely so this is one command and not a re-provision.
+  log "Handing the persistent session back to claude-tmux.service"
+  if [ -f /etc/systemd/system/claude-tmux.service ]; then
+    $SUDO systemctl enable --now claude-tmux.service || \
+      log "WARNING: could not start claude-tmux.service — check 'journalctl -u claude-tmux'."
+    systemctl is-active claude-tmux.service || true
+  else
+    log "NOTE: claude-tmux.service does not exist. Re-run provision/server-bootstrap.sh"
+    log "      to recreate it, or attach with 'tmux new-session -A -s claude-main'."
+  fi
   exit 0
 fi
 
@@ -166,8 +181,34 @@ EOF
 
 $SUDO systemctl daemon-reload
 $SUDO systemctl enable herdr-server.service
+# reset-failed before starting: an earlier bad unit (or a version of this file
+# whose ExecStop failed on every stop) can leave a restart counter high enough
+# that systemd refuses to start it again, and the resulting error names a rate
+# limit rather than the thing that actually broke.
+$SUDO systemctl reset-failed herdr-server.service 2>/dev/null || true
 $SUDO systemctl restart herdr-server.service || \
   log "WARNING: herdr-server.service failed to start — check 'journalctl -u herdr-server'."
+
+# ---------------------------------------------------------------------------
+# Hand the persistent session over. This happens AFTER herdr is confirmed up,
+# so a failed herdr install never leaves the machine with no session at all.
+if [ "$KEEP_TMUX_SERVICE" -eq 1 ]; then
+  log "Leaving claude-tmux.service alone (--keep-tmux-service)"
+  log "Both stacks now hold a claude-main with separate conversations."
+elif systemctl list-unit-files claude-tmux.service >/dev/null 2>&1 &&
+     [ -f /etc/systemd/system/claude-tmux.service ]; then
+  if systemctl is-enabled --quiet claude-tmux.service 2>/dev/null ||
+     systemctl is-active --quiet claude-tmux.service 2>/dev/null; then
+    log "Stopping and disabling claude-tmux.service — herdr owns the session now"
+    # Disabled, not deleted, and the tmux session it started is left to die
+    # with it rather than being killed separately: --uninstall re-enables this
+    # unit, and that is only a real escape hatch if the unit still exists.
+    $SUDO systemctl disable --now claude-tmux.service || \
+      log "WARNING: could not disable claude-tmux.service — check 'systemctl status claude-tmux'."
+  else
+    log "claude-tmux.service already disabled"
+  fi
+fi
 
 # ---------------------------------------------------------------------------
 if [ "$CLAUDE_INTEGRATION" -eq 1 ]; then
@@ -176,8 +217,9 @@ if [ "$CLAUDE_INTEGRATION" -eq 1 ]; then
   # global Claude Code config. Two consequences worth being deliberate about:
   #
   #   1. It is GLOBAL. Every Claude Code session on this box reads that config,
-  #      including the ones running under tmux, which are supposed to be the
-  #      control arm of this comparison.
+  #      including any still started under tmux by hand. It is left opt-in for
+  #      that reason alone — not because it is a bad idea. On a herdr-primary
+  #      setup it is the recommended state.
   #   2. Without it, herdr infers agent state from terminal titles and screen
   #      contents, and a server restart relaunches claude as a FRESH session —
   #      the process comes back on its own within a few seconds, the
@@ -189,19 +231,21 @@ if [ "$CLAUDE_INTEGRATION" -eq 1 ]; then
   "$HERDR_BIN" server reload-config || true
 else
   log "Skipping the Claude Code integration (--with-claude-integration to enable)."
-  log "Without it, agent state is inferred from the screen, and a server restart"
-  log "brings claude back as a fresh session rather than resuming the conversation."
+  log "Recommended now that herdr owns the session: without it, agent state is"
+  log "inferred from the screen, and a server restart brings claude back as a"
+  log "fresh session instead of resuming the conversation — which is the job"
+  log "tmux-continuum used to do here."
 fi
 
 # ---------------------------------------------------------------------------
 log "Status"
-systemctl is-active herdr-server.service && echo "  herdr-server.service: active"
-systemctl is-active claude-tmux.service  && echo "  claude-tmux.service:  active (untouched)"
+printf '  herdr-server.service: %s\n' "$(systemctl is-active herdr-server.service 2>/dev/null || echo inactive)"
+printf '  claude-tmux.service:  %s\n' "$(systemctl is-active claude-tmux.service 2>/dev/null || echo inactive)"
 "$HERDR_BIN" workspace list 2>/dev/null || true
 cat <<EOF
 
-Attach from a client with:   claude-attach-herdr        (local client over ssh)
-                             claude-attach-herdr --mosh (client on the server)
-The tmux path is unchanged:  claude-attach
-Reverse all of this with:    ./provision/herdr-setup.sh --uninstall
+Attach from a client with:   claude-attach          (local herdr client over ssh)
+                             claude-attach --mosh   (herdr client on the server)
+                             claude-attach --tmux   (escape hatch: a plain tmux session)
+Hand the session back with:  ./provision/herdr-setup.sh --uninstall
 EOF

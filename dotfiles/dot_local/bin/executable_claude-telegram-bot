@@ -2,11 +2,16 @@
 # A Telegram bot for driving this server from a phone. Today it starts Claude
 # Code sessions; it is meant to grow other things.
 #
-# The bot does no conversation: it opens a tmux session running
+# The bot does no conversation: it opens a herdr workspace running
 # `claude --remote-control` in a directory under ~/workspace and replies with
 # the name. The actual conversation happens in the Claude app over Remote
 # Control — which is the point, because that gives the full session (tools,
 # permissions prompts, output) instead of a chat-shaped imitation of it.
+#
+# Everything it starts lands in the same herdr server as claude-main, so a
+# `claude-attach` from a laptop shows every phone-started conversation in the
+# sidebar with its live state. Under tmux these were sibling detached sessions
+# you could only visit one at a time.
 #
 # Commands are NAMESPACED BY FAMILY — /cc_ls, /cc_open, and so on — so a later
 # family (say /vpn_up, /host_df) can be added without renaming anything or
@@ -44,7 +49,7 @@ OFFSET_FILE="${STATE_DIR}/offset"
 POLL_TIMEOUT=60          # Telegram long-poll: it holds the request open this long
 
 mkdir -p "$STATE_DIR"
-for c in curl jq tmux; do
+for c in curl jq herdr claude-open; do
   command -v "$c" >/dev/null 2>&1 || { printf 'claude-telegram-bot: %s is required\n' "$c" >&2; exit 1; }
 done
 
@@ -72,23 +77,86 @@ authorized() {                            # authorized <chat_id>
   return 1
 }
 
-running_sessions() { tmux list-sessions -F '#{session_name}' 2>/dev/null | grep '^cc-' || true; }
+# One "<label>\t<directory>\t<state>\t<workspace id>" line per running Claude
+# session. The directory is carried alongside the label because every handler
+# below wants to talk about directories, and the workspace id because that is
+# what /cc_kill has to close.
+#
+# Under tmux this listed sessions and the name could not be turned back into a
+# path, because claude-open's mapping was lossy. herdr labels ARE the path, so
+# the two agree by construction — but the directory is still what gets matched
+# on, since that is the thing the user typed.
+#
+# claude-main is filtered out deliberately: it is not the bot's to list or kill,
+# and it is the one workspace whose label is not a path under ~/workspace.
+#
+# <state> is new and has no tmux equivalent: idle, working, blocked or done for
+# the agent in that workspace. A pane with no live agent reports "-".
+running_sessions() {
+  python3 - <<'PYEOF' || true
+import json, subprocess
+
+
+def herdr(*args):
+    try:
+        out = subprocess.run(("herdr",) + args, capture_output=True, text=True)
+        return json.loads(out.stdout).get("result", {})
+    except (OSError, ValueError):
+        return {}
+
+
+cwd = {p["workspace_id"]: p.get("cwd", "")
+       for p in herdr("pane", "list").get("panes", [])}
+state = {a["workspace_id"]: a.get("agent_status", "-")
+         for a in herdr("agent", "list").get("agents", [])}
+
+for w in herdr("workspace", "list").get("workspaces", []):
+    label, wid = w.get("label", ""), w["workspace_id"]
+    if not label or label == "claude-main":
+        continue
+    print("\t".join((label, cwd.get(wid, ""), state.get(wid, "-"), wid)))
+PYEOF
+}
+
+workspace_real() { cd "$WORKSPACE" && pwd -P; }
 
 # ---------------------------------------------------------------------------
 # Claude Code family (/cc_*). Each handler prints its reply on stdout; the
 # dispatcher sends whatever comes back. A new family means new cc_-style
 # handlers plus entries in the dispatcher and bot_help — nothing else.
 cc_ls() {
-  local out="" d name
+  local out="" d path sessions ws s st wid
+  ws="$(workspace_real)"
+  sessions="$(running_sessions)"
   for d in "$WORKSPACE"/*/; do
     [ -d "$d" ] || continue               # no match: the glob stays literal
-    name="$(basename "$d")"
-    if tmux has-session -t "=cc-${name}" 2>/dev/null; then
-      out+="• ${name}  [running]"$'\n'
+    path="$(cd "$d" && pwd -P)"
+    # Matched on the session's working directory rather than on its name.
+    # Under tmux that mattered because deriving the name here meant a second
+    # copy of claude-open's slug rules, and the copy that used to live here got
+    # the dotted-directory case wrong. herdr labels are the path itself, so the
+    # two can no longer disagree — but the directory is still what the user
+    # typed, so it stays the thing that gets matched.
+    #
+    # The state replaces a bare [running]: herdr knows whether the agent is
+    # idle, working, blocked or done, which is the question you actually have
+    # when checking on something from a phone.
+    st="$(printf '%s\n' "$sessions" | awk -F'\t' -v p="$path" '$2 == p { print $3; exit }')"
+    if [ -n "$st" ]; then
+      out+="• $(basename "$d")  [${st}]"$'\n'
     else
-      out+="• ${name}"$'\n'
+      out+="• $(basename "$d")"$'\n'
     fi
   done
+  # The loop lists one level only, so a session opened on a nested path (a/b)
+  # appears nowhere above. Listing those separately keeps /cc_ls honest about
+  # what is running.
+  while IFS=$'\t' read -r s path st wid; do
+    [ -n "$s" ] || continue
+    case "$path" in
+      "$ws"/*/*) out+="• ${path#"$ws"/}  [${st}]"$'\n' ;;
+    esac
+  done <<<"$sessions"
   [ -n "$out" ] || out="(no directories in ${WORKSPACE})"
   printf '%s' "$out"
 }
@@ -124,23 +192,48 @@ cc_open() {                               # cc_open <dir>
 }
 
 cc_sessions() {
-  local s out=""
-  while read -r s; do
+  local s path st wid out="" ws
+  ws="$(workspace_real)"
+  while IFS=$'\t' read -r s path st wid; do
     [ -n "$s" ] || continue
-    out+="• ${s}  (${s#cc-})"$'\n'
+    # Directory plus agent state. The label and the directory are the same
+    # string now, so printing both would just be saying it twice; the state is
+    # the part that was never available under tmux.
+    out+="• ${path#"$ws"/}  [${st}]"$'\n'
   done <<<"$(running_sessions)"
   [ -n "$out" ] || out="(no Claude sessions running)"
   printf '%s' "$out"
 }
 
 cc_kill() {                               # cc_kill <dir-or-session>
-  local arg="$1" session
+  local arg="$1" session rc wid
   [ -n "$arg" ] || { printf 'usage: /cc_kill <dir>'; return; }
-  case "$arg" in cc-*) session="$arg" ;; *) session="cc-${arg//\//-}" ;; esac
-  if ! tmux has-session -t "=${session}" 2>/dev/null; then
+  # The name comes from claude-open, which owns the path → session mapping.
+  # This used to reimplement it and only flattened `/`, so a directory with a
+  # `.` in its name could be opened but never killed. Under herdr the mapping
+  # is the identity function, but it is still asked for rather than assumed:
+  # claude-open also does the path validation, so a hostile argument from
+  # Telegram is rejected there instead of reaching herdr.
+  #
+  # The old cc-* passthrough is gone. /cc_sessions now prints directories, and
+  # a cc- prefixed name is a tmux-era session that no longer exists.
+  set +e
+  session="$(claude-open --session-name "$arg" 2>&1)"
+  rc=$?
+  set -e
+  if [ $rc -ne 0 ]; then
+    printf 'cannot name a session for %s:\n%s' "$arg" "$session"
+    return
+  fi
+
+  # Look the workspace up by label and close it by id. claude-main is already
+  # filtered out of running_sessions, so this cannot be aimed at the main
+  # session even if someone types its name.
+  wid="$(running_sessions | awk -F'\t' -v l="$session" '$1 == l { print $4; exit }')"
+  if [ -z "$wid" ]; then
     printf 'No session %s.' "$session"; return
   fi
-  tmux kill-session -t "=${session}"
+  herdr workspace close "$wid" >/dev/null
   printf 'Killed %s. Its conversation is gone; /cc_open starts a fresh one.' "$session"
 }
 
@@ -152,7 +245,7 @@ Claude Code (cc_):
 /cc_ls              directories in ~/workspace
 /cc_open <dir>      start Claude Code there with Remote Control on
                     (creates the directory if it does not exist)
-/cc_sessions        what is running now
+/cc_sessions        what is running now, with agent state
 /cc_kill <dir>      stop a session
 EOF
 }

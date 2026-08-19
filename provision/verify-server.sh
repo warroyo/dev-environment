@@ -29,7 +29,7 @@ fi
 
 # ---------------------------------------------------------------------------
 section "Tooling"
-for c in zsh tmux git docker kubectl terraform chezmoi tailscale mosh-server rg fzf eza kubectx kubens; do
+for c in zsh tmux herdr git docker kubectl terraform chezmoi tailscale mosh-server rg fzf eza kubectx kubens; do
   if command -v "$c" >/dev/null 2>&1; then ok "$c present"; else bad "$c MISSING"; fi
 done
 # krew is not a command of its own — it is a kubectl plugin, so "installed" and
@@ -54,7 +54,7 @@ check_renamed bat batcat
 if command -v claude >/dev/null 2>&1; then
   ok "claude present ($(claude --version 2>/dev/null || echo '?'))"
 else
-  bad "claude MISSING — claude-tmux.service cannot work without it"
+  bad "claude MISSING — herdr-server.service has nothing to start"
 fi
 
 # ---------------------------------------------------------------------------
@@ -224,56 +224,83 @@ printf '        (reminder: confirm the UDM SE has no WAN port-forward to :22 —
 
 # ---------------------------------------------------------------------------
 section "Persistent Claude session"
-systemctl is-enabled --quiet claude-tmux.service 2>/dev/null \
-  && ok "claude-tmux.service enabled (starts on boot)" \
-  || bad "claude-tmux.service NOT enabled — it will not come back after a reboot"
-systemctl is-active --quiet claude-tmux.service 2>/dev/null \
-  && ok "claude-tmux.service active" || bad "claude-tmux.service not active"
-if tmux has-session -t claude-main 2>/dev/null; then
-  ok "tmux session 'claude-main' exists"
-  # Do NOT use #{pane_current_command} alone: the systemd unit runs
-  # `claude; exec $SHELL -l` so the pane's own process is the wrapping shell
-  # and claude is its CHILD. tmux reports the pane process, so that check
-  # reports "no claude" while claude is running perfectly well.
-  _claude_in_pane() {
-    local pid="$1" child
-    [ "$(ps -o comm= -p "$pid" 2>/dev/null | tr -d ' ')" = "claude" ] && return 0
-    for child in $(pgrep -P "$pid" 2>/dev/null); do
-      [ "$(ps -o comm= -p "$child" 2>/dev/null | tr -d ' ')" = "claude" ] && return 0
-    done
-    return 1
-  }
-  CLAUDE_FOUND=0
-  for p in $(tmux list-panes -t claude-main -F '#{pane_pid}' 2>/dev/null); do
-    _claude_in_pane "$p" && { CLAUDE_FOUND=1; break; }
-  done
+systemctl is-enabled --quiet herdr-server.service 2>/dev/null \
+  && ok "herdr-server.service enabled (starts on boot)" \
+  || bad "herdr-server.service NOT enabled — it will not come back after a reboot"
+systemctl is-active --quiet herdr-server.service 2>/dev/null \
+  && ok "herdr-server.service active" || bad "herdr-server.service not active"
 
-  if [ "$CLAUDE_FOUND" -eq 1 ]; then
-    ok "claude is running inside claude-main"
-  else
-    warn "claude-main exists but no 'claude' process in it"
-    # Most common cause: claude hit the interactive trust prompt for its
-    # working directory, got no answer, and exited into the shell fallback.
-    PANE_DIR="$(tmux display-message -p -t claude-main '#{pane_current_path}' 2>/dev/null)"
-    if [ -n "${PANE_DIR:-}" ]; then
-      printf '        session cwd: %s\n' "$PANE_DIR"
+# claude-tmux.service is left on disk but disabled — it is the escape hatch
+# `provision/herdr-setup.sh --uninstall` re-enables. Enabled here means both
+# stacks would fight for the session on the next boot.
+if systemctl is-enabled --quiet claude-tmux.service 2>/dev/null; then
+  warn "claude-tmux.service is still enabled — herdr owns the session now"
+  printf '        fix: sudo systemctl disable --now claude-tmux.service\n'
+fi
+
+# Unlike the tmux unit, `systemctl is-active` here IS meaningful: Type=exec
+# means the supervised process is the server itself. What it still cannot tell
+# you is whether the session inside has anything in it, which is what follows.
+if ! command -v herdr >/dev/null 2>&1; then
+  bad "herdr not on PATH — the session cannot be inspected"
+elif ! herdr status server >/dev/null 2>&1; then
+  bad "the herdr server is not answering on its socket"
+else
+  ok "herdr server responding ($(herdr --version 2>/dev/null))"
+
+  # Ask herdr directly rather than inspecting processes. The tmux version had
+  # to walk the pane's process tree, because the unit ran `claude; exec $SHELL`
+  # and tmux only reports the pane's own process — so claude, being a child,
+  # looked absent. herdr tracks the agent itself and reports its lifecycle
+  # state, so there is nothing to infer.
+  WS_JSON="$(herdr workspace list 2>/dev/null || echo '{}')"
+  if printf '%s' "$WS_JSON" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+ws = d.get("result", {}).get("workspaces", [])
+sys.exit(0 if any(w.get("label") == "claude-main" for w in ws) else 1)
+' 2>/dev/null; then
+    ok "workspace 'claude-main' exists"
+
+    AGENT_STATE="$(herdr agent list 2>/dev/null | python3 -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+except ValueError:
+    sys.exit(0)
+for a in d.get("result", {}).get("agents", []):
+    if a.get("agent") == "claude" and a.get("cwd", "").endswith("/workspace"):
+        print(a.get("agent_status", "unknown")); break
+' 2>/dev/null)"
+
+    if [ -n "${AGENT_STATE:-}" ]; then
+      ok "claude is running in claude-main (state: ${AGENT_STATE})"
+    else
+      warn "claude-main exists but no claude agent is running in it"
+      # Most common cause is unchanged from the tmux era: claude hit the
+      # interactive trust prompt for its working directory, got no answer and
+      # exited. herdr leaves the pane's shell behind, so the workspace survives
+      # and only the agent is missing — which is exactly this branch.
+      PANE_DIR="$HOME/workspace"
+      printf '        expected cwd: %s\n' "$PANE_DIR"
       if [ -f "$HOME/.claude.json" ] && command -v python3 >/dev/null 2>&1; then
         python3 - "$HOME/.claude.json" "$PANE_DIR" <<'PYEOF' 2>/dev/null
 import json, sys
 cfg, d = sys.argv[1], sys.argv[2]
 p = json.load(open(cfg)).get("projects", {}).get(d, {})
-t = p.get("hasTrustDialogAccepted")
-if t is True:
-    print("        that directory IS trusted — check 'tmux capture-pane -p -t claude-main' for the real error")
+if p.get("hasTrustDialogAccepted") is True:
+    print("        that directory IS trusted — check the pane for the real error:")
+    print("        herdr pane list, then: herdr pane read <pane-id>")
 else:
-    print(f"        that directory is NOT trusted by Claude Code, which is very likely why it exited.")
-    print(f"        fix: re-run server-bootstrap.sh, or run 'claude' there once and accept the prompt")
+    print("        that directory is NOT trusted by Claude Code, which is very likely why it exited.")
+    print("        fix: re-run server-bootstrap.sh, or run 'claude' there once and accept the prompt")
 PYEOF
       fi
+      printf '        restart it with: herdr-main-workspace\n'
     fi
+  else
+    bad "workspace 'claude-main' does not exist — run herdr-main-workspace"
   fi
-else
-  bad "tmux session 'claude-main' does not exist"
 fi
 
 # ---------------------------------------------------------------------------

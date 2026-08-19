@@ -117,8 +117,10 @@ Then, with the VPN up:
 claude-attach     # or the alias: ca
 ```
 
-You get the `claude-main` tmux session with `claude` already running **on the
-server**. Nothing executes locally — this is exactly the intended way to use
+You get the `claude-main` herdr workspace with `claude` already running **on
+the server**. The herdr client runs here, but it only draws terminals the
+server owns — nothing Claude-related executes locally. Detach with `Ctrl-b q`.
+This is exactly the intended way to use
 Claude Code from this laptop, and it's why the CLI never needs to be installed
 here.
 

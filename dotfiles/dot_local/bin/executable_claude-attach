@@ -1,15 +1,98 @@
 #!/usr/bin/env bash
-# Attach to the persistent Claude Code session on the server. Creates the
-# session if systemd's claude-tmux.service hasn't already (tmux's own
-# `new-session -A` handles create-or-attach, so this stays idempotent
-# without any hand-rolled "does it exist" check).
+# Attach to the persistent Claude Code session on the server.
+#
+#   claude-attach          # herdr client HERE, bridged to the server over ssh
+#   claude-attach --mosh   # herdr client on the SERVER, over mosh
+#   claude-attach --tmux   # escape hatch: a plain tmux session over ssh
+#
+# herdr owns the session (herdr-server.service); the workspace is claude-main
+# and herdr-main-workspace starts claude in it. See provision/herdr-setup.sh.
+#
+# The two herdr shapes are not a fallback pair — they trade different things:
+#
+#   local client (default)  herdr runs HERE and bridges its client socket over
+#                           `ssh -T`. The TUI renders locally, keybindings are
+#                           local, and clipboard image paste and file drop are
+#                           forwarded into the remote pane — which is the one
+#                           thing `ssh -t <host> tmux attach` structurally
+#                           cannot do, since that only ever ships a rendered
+#                           screen. Needs herdr on this machine; the client
+#                           installs and updates the far side itself.
+#
+#   --mosh                  herdr runs on the SERVER and only its output
+#                           crosses the wire. No local install needed, and the
+#                           only shape that survives a roaming or flaky link:
+#                           herdr's own --remote is plain ssh, so the default
+#                           gives up mosh's roaming and predictive echo.
+#
+# --tmux is deliberately NOT wired to herdr at all. It is what you use when the
+# herdr server is the thing that is broken, so it must not depend on any part
+# of it. tmux stays installed on the server for exactly this.
 set -euo pipefail
 
 HOST="${CLAUDE_SERVER_HOST:-claude-server}"
-SESSION="claude-main"
+MODE=local
 
-# tput reset before attaching: a session that drops mid-tmux can leave
-# terminal modes (mouse tracking, alternate screen) stuck on, which then
-# makes the *next* connection spew raw escape-sequence garbage. Reset
-# first so that never happens.
-ssh -t "$HOST" "tput reset; tmux new-session -A -s '${SESSION}'"
+usage() {
+  cat <<'EOF'
+usage: claude-attach [--mosh | --tmux]
+
+  (default)   run the herdr client locally, bridged to the server over ssh
+  --mosh      run the herdr client on the server, over mosh
+  --tmux      attach a plain tmux session instead (escape hatch)
+EOF
+}
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --mosh)    MODE=mosh; shift ;;
+    --tmux)    MODE=tmux; shift ;;
+    -h|--help) usage; exit 0 ;;
+    *) printf 'claude-attach: unknown option %s\n' "$1" >&2; usage >&2; exit 2 ;;
+  esac
+done
+
+# Refuse to stack multiplexers. A herdr client inside a tmux client inside ssh
+# is two multiplexers doing one job, and the symptoms — doubled prefix keys,
+# mouse reporting fighting itself, resizes that do not propagate — read as
+# herdr bugs when they are nothing of the kind.
+if [ "$MODE" != tmux ] && [ -n "${TMUX:-}" ]; then
+  printf 'claude-attach: refusing to run inside tmux — detach first (Ctrl-b d),\n' >&2
+  printf '  or use --tmux to attach the tmux session instead.\n' >&2
+  exit 1
+fi
+if [ "${HERDR_ENV:-}" = 1 ]; then
+  printf 'claude-attach: already inside a herdr pane.\n' >&2
+  exit 1
+fi
+
+case "$MODE" in
+  local)
+    if ! command -v herdr >/dev/null 2>&1; then
+      printf 'claude-attach: herdr is not installed locally.\n' >&2
+      printf '  run provision/client-personal-bootstrap.sh, or use --mosh / --tmux.\n' >&2
+      exit 1
+    fi
+    # herdr builds its own ssh invocation: by default it runs ssh through a
+    # generated config that Includes ~/.ssh/config first and only ADDS
+    # ServerAliveInterval/ServerAliveCountMax as fallbacks, so the managed
+    # config still wins wherever it sets something. Nothing to pre-configure.
+    exec herdr --remote "$HOST"
+    ;;
+  mosh|tmux)
+    # tput reset before attaching: a connection that drops mid-TUI can leave
+    # terminal modes (mouse tracking, alternate screen) stuck on, and the next
+    # attach then spews raw escape sequences. Only the server-side shapes need
+    # it — the local client owns this terminal and restores it on exit.
+    if [ "$MODE" = mosh ]; then
+      command -v mosh >/dev/null 2>&1 || {
+        printf 'claude-attach: mosh is not installed locally.\n' >&2; exit 1; }
+      exec mosh "$HOST" -- sh -lc 'tput reset; exec herdr'
+    fi
+    # -A is attach-or-create, so this works whether or not anything is running.
+    # No claude-session wrapper and no claude here on purpose: this is the
+    # hatch you climb through when the session machinery is broken, so it drops
+    # you at a plain shell and lets you decide what to run.
+    exec ssh -t "$HOST" "tput reset; tmux new-session -A -s claude-escape"
+    ;;
+esac

@@ -1,37 +1,55 @@
 #!/usr/bin/env bash
-# Start (or re-attach to) a detached tmux session running Claude Code in a
-# directory under ~/workspace, with Remote Control enabled so a phone can drive
-# it from the Claude app.
+# Start (or re-attach to) a herdr workspace running Claude Code in a directory
+# under ~/workspace, with Remote Control enabled so a phone can drive it from
+# the Claude app.
 #
 #   claude-open my-project          # ~/workspace/my-project, created if missing
 #   claude-open a/b                 # nested paths are fine
 #   claude-open --local my-project  # skip Remote Control (plain local session)
+#   claude-open --session-name a/b  # print the session name and do nothing else
 #
-# Prints the tmux session name on success. Safe to re-run: an existing session
-# for the same directory is reported, never restarted, so a live conversation is
+# Prints the session name on success. Safe to re-run: an existing workspace for
+# the same directory is reported, never restarted, so a live conversation is
 # never destroyed by a second "open" from the phone.
 #
+# --session-name exists so that nothing else has to reimplement the path →
+# session mapping. claude-telegram-bot needs it to answer /cc_kill and /cc_ls,
+# and a second copy of the rules drifts from this one (it did: the bot flattened
+# `/` but not `.`, so /cc_kill never found a session for a dotted directory).
+#
+# Everything this starts lands in the SAME herdr server as claude-main, which is
+# the substantive change from the tmux version. Those were sibling detached
+# sessions you could only visit one at a time; these are workspaces in one
+# session, so a `claude-attach` shows every phone-started conversation in the
+# sidebar with its live agent state.
+#
 # This is what claude-telegram-bot calls, but it is a normal command — running
-# it by hand over SSH does exactly the same thing, and `tmux attach -t <name>`
-# joins whatever it started.
+# it by hand over SSH does exactly the same thing, and `claude-attach` joins
+# whatever it started.
 set -euo pipefail
 
 WORKSPACE="${CLAUDE_WORKSPACE:-$HOME/workspace}"
+HERDR="${HERDR_BIN:-$HOME/.local/bin/herdr}"
 REMOTE_CONTROL=1
+NAME_ONLY=0
 
 usage() {
   cat <<'EOF'
 usage: claude-open [--local] <dir>
+       claude-open --session-name <dir>
 
-  <dir>      path relative to ~/workspace (or an absolute path inside it).
-             Created if it does not exist.
-  --local    start without Remote Control.
+  <dir>           path relative to ~/workspace (or an absolute path inside it).
+                  Created if it does not exist.
+  --local         start without Remote Control.
+  --session-name  print the session name for <dir> and exit, without creating
+                  the directory or starting anything.
 EOF
 }
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --local) REMOTE_CONTROL=0; shift ;;
+    --session-name) NAME_ONLY=1; shift ;;
     -h|--help) usage; exit 0 ;;
     --) shift; break ;;
     -*) printf 'claude-open: unknown option %s\n' "$1" >&2; usage >&2; exit 2 ;;
@@ -53,7 +71,7 @@ case "$RAW" in
 esac
 
 # Character allow-list first, so nothing exotic (globs, $(...), newlines) ever
-# reaches mkdir or tmux. `..` is rejected outright rather than resolved,
+# reaches mkdir or herdr. `..` is rejected outright rather than resolved,
 # because it is never a legitimate way to name a project.
 case "$RAW" in
   *..*) printf 'claude-open: ".." is not allowed in a directory name\n' >&2; exit 2 ;;
@@ -63,53 +81,127 @@ if ! printf '%s' "$RAW" | grep -qE '^[A-Za-z0-9._/-]+$'; then
   exit 2
 fi
 
-mkdir -p "$TARGET"
+[ "$NAME_ONLY" -eq 1 ] || mkdir -p "$TARGET"
 # Resolve AFTER creating it: the checks above cover the string, this covers the
 # filesystem — a pre-existing symlink under ~/workspace pointing somewhere else
-# would otherwise slip past them.
-TARGET="$(cd "$TARGET" && pwd -P)"
+# would otherwise slip past them. Under --session-name the directory may not
+# exist yet (asking for the name of something never opened is legitimate), and
+# there the string checks above have to stand on their own.
 WORKSPACE_REAL="$(cd "$WORKSPACE" && pwd -P)"
-case "$TARGET" in
-  "$WORKSPACE_REAL"|"$WORKSPACE_REAL"/*) ;;
-  *) printf 'claude-open: %s resolves outside %s\n' "$TARGET" "$WORKSPACE_REAL" >&2; exit 2 ;;
-esac
+if [ -d "$TARGET" ]; then
+  TARGET="$(cd "$TARGET" && pwd -P)"
+  case "$TARGET" in
+    "$WORKSPACE_REAL"|"$WORKSPACE_REAL"/*) ;;
+    *) printf 'claude-open: %s resolves outside %s\n' "$TARGET" "$WORKSPACE_REAL" >&2; exit 2 ;;
+  esac
+else
+  # Nothing to resolve, but the prefix still has to be the resolved one or the
+  # relative path below comes out as an absolute path — $WORKSPACE itself may
+  # be a symlink.
+  case "$TARGET" in
+    "$WORKSPACE"/*) TARGET="$WORKSPACE_REAL/${TARGET#"$WORKSPACE"/}" ;;
+    "$WORKSPACE") TARGET="$WORKSPACE_REAL" ;;
+  esac
+fi
 
 # ---------------------------------------------------------------------------
-# Session name: derived from the path so the same directory always maps to the
-# same session, which is what makes re-opening idempotent. `cc-` prefixed so
-# these are trivially distinguishable from claude-main / claude-env, and so the
-# bot can list only its own sessions. tmux treats `.` and `:` as name
-# separators, so they are flattened too.
-SLUG="${TARGET#"$WORKSPACE_REAL"/}"
-[ "$SLUG" = "$TARGET" ] && SLUG="workspace"        # opened ~/workspace itself
-SLUG="$(printf '%s' "$SLUG" | tr '/.:' '---')"
-SESSION="cc-${SLUG}"
+# Session name: the path relative to ~/workspace, used verbatim as the herdr
+# workspace LABEL. herdr labels are free text, so `/` and `.` survive intact
+# and the mapping is the identity function.
+#
+# This is what the tmux version could not do. tmux treats `.` and `:` as name
+# separators, so names had to be flattened, and the flattening was lossy in a
+# dangerous rather than cosmetic way: a/b, a.b and a-b all became cc-a-b, so
+# opening one would report another as "already running" and hand the phone a
+# session in the wrong directory — and /cc_kill <dir> would then end the wrong
+# conversation. The digest that used to defend against that is gone with it.
+REL="${TARGET#"$WORKSPACE_REAL"/}"
+# Plain `if` rather than `[ ... ] && REL=...`: under `set -e` a false test makes
+# the whole AND-list the failing final command, which would exit the script.
+if [ "$REL" = "$TARGET" ]; then REL="workspace"; fi   # opened ~/workspace itself
+SESSION="$REL"
+
+if [ "$NAME_ONLY" -eq 1 ]; then
+  printf '%s\n' "$SESSION"
+  exit 0
+fi
+
+command -v python3 >/dev/null 2>&1 || {
+  printf 'claude-open: python3 is required\n' >&2; exit 1; }
+[ -x "$HERDR" ] || { printf 'claude-open: %s not found\n' "$HERDR" >&2; exit 1; }
+"$HERDR" status server >/dev/null 2>&1 || {
+  printf 'claude-open: the herdr server is not running (systemctl status herdr-server)\n' >&2
+  exit 1; }
+
+# Agent names are NOT free text — herdr requires [a-z][a-z0-9_-]{0,31} and
+# uniqueness among live agents. So the flattening the workspace label escaped
+# comes back here, and the digest with it. It is harmless this time: nothing
+# ever looks a session up by agent name, so a collision would only be a confusing
+# label, and the digest removes even that.
+AGENT="$(printf '%s' "$REL" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9_-' '-' | cut -c1-24)"
+case "$AGENT" in [a-z]*) ;; *) AGENT="a${AGENT}" ;; esac
+AGENT="${AGENT%-}-$(printf '%s' "$REL" | sha256sum | cut -c1-6)"
+
+# The workspace id for a label, empty if there is none. Labels are unique here
+# because they are paths, so the first match is the only match.
+ws_id() {
+  "$HERDR" workspace list 2>/dev/null | python3 -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+except ValueError:
+    sys.exit(0)
+for w in d.get("result", {}).get("workspaces", []):
+    if w.get("label") == sys.argv[1]:
+        print(w["workspace_id"]); break
+' "$SESSION"
+}
+
+root_pane() {                             # root_pane <workspace_id>
+  "$HERDR" pane list 2>/dev/null | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+for p in d.get("result", {}).get("panes", []):
+    if p.get("workspace_id") == sys.argv[1]:
+        print(p["pane_id"]); break
+' "$1"
+}
 
 # The claude.ai session URL that `--remote-control` prints in its banner. Worth
 # scraping: it is a direct link into the session, which on a phone is one tap
-# versus finding it in a list. tmux's pane content is the only place it appears
+# versus finding it in a list. The pane's contents are the only place it appears
 # — there is no file or flag that reports it.
-# -S -500 reads the scrollback, not just the visible pane: Claude Code redraws
-# its UI as it works, so within a minute or two the banner has scrolled off
-# screen and a plain capture finds nothing. Note the target here is a PANE, so
-# it cannot use the `=exact` prefix that the session targets below do.
+#
+# The sed/tr pipeline is load-bearing, not tidying. Claude Code hard-wraps that
+# banner at the pane's width, so the URL arrives split across two lines and a
+# plain grep silently returns a TRUNCATED url that looks perfectly valid. The
+# tmux version got away with a bare grep only because a detached tmux session
+# defaults to 80 columns and the URL happened to fit; herdr's panes are
+# narrower. Stripping the indentation and joining the lines puts it back
+# together.
 #
 # The trailing `|| true` is load-bearing under `set -e`: an assignment takes
 # the exit status of its command substitution, so "no URL yet" (grep exiting 1)
 # would otherwise kill the script mid-start.
-session_url() {
-  tmux capture-pane -p -S -500 -t "${SESSION}" 2>/dev/null \
+session_url() {                           # session_url <pane_id>
+  "$HERDR" pane read "$1" --lines 500 2>/dev/null \
+    | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' \
+    | tr -d '\n' \
     | grep -oE 'https://claude\.ai/code/session_[A-Za-z0-9_-]+' | tail -n1 || true
 }
 
-if tmux has-session -t "=${SESSION}" 2>/dev/null; then
+WS="$(ws_id)"
+if [ -n "$WS" ]; then
   printf '%s\n' "$SESSION"
+  PANE="$(root_pane "$WS")"
   # Plain `if`, not `[ -n "$URL" ] && printf`: under `set -e` a failing &&-list
   # is a fatal error, so the no-URL case would exit 1 with the message below
   # never printed.
-  URL="$(session_url)"
-  if [ -n "$URL" ]; then printf '%s\n' "$URL"; fi
-  printf 'already running (attach with: tmux attach -t %s)\n' "$SESSION" >&2
+  if [ -n "$PANE" ]; then
+    URL="$(session_url "$PANE")"
+    if [ -n "$URL" ]; then printf '%s\n' "$URL"; fi
+  fi
+  printf 'already running (attach with: claude-attach)\n' >&2
   exit 0
 fi
 
@@ -119,13 +211,13 @@ command -v claude >/dev/null 2>&1 || {
 # ---------------------------------------------------------------------------
 # Pre-record the trust decision for the directory. Claude Code asks "do you
 # trust this folder?" the first time it runs anywhere new and requires an
-# interactive answer; started detached there is nobody to answer, so it prints
-# the prompt, gets no input and exits — leaving an empty session. This is the
-# same problem, and the same fix, as claude-tmux.service in
-# provision/server-bootstrap.sh; see the long comment there. It edits Claude
-# Code's own config file, which is not a documented interface, so if the format
-# changes this quietly stops working and the prompt comes back (the session
-# survives either way thanks to claude-session's shell fallback).
+# interactive answer; started with nobody attached there is nobody to answer, so
+# it prints the prompt, gets no input and exits — leaving an empty pane. This is
+# the same problem, and the same fix, as in provision/server-bootstrap.sh; see
+# the long comment there. It edits Claude Code's own config file, which is not a
+# documented interface, so if the format changes this quietly stops working and
+# the prompt comes back (the pane survives either way — herdr starts claude in a
+# shell, so a claude that exits leaves the shell behind).
 CLAUDE_CFG="$HOME/.claude.json"
 if [ -f "$CLAUDE_CFG" ] && command -v python3 >/dev/null 2>&1; then
   python3 - "$CLAUDE_CFG" "$TARGET" <<'PYEOF' || true
@@ -153,25 +245,37 @@ os.replace(tmp, cfg_path)
 PYEOF
 fi
 
-# claude-session rather than a bare `claude`, for the same reason
-# claude-tmux.service uses it: tmux ends a session when its command exits, so
-# running claude directly means quitting or crashing it takes the session with
-# it and the phone has nothing left to reconnect to.
+# --no-focus: this usually runs from the phone, with someone possibly attached
+# on a laptop. Creating a workspace should not yank their view somewhere they
+# did not ask to go.
+PANE="$("$HERDR" workspace create --cwd "$TARGET" --label "$SESSION" --no-focus 2>/dev/null | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+if "error" in d:
+    sys.stderr.write("claude-open: %s\n" % d["error"]); sys.exit(1)
+print(d["result"]["root_pane"]["pane_id"])
+')"
+[ -n "$PANE" ] || { printf 'claude-open: could not create a workspace for %s\n' "$SESSION" >&2; exit 1; }
+
+# agent start launches claude into the pane's shell and does not return until
+# claude reports itself ready for input, so a non-zero exit here is a real
+# failure rather than an empty session discovered later. The tmux version had
+# no equivalent signal — it fired and hoped.
 if [ "$REMOTE_CONTROL" -eq 1 ]; then
-  tmux new-session -d -s "$SESSION" -c "$TARGET" \
-    "$HOME/.local/bin/claude-session" --remote-control "$SLUG"
+  "$HERDR" agent start "$AGENT" --kind claude --pane "$PANE" --timeout 60000 \
+    -- --remote-control "$AGENT" >/dev/null
 else
-  tmux new-session -d -s "$SESSION" -c "$TARGET" "$HOME/.local/bin/claude-session"
+  "$HERDR" agent start "$AGENT" --kind claude --pane "$PANE" --timeout 60000 >/dev/null
 fi
 
 printf '%s\n' "$SESSION"
 
 # Wait for the banner, but never fail on it: the session is already up and
-# usable from the app's session list, so a missed URL is cosmetic. Claude Code
-# takes a few seconds to start and register the Remote Control session.
+# usable from the app's session list, so a missed URL is cosmetic. Remote
+# Control registers a few seconds after claude itself is ready.
 if [ "$REMOTE_CONTROL" -eq 1 ]; then
   for _ in $(seq 1 "${CLAUDE_OPEN_URL_TIMEOUT:-30}"); do
-    URL="$(session_url)"
+    URL="$(session_url "$PANE")"
     if [ -n "$URL" ]; then printf '%s\n' "$URL"; break; fi
     sleep 1
   done
