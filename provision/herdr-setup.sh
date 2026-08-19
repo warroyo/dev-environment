@@ -132,6 +132,17 @@ Environment=HOME=${HOME}
 # Same PATH as claude-tmux.service and for the same reason: systemd's default
 # excludes ~/.local/bin and the npm global bin dir, so without it the agents
 # started inside herdr cannot find claude, and kubectl sees no krew plugins.
+#
+# The other half of why this list is explicit: the herdr server hands its own
+# environment to every pane it spawns, so whatever launched the server ends up
+# inside every agent. Start it by hand from inside a Claude Code session and
+# each pane inherits that session's CLAUDE_CODE_* markers — including
+# CLAUDE_CODE_CHILD_SESSION, which makes the nested claude announce
+# "Transcript saving is off", and CLAUDE_CODE_MESSAGING_SOCKET, which points
+# it at the parent session's socket. systemd starts from a clean slate plus
+# exactly these lines, so the unit does not have that problem. A hand-started
+# server does; \`env -i\` with this same set is the workaround if you ever need
+# to run one outside systemd.
 Environment=PATH=${HOME}/.local/bin:${HOME}/.krew/bin:${HOME}/.npm-global/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ExecStart=${HERDR_BIN} server
 # The server owns terminals but does not create any. herdr-main-workspace is
