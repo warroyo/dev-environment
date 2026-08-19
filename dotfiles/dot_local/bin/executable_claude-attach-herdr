@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+# Attach to the persistent Claude Code session on the server, via herdr instead
+# of tmux. Runs alongside claude-attach — same server, different multiplexer —
+# so the two can be compared without either one being torn out.
+#
+#   claude-attach-herdr              # local herdr client, ssh bridge (default)
+#   claude-attach-herdr --remote-tui # herdr client ON the server, over ssh
+#   claude-attach-herdr --mosh       # herdr client ON the server, over mosh
+#
+# The two shapes are genuinely different, not a fallback pair:
+#
+#   local client (default)  herdr runs HERE and bridges its client socket over
+#                           `ssh -T`. The TUI renders locally, keybindings are
+#                           local, and clipboard image paste / file drop are
+#                           forwarded into the remote pane — which is the one
+#                           thing `ssh -t <host> tmux attach` structurally
+#                           cannot do, since that only ever ships a rendered
+#                           screen. Needs herdr installed on this machine; it
+#                           installs/updates the far side itself.
+#
+#   remote TUI              herdr runs on the SERVER and only its output
+#                           crosses the wire. No local install needed, and it
+#                           is the only shape that works over mosh — `--remote`
+#                           is plain ssh, so it gives up mosh's roaming and
+#                           predictive echo. Worth it on a phone tether or a
+#                           link that keeps dropping.
+set -euo pipefail
+
+HOST="${CLAUDE_SERVER_HOST:-claude-server}"
+MODE=local
+
+usage() {
+  cat <<'EOF'
+usage: claude-attach-herdr [--remote-tui | --mosh]
+
+  (default)      run the herdr client locally, bridged to the server over ssh
+  --remote-tui   run the herdr client on the server, over ssh
+  --mosh         run the herdr client on the server, over mosh
+EOF
+}
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --remote-tui) MODE=remote-tui; shift ;;
+    --mosh)       MODE=mosh; shift ;;
+    -h|--help)    usage; exit 0 ;;
+    *) printf 'claude-attach-herdr: unknown option %s\n' "$1" >&2; usage >&2; exit 2 ;;
+  esac
+done
+
+# Refuse to stack multiplexers. This is the whole point of the exercise: a
+# herdr client inside a tmux client inside ssh is two multiplexers doing the
+# same job, and the symptoms (doubled prefix keys, mouse reporting fighting
+# itself, resize confusion) look like herdr bugs when they are not.
+if [ -n "${TMUX:-}" ]; then
+  printf 'claude-attach-herdr: refusing to run inside tmux — detach first (Ctrl-b d).\n' >&2
+  exit 1
+fi
+if [ "${HERDR_ENV:-}" = 1 ]; then
+  printf 'claude-attach-herdr: already inside a herdr pane.\n' >&2
+  exit 1
+fi
+
+case "$MODE" in
+  local)
+    if ! command -v herdr >/dev/null 2>&1; then
+      printf 'claude-attach-herdr: herdr is not installed locally.\n' >&2
+      printf '  install it (https://herdr.dev/docs/install/), or use --remote-tui.\n' >&2
+      exit 1
+    fi
+    # herdr manages its own ssh invocation here: by default it runs ssh through
+    # a generated config that Includes ~/.ssh/config first and only *adds*
+    # ServerAliveInterval/ServerAliveCountMax as fallbacks, so the chezmoi-managed
+    # config still wins wherever it sets something. Nothing to pre-configure.
+    exec herdr --remote "$HOST"
+    ;;
+  remote-tui|mosh)
+    # tput reset for the same reason claude-attach does it: a connection that
+    # drops mid-TUI can leave mouse tracking and the alternate screen stuck on,
+    # and the next attach then spews escape-sequence garbage. Only needed for
+    # the server-side shapes — the local client owns the terminal itself and
+    # restores it on exit.
+    if [ "$MODE" = mosh ]; then
+      command -v mosh >/dev/null 2>&1 || {
+        printf 'claude-attach-herdr: mosh is not installed locally.\n' >&2; exit 1; }
+      exec mosh "$HOST" -- sh -lc 'tput reset; exec herdr'
+    fi
+    exec ssh -t "$HOST" 'tput reset; exec herdr'
+    ;;
+esac

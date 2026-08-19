@@ -21,6 +21,10 @@
     claude-attach / claude-env   pure SSH clients. They run `ssh` locally and
                                  `claude` on the SERVER. Ship everywhere — this
                                  is how a restricted client reaches the session.
+    claude-attach-herdr          same rule, different multiplexer. Its default
+                                 mode runs a herdr CLIENT here, but the client
+                                 only draws a terminal owned by the server —
+                                 claude still never executes locally.
     claude-vscode                same idea: runs the local `code` CLI (VS Code
                                  itself is fine on restricted clients) plus
                                  claude-attach. Ships everywhere too.
@@ -29,6 +33,8 @@
                                  (it is what claude-tmux.service execs).
     claude-open                  starts a tmux session running `claude` here.
                                  Server only, same rule.
+    herdr-main-workspace         starts `claude` in a herdr pane here, via the
+                                 socket API. Server only, same rule.
     claude-telegram-bot          long-polls Telegram and calls claude-open.
                                  Server only — it is the phone entry point to
                                  the machine that actually runs the CLI.
@@ -46,6 +52,7 @@
 */}}
 .local/bin/claude-session
 .local/bin/claude-open
+.local/bin/herdr-main-workspace
 {{/*
   Starts sessions via claude-open, and its systemd unit only exists on the
   server. Shipping it elsewhere would put a bot token's worth of attack surface

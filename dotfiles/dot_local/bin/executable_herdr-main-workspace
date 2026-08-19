@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+# Ensure the herdr equivalent of the claude-main tmux session exists.
+#
+# This is what herdr-server.service runs as ExecStartPost, and it is the one
+# structural difference from claude-tmux.service worth understanding: that unit
+# starts a tmux session whose *command* is claude, so the session and the agent
+# are the same object. herdr splits them — the unit starts a server that owns
+# terminals, and the workspace/agent inside it is created over the socket API
+# afterwards. So "start the server" and "make sure claude is running in it" are
+# two steps, and this script is the second one.
+#
+# Idempotent by design: it is safe to run by hand at any time, and it has to be,
+# because Restart=always means systemd may run it against a server that already
+# has everything it needs.
+set -euo pipefail
+
+LABEL="${HERDR_MAIN_LABEL:-claude-main}"
+AGENT="${HERDR_MAIN_AGENT:-main}"
+WORKDIR="${CLAUDE_WORKDIR:-$HOME/workspace}"
+HERDR="${HERDR_BIN:-$HOME/.local/bin/herdr}"
+
+command -v python3 >/dev/null 2>&1 || { echo "herdr-main-workspace: python3 required" >&2; exit 1; }
+[ -x "$HERDR" ] || { echo "herdr-main-workspace: $HERDR not found" >&2; exit 1; }
+mkdir -p "$WORKDIR"
+
+# The server is spawned by ExecStart and this runs immediately after, so the
+# socket usually is not listening yet. Poll rather than sleep a fixed amount:
+# a cold boot is slower than a systemctl restart and hard-coding either one is
+# wrong on the other.
+for _ in $(seq 1 "${HERDR_WAIT_SECONDS:-30}"); do
+  "$HERDR" status server >/dev/null 2>&1 && break
+  sleep 1
+done
+"$HERDR" status server >/dev/null 2>&1 || {
+  echo "herdr-main-workspace: herdr server did not come up" >&2; exit 1; }
+
+# ---------------------------------------------------------------------------
+# Find the workspace by LABEL. Labels are free text in herdr, which is why this
+# does not need claude-open's slug-and-digest dance: there is no character set
+# to sanitise and no lossy path flattening, so the label can simply *be* the
+# name and lookups stay exact.
+ws_id() {
+  "$HERDR" workspace list 2>/dev/null | python3 -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+except ValueError:
+    sys.exit(0)
+for w in d.get("result", {}).get("workspaces", []):
+    if w.get("label") == sys.argv[1]:
+        print(w["workspace_id"]); break
+' "$LABEL"
+}
+
+WS="$(ws_id)"
+
+if [ -z "$WS" ]; then
+  # --no-focus: this runs unattended at boot, and stealing focus would mean a
+  # client that reattaches later lands somewhere it did not ask to be.
+  PANE="$("$HERDR" workspace create --cwd "$WORKDIR" --label "$LABEL" --no-focus 2>/dev/null | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+if "error" in d:
+    sys.stderr.write(str(d["error"]) + "\n"); sys.exit(1)
+print(d["result"]["root_pane"]["pane_id"])
+')"
+else
+  # Workspace already exists — herdr restores layout across a server restart —
+  # but the processes inside it do NOT survive that restart, so an existing
+  # workspace tells you nothing about whether claude is running. Take its root
+  # pane and let the agent check below decide.
+  PANE="$("$HERDR" pane list 2>/dev/null | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+for p in d.get("result", {}).get("panes", []):
+    if p.get("workspace_id") == sys.argv[1]:
+        print(p["pane_id"]); break
+' "$WS")"
+fi
+
+[ -n "$PANE" ] || { echo "herdr-main-workspace: could not resolve a pane for $LABEL" >&2; exit 1; }
+
+# Already running? `agent list` only reports panes where herdr currently
+# recognises a live agent, so this is the real signal — the equivalent of
+# `tmux has-session` being the honest check that `systemctl is-active` is not.
+if "$HERDR" agent list 2>/dev/null | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+sys.exit(0 if any(a.get("pane_id") == sys.argv[1] for a in d.get("result", {}).get("agents", [])) else 1)
+' "$PANE"; then
+  echo "herdr-main-workspace: agent already running in ${LABEL} (${PANE})"
+  exit 0
+fi
+
+# agent start launches claude INTO the existing shell pane and waits for it to
+# report interactive-ready, so a failure here is a real failure rather than an
+# empty session you only discover on attach. It is also why there is no
+# claude-session wrapper in this path: the pane is a shell, claude is a process
+# in it, and quitting claude drops back to that shell instead of destroying
+# anything.
+"$HERDR" agent start "$AGENT" --kind claude --pane "$PANE" --timeout "${HERDR_AGENT_TIMEOUT_MS:-60000}" \
+  && echo "herdr-main-workspace: started ${AGENT} in ${LABEL} (${PANE}) at ${WORKDIR}"
