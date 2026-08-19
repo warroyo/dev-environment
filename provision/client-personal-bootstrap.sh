@@ -13,6 +13,8 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/brew.sh
 source "${SCRIPT_DIR}/lib/brew.sh"
+# shellcheck source=lib/herdr.sh
+source "${SCRIPT_DIR}/lib/herdr.sh"
 
 log "Updating Homebrew"
 brew update
@@ -32,6 +34,18 @@ ensure_formula fzf                     fzf
 ensure_formula starship                starship
 ensure_formula zsh-autosuggestions
 ensure_formula zsh-syntax-highlighting
+
+# herdr: the terminal multiplexer being A/B'd against tmux for the persistent
+# Claude Code session (see provision/herdr-setup.sh for the server half). It
+# belongs in the general layer for the same reason mosh does — it is a client
+# that talks to the server and never runs claude locally.
+#
+# Not a brew formula: there is no official one, and going straight to the
+# pinned release binary is what lets lib/herdr.sh verify a checksum and keep
+# this machine on the same protocol version as the server. A client/server
+# version mismatch is the failure that looks like everything else.
+log "Installing herdr"
+ensure_herdr
 
 # Kubernetes tooling, matching what server-bootstrap.sh installs by hand there
 # (no Homebrew on the server, so those are release tarballs). The `k` alias and

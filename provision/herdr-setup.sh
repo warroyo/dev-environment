@@ -27,7 +27,14 @@ else
   SUDO="sudo"
 fi
 
-HERDR_VERSION="${HERDR_VERSION:-v0.8.0}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/herdr.sh
+# Shared with the two macOS bootstraps, and the reason the version is not
+# written here: client and server negotiate a protocol version, so the pin has
+# to be the same constant on every machine or attaching fails in a way that
+# looks like anything but a version skew.
+source "${SCRIPT_DIR}/lib/herdr.sh"
+
 UNIT_PATH="/etc/systemd/system/herdr-server.service"
 HERDR_BIN="$HOME/.local/bin/herdr"
 UNINSTALL=0
@@ -78,31 +85,10 @@ fi
 
 # ---------------------------------------------------------------------------
 log "Installing herdr ${HERDR_VERSION}"
-case "$(uname -m)" in
-  x86_64)  HERDR_ARCH=x86_64 ;;
-  aarch64) HERDR_ARCH=aarch64 ;;
-  *) printf 'herdr-setup: unsupported architecture %s\n' "$(uname -m)" >&2; exit 1 ;;
-esac
-
-# Downloading the release binary rather than piping herdr.dev/install.sh into a
-# shell: this runs on the always-on box, the version is pinned here so a re-run
-# is reproducible, and nothing executes that has not been checked first.
-if [ -x "$HERDR_BIN" ] && [ "$("$HERDR_BIN" --version 2>/dev/null)" = "herdr ${HERDR_VERSION#v}" ]; then
-  log "herdr ${HERDR_VERSION} already installed"
-else
-  mkdir -p "$HOME/.local/bin"
-  TMP="$(mktemp)"
-  trap 'rm -f "$TMP"' EXIT
-  curl -fsSL -o "$TMP" \
-    "https://github.com/herdrdev/herdr/releases/download/${HERDR_VERSION}/herdr-linux-${HERDR_ARCH}"
-  chmod +x "$TMP"
-  # Run it once before installing it: a truncated or wrong-arch download is the
-  # failure mode here, and finding out at `systemctl start` time means debugging
-  # a unit rather than a download.
-  "$TMP" --version >/dev/null
-  install -m 755 "$TMP" "$HERDR_BIN"
-  log "Installed $("$HERDR_BIN" --version) to $HERDR_BIN"
-fi
+# Downloading the pinned release binary rather than piping herdr.dev/install.sh
+# into a shell: this is the always-on box, the pin makes a re-run reproducible,
+# and ensure_herdr verifies the published sha256 before anything executes.
+ensure_herdr
 
 # A server started by hand (or by an earlier run) owns the socket the unit is
 # about to bind, and herdr refuses to start a second one — "error: herdr server
@@ -177,15 +163,18 @@ if [ "$CLAUDE_INTEGRATION" -eq 1 ]; then
   #      including the ones running under tmux, which are supposed to be the
   #      control arm of this comparison.
   #   2. Without it, herdr infers agent state from terminal titles and screen
-  #      contents. With it, state comes from Claude Code's own lifecycle hooks,
-  #      and session.resume_agents_on_restore can put conversations back after a
-  #      server restart — the closest thing herdr has to tmux-continuum.
+  #      contents, and a server restart relaunches claude as a FRESH session —
+  #      the process comes back on its own within a few seconds, the
+  #      conversation does not. With it, state comes from Claude Code's own
+  #      lifecycle hooks and session.resume_agents_on_restore can restore the
+  #      conversation itself, which is the part tmux-continuum has no answer
+  #      for either.
   "$HERDR_BIN" integration install claude
   "$HERDR_BIN" server reload-config || true
 else
   log "Skipping the Claude Code integration (--with-claude-integration to enable)."
-  log "Without it, agent state is inferred from the screen and conversations do"
-  log "not resume after a server restart."
+  log "Without it, agent state is inferred from the screen, and a server restart"
+  log "brings claude back as a fresh session rather than resuming the conversation."
 fi
 
 # ---------------------------------------------------------------------------

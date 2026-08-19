@@ -65,10 +65,13 @@ if "error" in d:
 print(d["result"]["root_pane"]["pane_id"])
 ')"
 else
-  # Workspace already exists — herdr restores layout across a server restart —
-  # but the processes inside it do NOT survive that restart, so an existing
-  # workspace tells you nothing about whether claude is running. Take its root
-  # pane and let the agent check below decide.
+  # Workspace already exists. herdr restores layout across a server restart and,
+  # with session.resume_agents_on_restore (on by default), relaunches the agent
+  # too — but as a NEW claude process a few seconds later, not a surviving one.
+  # So an existing workspace tells you nothing about whether claude is running
+  # *yet*. Take its root pane and let the agent check below decide; that check
+  # is also what keeps this from racing the server's own resume and starting a
+  # second claude in the same pane.
   PANE="$("$HERDR" pane list 2>/dev/null | python3 -c '
 import json, sys
 d = json.load(sys.stdin)

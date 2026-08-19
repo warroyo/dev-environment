@@ -16,6 +16,14 @@ Installs Tailscale, Ghostty, Mosh, chezmoi, and VS Code + the Remote-SSH
 extension via Homebrew, and ends by applying the dotfiles
 (`chezmoi init --apply`).
 
+It also installs `herdr`, the multiplexer being evaluated against tmux for the
+persistent session (see [server-setup.md](server-setup.md) for the server
+half). That one comes from a pinned, checksum-verified release binary rather
+than Homebrew — there's no official formula, and the pin matters: client and
+server negotiate a protocol version, so both ends have to agree. The version
+lives in `provision/lib/herdr.sh` and nowhere else. Attach with
+`claude-attach-herdr`; `claude-attach` still gets you the tmux session.
+
 It also writes `/etc/resolver/set.lab` so the lab's internal zone — and only
 that zone — resolves through the lab's own DNS server. That needs `sudo`, so
 the run will prompt. It's useful on this machine only while you're on the home

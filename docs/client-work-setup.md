@@ -3,9 +3,15 @@
 **The Claude Code CLI and IDE extension are never installed on this machine,
 and it never joins the tailnet.** It's a pure view/edit/SSH client — Ghostty,
 Mosh, VS Code Remote-SSH. Everything else in the general layer (shell
-config, tmux, VS Code defaults, common CLI tools) applies here exactly as
-it does on the server and the personal Air; this machine is a normal
+config, tmux, herdr, VS Code defaults, common CLI tools) applies here exactly
+as it does on the server and the personal Air; this machine is a normal
 chezmoi target, not a special case for that layer.
+
+`herdr` is in that general layer for the same reason `tmux` and `mosh` are: it
+is a multiplexer client that draws terminals owned by the server, and it
+neither bundles nor executes Claude Code. The bootstrap's verification step at
+the end checks the constraint itself — that no `claude` is installed — rather
+than filtering on tool names.
 
 ## 0. What "no Claude Code here" does and doesn't mean
 

@@ -32,6 +32,8 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/brew.sh
 source "${SCRIPT_DIR}/lib/brew.sh"
+# shellcheck source=lib/herdr.sh
+source "${SCRIPT_DIR}/lib/herdr.sh"
 
 log "Updating Homebrew"
 brew update
@@ -50,6 +52,17 @@ ensure_formula fzf                     fzf
 ensure_formula starship                starship
 ensure_formula zsh-autosuggestions
 ensure_formula zsh-syntax-highlighting
+
+# herdr, for the same reason mosh is here and by the same rule as
+# claude-attach: it is a multiplexer client that draws terminals owned by the
+# SERVER. It does not install, bundle or execute Claude Code, so it does not
+# touch constraint #1 — the check at the bottom of this script is what enforces
+# that, and it enforces it by looking for claude itself, not for tool names.
+#
+# Pinned and checksum-verified from the release binary rather than brewed;
+# see provision/lib/herdr.sh for why the version lives in one shared place.
+log "Installing herdr"
+ensure_herdr
 
 # Kubernetes tooling — general layer, nothing Claude-related, so it applies here
 # exactly as on the other two machines. The probe argument matters more on this
@@ -128,12 +141,17 @@ if command -v code >/dev/null 2>&1; then
   fi
 fi
 
-# The one local file that would execute claude. Its presence means the role in
+# The local files that would execute claude. Their presence means the role in
 # ~/.config/chezmoi/chezmoi.toml is wrong, not that anything is installed yet.
-if [ -e "$HOME/.local/bin/claude-session" ]; then
-  log "ERROR: ~/.local/bin/claude-session exists — check [data] role in ~/.config/chezmoi/chezmoi.toml"
-  LEAKED=1
-fi
+# herdr-main-workspace is the herdr path's equivalent of claude-session — it
+# starts claude in a local herdr pane — so it is server-only for exactly the
+# same reason and is checked here for exactly the same reason.
+for f in "$HOME/.local/bin/claude-session" "$HOME/.local/bin/herdr-main-workspace"; do
+  if [ -e "$f" ]; then
+    log "ERROR: ${f} exists — check [data] role in ~/.config/chezmoi/chezmoi.toml"
+    LEAKED=1
+  fi
+done
 
 if [ "$LEAKED" -eq 0 ]; then
   log "OK: no Claude Code CLI or IDE extension on this machine"
