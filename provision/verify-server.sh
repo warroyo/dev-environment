@@ -238,6 +238,22 @@ if systemctl is-enabled --quiet claude-tmux.service 2>/dev/null; then
   printf '        fix: sudo systemctl disable --now claude-tmux.service\n'
 fi
 
+# Leftovers from the tmux era. claude-main came back from the unit above; cc-*
+# sessions were started by the old tmux claude-open and nothing manages them
+# any more, so they will sit there holding a claude process forever. Reported
+# rather than killed: they may still hold a conversation, and that is a call
+# for a person to make, not for a health check.
+if command -v tmux >/dev/null 2>&1; then
+  STALE="$(tmux list-sessions -F '#{session_name}' 2>/dev/null \
+    | grep -E '^(claude-main|claude-env|cc-)' || true)"
+  if [ -n "$STALE" ]; then
+    warn "tmux sessions left over from before herdr took over:"
+    printf '        %s\n' $STALE
+    printf '        check one with: tmux capture-pane -p -t <name>\n'
+    printf '        remove one with: tmux kill-session -t <name>\n'
+  fi
+fi
+
 # Unlike the tmux unit, `systemctl is-active` here IS meaningful: Type=exec
 # means the supervised process is the server itself. What it still cannot tell
 # you is whether the session inside has anything in it, which is what follows.

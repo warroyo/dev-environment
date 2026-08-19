@@ -140,11 +140,18 @@ install_herdr_service() {
   ensure_herdr || return 1
   mkdir -p "$workdir"
 
-  # A server started by hand (or by an earlier run) owns the socket the unit is
-  # about to bind, and herdr refuses to start a second one — "error: herdr
-  # server is already running". Stop it so systemd owns the only instance.
-  if "$herdr_bin" status server 2>/dev/null | grep -q 'status: running'; then
-    log "Stopping the herdr server that is already running, so systemd can own it"
+  # A server started BY HAND owns the socket the unit is about to bind, and
+  # herdr refuses to start a second one — "error: herdr server is already
+  # running". Stop that one so systemd owns the only instance.
+  #
+  # Emphatically not one systemd already manages. Stopping that kills every
+  # pane in the live session, including the one this script is very likely
+  # running in, and Restart=always then brings back an empty server five
+  # seconds later. Re-running the bootstrap must not cost you your session.
+  if systemctl is-active --quiet herdr-server.service 2>/dev/null; then
+    log "herdr server already running under systemd — leaving it alone"
+  elif "$herdr_bin" status server 2>/dev/null | grep -q 'status: running'; then
+    log "Stopping the hand-started herdr server, so systemd can own it"
     "$herdr_bin" server stop || true
     sleep 2
   fi
@@ -154,8 +161,13 @@ install_herdr_service() {
     log "         The server will start, but nothing will create the claude-main workspace."
   fi
 
-  log "Writing herdr-server systemd service"
-  cat <<EOF | $SUDO tee "$unit_path" >/dev/null
+  # Rendered to a temp file and compared before installing, so that a re-run
+  # that changes nothing also restarts nothing. That matters more here than it
+  # looks: the usual way to re-run this script is from a shell inside the very
+  # herdr session the unit is running.
+  local unit_tmp unit_changed=0
+  unit_tmp="$(mktemp)"
+  cat >"$unit_tmp" <<EOF
 # Managed by dev-environment/provision/lib/herdr.sh — do not edit by hand.
 [Unit]
 Description=herdr server (persistent Claude Code session)
@@ -207,14 +219,44 @@ RestartSec=5
 WantedBy=multi-user.target
 EOF
 
+  if $SUDO cmp -s "$unit_tmp" "$unit_path" 2>/dev/null; then
+    log "herdr-server.service already up to date"
+  else
+    log "Writing herdr-server systemd service"
+    $SUDO cp "$unit_tmp" "$unit_path"
+    $SUDO chmod 644 "$unit_path"
+    unit_changed=1
+  fi
+  rm -f "$unit_tmp"
+
   $SUDO systemctl daemon-reload
   $SUDO systemctl enable herdr-server.service
   # reset-failed before starting: an earlier bad unit can leave a restart
   # counter high enough that systemd refuses to start it again, and the error
   # then names a rate limit rather than the thing that actually broke.
   $SUDO systemctl reset-failed herdr-server.service 2>/dev/null || true
-  $SUDO systemctl restart herdr-server.service || \
-    log "WARNING: herdr-server.service failed to start — check 'journalctl -u herdr-server'."
+
+  # Restarting the herdr server destroys every pane in the live session. Doing
+  # that unconditionally meant re-running the bootstrap killed the session you
+  # were running it from, every time. So: start it if it is not up, restart it
+  # only if the unit actually changed, and never restart out from under a shell
+  # that is itself inside herdr.
+  if ! systemctl is-active --quiet herdr-server.service 2>/dev/null; then
+    $SUDO systemctl start herdr-server.service || \
+      log "WARNING: herdr-server.service failed to start — check 'journalctl -u herdr-server'."
+  elif [ "$unit_changed" -eq 1 ]; then
+    if [ "${HERDR_ENV:-}" = 1 ]; then
+      log "NOTE: the unit changed, but this is running inside herdr and a restart"
+      log "      would kill this session. Apply it when you are next detached:"
+      log "        sudo systemctl restart herdr-server.service"
+    else
+      log "Unit changed — restarting herdr-server.service"
+      $SUDO systemctl restart herdr-server.service || \
+        log "WARNING: herdr-server.service failed to start — check 'journalctl -u herdr-server'."
+    fi
+  else
+    log "herdr-server.service running and unchanged — not restarting"
+  fi
 
   # -------------------------------------------------------------------------
   # Agent state from Claude Code's own lifecycle hooks rather than from reading
