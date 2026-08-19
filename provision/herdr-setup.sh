@@ -151,7 +151,12 @@ ExecStart=${HERDR_BIN} server
 # server is listening. It exits non-zero if the server never came up, which is
 # what makes a broken start visible as a failed unit.
 ExecStartPost=${HOME}/.local/bin/herdr-main-workspace
-ExecStop=${HERDR_BIN} server stop
+# Leading '-' so a failing stop is not treated as a unit failure. On any stop
+# or restart systemd SIGTERMs the main process first, so by the time this runs
+# the server is usually already gone and \`server stop\` exits 1 against a socket
+# that no longer exists. Without the dash that marks the unit failed, and with
+# Restart=always the result is a restart loop that looks like herdr crashing.
+ExecStop=-${HERDR_BIN} server stop
 Restart=always
 RestartSec=5
 
