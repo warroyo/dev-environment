@@ -56,6 +56,11 @@ if command -v claude >/dev/null 2>&1; then
 else
   bad "claude MISSING — herdr-server.service has nothing to start"
 fi
+if command -v codex >/dev/null 2>&1; then
+  ok "codex present ($(codex --version 2>/dev/null || echo '?'))"
+else
+  bad "codex MISSING — re-run server-bootstrap.sh ('npm install -g @openai/codex')"
+fi
 
 # ---------------------------------------------------------------------------
 # Everything that can only be observed from an INTERACTIVE shell is probed here,

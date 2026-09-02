@@ -333,6 +333,28 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# Codex CLI (OpenAI). Same shape as Claude Code above: installing is
+# automated, the first-run login (`codex login`) is an interactive
+# browser/OAuth flow and stays manual (see docs/server-setup.md).
+#
+# Via npm rather than a standalone installer script, because npm and the
+# ~/.npm-global prefix are already set up above, and its bin dir is already on
+# PATH everywhere Claude Code's is (dot_zshenv, herdr-server.service,
+# claude-telegram-bot.service) — nothing extra needed to reach it from
+# claude-main or any other shell.
+log "Installing Codex CLI"
+if command -v codex >/dev/null 2>&1; then
+  log "Codex CLI already installed ($(codex --version 2>/dev/null || echo 'version unknown'))"
+else
+  if npm install -g @openai/codex; then
+    log "Codex CLI installed"
+  else
+    log "WARNING: automatic Codex CLI install failed. Install it manually with"
+    log "         'npm install -g @openai/codex', then re-run this script."
+  fi
+fi
+
+# ---------------------------------------------------------------------------
 # Second (unrelated) OpenVPN environment — runs directly on the host under
 # systemd.
 #

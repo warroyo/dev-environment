@@ -29,20 +29,27 @@ group membership doesn't apply to your current shell session until you log
 out and back in — the script uses `sudo docker` internally to work around
 that, but your own `docker` commands will need a fresh login.
 
-The script now also installs the Claude Code CLI, applies the dotfiles via
-chezmoi, installs the tmux plugins, and sets up the persistent herdr session —
-those are no longer separate manual steps.
+The script now also installs the Claude Code CLI and the Codex CLI, applies
+the dotfiles via chezmoi, installs the tmux plugins, and sets up the
+persistent herdr session — those are no longer separate manual steps.
 
-## 2. Authenticate the Claude Code CLI
+## 2. Authenticate the Claude Code and Codex CLIs
 
 Installation is handled by the script. The **first-run login is an
 interactive browser/OAuth flow** and stays manual — run `claude` once and
-follow the prompts.
+follow the prompts, then the same for `codex login`.
 
 Because the server is headless, the shell config aliases `$BROWSER` to print
 URLs rather than launch a browser; Ghostty renders them as clickable links,
 so clicking opens the browser on your Mac. See
-[`docs/ARCHITECTURE.md`](ARCHITECTURE.md).
+[`docs/ARCHITECTURE.md`](ARCHITECTURE.md). Same mechanism, same fix, for
+either CLI's OAuth flow.
+
+Codex has no persistent-session integration here the way Claude Code does
+(no herdr workspace, no systemd unit) — it's a second CLI on PATH, run
+ad hoc inside `claude-main` or any other shell, not a second always-on host.
+If that changes, treat it as its own piece of work rather than an extension
+of this step.
 
 ## 3. `tailscale up`
 
@@ -209,6 +216,10 @@ scripted or interactive (`dot_zshenv`), and the `herdr-server.service` unit.
 That unit declares its environment explicitly for a second reason too: the
 herdr server hands its own environment to every pane it spawns, so anything
 inherited from whatever launched it ends up inside every agent.
+
+Same reason the Codex CLI is installed with `npm install -g @openai/codex`
+rather than its own installer script — the prefix and the PATH entries were
+already there for exactly this.
 
 This is what makes `npx`-based install CLIs usable directly in the
 `claude-main` session, e.g. [`skills`](https://www.npmjs.com/package/skills)
