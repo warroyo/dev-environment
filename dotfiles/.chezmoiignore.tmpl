@@ -66,6 +66,19 @@
 .local/bin/dev-log-entry
 .claude/commands/log-session.md
 .claude/CLAUDE.md
+{{/*
+  Blog writing flow. /post-ideas and /post-brief read ~/dev-log directly and are
+  the private half of a split described in dot_zshenv — the public half
+  (/post-scaffold, /post-ship) lives in the warroyo-blog repo and is not managed
+  here at all. Same rule as the writer above: they only make sense where Claude
+  Code runs.
+
+  DEV_LOG_PITCHES needs no entry here. It lives in .zshenv, which has to ship
+  everywhere, and self-gates on ~/dev-log existing — a directory only ever
+  cloned on the server (provision/lib/repos.sh).
+*/}}
+.claude/commands/post-ideas.md
+.claude/commands/post-brief.md
 {{- end }}
 
 {{- if or (eq .role "server") (eq .role "personal") }}

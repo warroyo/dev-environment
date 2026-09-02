@@ -26,3 +26,19 @@ export PATH
 # and none of them read .zshrc.
 export EDITOR=vim
 export VISUAL="$EDITOR"
+
+# Blog writing flow: where /post-brief stages an approved, public-safe brief.
+#
+# Tier 1 for the same reason PATH is. `claude` is started by herdr under
+# systemd (claude-open, and every session the Telegram bot opens), so it never
+# reads .zshrc — a fragment in ~/.config/shell/source/ would be set in a
+# terminal and unset in exactly the phone-driven sessions this flow is for.
+#
+# The variable exists so the PUBLIC warroyo-blog repo's /post-scaffold and
+# /post-ship can find the brief without hard-coding a path to the private
+# dev-log repo. Guarded on the directory rather than role-gated in
+# .chezmoiignore.tmpl: ~/dev-log is only ever cloned where Claude Code runs
+# (provision/lib/repos.sh, server only), so on a client this is simply never
+# set — which is also the unset case those commands already handle by asking
+# for the brief instead.
+[[ -d "$HOME/dev-log" ]] && export DEV_LOG_PITCHES="$HOME/dev-log/pitches"

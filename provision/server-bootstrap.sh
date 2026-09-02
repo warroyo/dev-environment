@@ -759,7 +759,18 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 source "${SCRIPT_DIR}/lib/herdr.sh"
 # shellcheck source=lib/chezmoi-apply.sh
 source "${SCRIPT_DIR}/lib/chezmoi-apply.sh"
+# shellcheck source=lib/repos.sh
+source "${SCRIPT_DIR}/lib/repos.sh"
 apply_dotfiles server "$REPO_ROOT"
+
+# ---------------------------------------------------------------------------
+# Working repos. After apply_dotfiles, because ~/.gitconfig and ~/.ssh/config
+# are what the clones authenticate with, and well before the telegram bot
+# section below, because ~/workspace/warroyo-blog has to exist by the time the
+# bot that opens it is enabled. Warns rather than aborts when credentials are
+# missing — see lib/repos.sh.
+log "Cloning working repos"
+ensure_work_repos
 
 # ---------------------------------------------------------------------------
 # Install the tmux plugins non-interactively. tpm's documented flow is to

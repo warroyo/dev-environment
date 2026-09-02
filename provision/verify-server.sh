@@ -350,6 +350,50 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+section "Blog writing flow (dev-log -> post)"
+# The clones are provisioned by lib/repos.sh, which warns rather than aborts
+# when GitHub credentials are missing — so a missing repo here is the expected
+# way that failure surfaces. See docs/blog-workflow.md.
+if [ -d "$HOME/dev-log/.git" ]; then
+  ok "~/dev-log cloned"
+  [ -d "$HOME/dev-log/pitches" ] \
+    && ok "~/dev-log/pitches exists (brief staging area)" \
+    || warn "~/dev-log/pitches missing — created by the first /post-brief"
+else
+  bad "~/dev-log NOT cloned — re-run server-bootstrap.sh once credentials exist"
+fi
+
+# Must be under ~/workspace specifically: that is where claude-telegram-bot
+# resolves /cc_open <dir>, which is the phone entry point to the whole flow.
+if [ -d "$HOME/workspace/warroyo-blog/.git" ]; then
+  ok "~/workspace/warroyo-blog cloned (reachable as /cc_open warroyo-blog)"
+  [ -f "$HOME/workspace/warroyo-blog/.claude/commands/post-scaffold.md" ] \
+    && ok "blog repo carries its own /post-scaffold + /post-ship" \
+    || warn "blog repo has no .claude/commands — pull the latest main"
+else
+  bad "~/workspace/warroyo-blog NOT cloned — re-run server-bootstrap.sh"
+fi
+
+for cmd in post-ideas post-brief; do
+  [ -f "$HOME/.claude/commands/${cmd}.md" ] \
+    && ok "/${cmd} applied" \
+    || bad "/${cmd} MISSING — run 'chezmoi apply'"
+done
+
+# Checked NON-interactively on purpose, and this is the whole point of the
+# check: it lives in .zshenv rather than a .zshrc fragment because herdr starts
+# `claude` under systemd, which never reads .zshrc. If this only passed under
+# `zsh -i`, the phone-driven sessions would be exactly the ones without it.
+BLOG_ENV="$(zsh -c 'printf %s "${DEV_LOG_PITCHES:-}"' 2>/dev/null)"
+if [ -n "$BLOG_ENV" ]; then
+  ok "DEV_LOG_PITCHES set non-interactively ($BLOG_ENV)"
+elif [ ! -d "$HOME/dev-log" ]; then
+  warn "DEV_LOG_PITCHES unset because ~/dev-log is missing — clone it first"
+else
+  bad "DEV_LOG_PITCHES not set despite ~/dev-log existing — check ~/.zshenv"
+fi
+
+# ---------------------------------------------------------------------------
 section "Second OpenVPN environment (on-demand)"
 OVPN_CONF="/etc/openvpn/client/client-env.conf"
 if [ -f "$OVPN_CONF" ]; then

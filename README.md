@@ -103,6 +103,8 @@ not source paths — verify with `chezmoi ignored`.
   `Ctrl-b q`, not `Ctrl-b d`)
 - [`docs/tmux-cheatsheet.md`](docs/tmux-cheatsheet.md) — tmux, still installed
   for ad-hoc use and as `claude-attach --tmux`
+- [`docs/blog-workflow.md`](docs/blog-workflow.md) — dev-log entry to published
+  post, and the private/public boundary in the middle of it
 - [`docs/server-setup.md`](docs/server-setup.md)
 - [`docs/client-personal-setup.md`](docs/client-personal-setup.md)
 - [`docs/client-work-setup.md`](docs/client-work-setup.md)
