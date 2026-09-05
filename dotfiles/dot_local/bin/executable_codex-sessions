@@ -1,0 +1,191 @@
+#!/usr/bin/env bash
+# List and delete saved Codex sessions.
+#
+#   codex-sessions                  list, newest first        (alias: cxs)
+#   codex-sessions <query>          list only matching ones
+#   codex-sessions --delete         pick with fzf, then delete (alias: cxrm)
+#   codex-sessions --delete <query> delete what matches, after confirming
+#   codex-sessions --delete --yes <query>   no prompt (for scripts)
+#
+# `codex delete` on its own is awkward from a phone-shaped workflow: it wants a
+# UUID (a NAME only works down its interactive path — non-interactively it says
+# "rerun with --force and a session UUID"), and the two ways to see a UUID are
+# both TUIs. This turns "which sessions exist" and "delete those" into one
+# command that works over SSH, in a pane, or from a script.
+#
+# WHERE THE LIST COMES FROM
+#
+# The rollout files under ~/.codex/sessions/<Y>/<M>/<D>/, one per session, and
+# NOT ~/.codex/session_index.jsonl. The index looks like the obvious source and
+# is not: it is append-only with one line per rename, and it misses sessions
+# entirely — a `codex exec` run writes a rollout and never appears in the index.
+# So the files are the inventory and the index is consulted only for a thread's
+# display name, which is the one thing the rollout header does not carry.
+#
+# Deleting is delegated to `codex delete --force <uuid>` rather than unlinking
+# the file, so whatever else Codex keeps about a session (sqlite thread history,
+# the daemon's view of it) is cleaned up by the tool that owns it.
+set -euo pipefail
+
+CODEX="${CODEX_BIN:-$HOME/.local/bin/codex}"
+CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
+DELETE=0
+ASSUME_YES=0
+QUERY=""
+
+usage() {
+  cat <<'EOF'
+usage: codex-sessions [<query>]
+       codex-sessions --delete [--yes] [<query>]
+
+  <query>    match against session name, directory or id (substring)
+  --delete   delete the matching sessions; with no query, pick them with fzf
+  --yes      skip the confirmation prompt (only with --delete and a query)
+EOF
+}
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --delete|-d) DELETE=1; shift ;;
+    --yes|-y)    ASSUME_YES=1; shift ;;
+    -h|--help)   usage; exit 0 ;;
+    --)          shift; break ;;
+    -*)          printf 'codex-sessions: unknown option %s\n' "$1" >&2; usage >&2; exit 2 ;;
+    *)           break ;;
+  esac
+done
+[ $# -le 1 ] || { usage >&2; exit 2; }
+QUERY="${1:-}"
+
+command -v python3 >/dev/null 2>&1 || {
+  printf 'codex-sessions: python3 is required\n' >&2; exit 1; }
+
+# One "<id>\t<when>\t<name>\t<dir>" line per session, newest first. Printed by
+# python because every field comes out of JSON: the rollout header for id, time,
+# cwd and originator, the index for the name.
+inventory() {
+  python3 - "$CODEX_HOME" "$QUERY" <<'PYEOF'
+import json, os, sys
+
+home, query = sys.argv[1], sys.argv[2].lower()
+
+# Newest name per id. The index is append-only and a rename adds a line rather
+# than replacing one, so the LAST entry for an id is the current name.
+names = {}
+try:
+    with open(os.path.join(home, "session_index.jsonl")) as f:
+        for line in f:
+            try:
+                d = json.loads(line)
+            except ValueError:
+                continue
+            if d.get("id"):
+                names[d["id"]] = d.get("thread_name") or ""
+except OSError:
+    pass
+
+rows = []
+sessions = os.path.join(home, "sessions")
+for root, _dirs, files in os.walk(sessions):
+    for fn in files:
+        if not (fn.startswith("rollout-") and fn.endswith(".jsonl")):
+            continue
+        path = os.path.join(root, fn)
+        # Only the first line is read: these files grow to megabytes and the
+        # header carries everything wanted here.
+        try:
+            with open(path) as f:
+                head = json.loads(f.readline())
+        except (OSError, ValueError):
+            continue
+        p = head.get("payload", {})
+        sid = p.get("session_id") or p.get("id")
+        if not sid:
+            continue
+        when = (p.get("timestamp") or head.get("timestamp") or "")[:16].replace("T", " ")
+        cwd = p.get("cwd", "")
+        name = names.get(sid) or ("(%s)" % p.get("originator", "unnamed"))
+        rows.append((when, sid, name, cwd))
+
+rows.sort(reverse=True)
+for when, sid, name, cwd in rows:
+    if query and query not in " ".join((sid, name, cwd)).lower():
+        continue
+    print("\t".join((sid, when, name, cwd)))
+PYEOF
+}
+
+# The backslash before ~ is load-bearing: an unescaped ~ in the replacement is
+# tilde-expanded back to $HOME, so the substitution silently does nothing.
+home_rel() { printf '%s' "${1/#$HOME/\~}"; }
+
+# ---------------------------------------------------------------------------
+ROWS="$(inventory)"
+if [ -z "$ROWS" ]; then
+  if [ -n "$QUERY" ]; then
+    printf 'No Codex sessions matching "%s".\n' "$QUERY"
+  else
+    printf 'No Codex sessions.\n'
+  fi
+  exit 0
+fi
+
+if [ "$DELETE" -eq 0 ]; then
+  while IFS=$'\t' read -r id when name dir; do
+    printf '%s  %-34.34s  %s\n' "$when" "$name" "$(home_rel "$dir")"
+    printf '                  %s\n' "$id"
+  done <<<"$ROWS"
+  exit 0
+fi
+
+# ---------------------------------------------------------------------------
+# Deleting. With a query the matches are the selection; without one, fzf picks.
+if [ -z "$QUERY" ]; then
+  command -v fzf >/dev/null 2>&1 || {
+    printf 'codex-sessions: --delete with no query needs fzf (or pass a query)\n' >&2
+    exit 2; }
+  [ -t 0 ] || { printf 'codex-sessions: --delete with no query needs a terminal\n' >&2; exit 2; }
+  # -m: several at once, which is the usual shape of "clean these up".
+  SELECTED="$(printf '%s\n' "$ROWS" \
+    | awk -F'\t' '{ printf "%s  %-34.34s  %s\t%s\n", $2, $3, $4, $1 }' \
+    | fzf -m --prompt='delete> ' --with-nth=1 --delimiter='\t' \
+    | cut -f2)" || true
+  [ -n "$SELECTED" ] || { printf 'Nothing selected.\n'; exit 0; }
+else
+  SELECTED="$(printf '%s\n' "$ROWS" | cut -f1)"
+fi
+
+COUNT="$(printf '%s\n' "$SELECTED" | grep -c .)"
+
+# Confirmation is deliberately a listing, not a count: "delete 7 sessions?" is
+# not something anyone can check, and this is unrecoverable — `codex delete`
+# removes the rollout file.
+printf 'About to permanently delete %s session(s):\n\n' "$COUNT"
+while read -r id; do
+  [ -n "$id" ] || continue
+  printf '%s\n' "$ROWS" | awk -F'\t' -v i="$id" '$1 == i {
+    printf "  %s  %s  %s\n", $2, $3, $4 }'
+done <<<"$SELECTED"
+printf '\n'
+
+if [ "$ASSUME_YES" -ne 1 ]; then
+  [ -t 0 ] || { printf 'codex-sessions: refusing to delete without a terminal (use --yes)\n' >&2; exit 2; }
+  printf 'Type "yes" to delete: '
+  read -r answer
+  [ "$answer" = "yes" ] || { printf 'Cancelled.\n'; exit 0; }
+fi
+
+# --force AND a UUID: `codex delete` refuses to run without an interactive
+# terminal otherwise, and --force is documented against a UUID rather than a
+# name, so the id from the inventory is what gets passed.
+rc=0
+while read -r id; do
+  [ -n "$id" ] || continue
+  if out="$("$CODEX" delete --force "$id" 2>&1)"; then
+    printf '%s\n' "$out"
+  else
+    printf 'failed to delete %s: %s\n' "$id" "$out" >&2
+    rc=1
+  fi
+done <<<"$SELECTED"
+exit "$rc"

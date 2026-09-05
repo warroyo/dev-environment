@@ -13,6 +13,9 @@ Two-layer setup, one repo:
    Telegram bot starts a session in any `~/workspace` directory with Remote
    Control on, and the Claude app drives it from there —
    [setup](docs/server-setup.md#9-manual-the-telegram-bot-start-sessions-from-your-phone).
+   The same bot does it for Codex under `/cx_`, driven from the ChatGPT app
+   once this machine is paired —
+   [setup](docs/server-setup.md#10-manual-codex-from-the-chatgpt-app-pair-this-machine-once).
 
 Start with [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full
 picture, then follow the setup doc for whichever machine you're on.

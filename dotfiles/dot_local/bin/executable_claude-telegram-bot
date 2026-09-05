@@ -1,12 +1,19 @@
 #!/usr/bin/env bash
 # A Telegram bot for driving this server from a phone. Today it starts Claude
-# Code sessions; it is meant to grow other things.
+# Code and Codex sessions; it is meant to grow other things.
 #
-# The bot does no conversation: it opens a herdr workspace running
-# `claude --remote-control` in a directory under ~/workspace and replies with
-# the name. The actual conversation happens in the Claude app over Remote
-# Control — which is the point, because that gives the full session (tools,
-# permissions prompts, output) instead of a chat-shaped imitation of it.
+# The bot does no conversation: it opens a herdr workspace running an agent in
+# a directory under ~/workspace and replies with the name. The actual
+# conversation happens in that agent's phone app — which is the point, because
+# that gives the full session (tools, permissions prompts, output) instead of a
+# chat-shaped imitation of it.
+#
+# The two families reach their app differently, and it shows in the replies:
+# Claude Code turns Remote Control on PER SESSION and prints a claude.ai link
+# the bot can hand straight to the phone, while Codex has one app-server daemon
+# per machine that every session attaches to, paired once with
+# `codex remote-control pair`. So /cc_open can reply with a tappable URL and
+# /cx_open can only name the session to pick from the app's list.
 #
 # Everything it starts lands in the same herdr server as claude-main, so a
 # `claude-attach` from a laptop shows every phone-started conversation in the
@@ -18,7 +25,8 @@
 # colliding here. Only /help and /start are global. Telegram allows a-z, 0-9
 # and underscore in command names, hence `cc_` rather than `cc:` or `cc-`.
 #
-# Commands: /cc_ls  /cc_open <dir>  /cc_sessions  /cc_kill <dir>  /help
+# Commands: /cc_ls  /cc_open <dir>  /cc_sessions  /cc_kill <dir>
+#           /cx_ls  /cx_open <dir>  /cx_sessions  /cx_kill <dir>  /help
 #
 # Configuration comes from ~/.secrets/telegram-bot (sourced by 55_secrets.sh
 # for interactive shells; read directly here, because this runs under systemd
@@ -49,7 +57,7 @@ OFFSET_FILE="${STATE_DIR}/offset"
 POLL_TIMEOUT=60          # Telegram long-poll: it holds the request open this long
 
 mkdir -p "$STATE_DIR"
-for c in curl jq herdr claude-open; do
+for c in curl jq herdr claude-open codex-open; do
   command -v "$c" >/dev/null 2>&1 || { printf 'claude-telegram-bot: %s is required\n' "$c" >&2; exit 1; }
 done
 
@@ -121,13 +129,42 @@ PYEOF
 workspace_real() { cd "$WORKSPACE" && pwd -P; }
 
 # ---------------------------------------------------------------------------
-# Claude Code family (/cc_*). Each handler prints its reply on stdout; the
-# dispatcher sends whatever comes back. A new family means new cc_-style
-# handlers plus entries in the dispatcher and bot_help — nothing else.
-cc_ls() {
-  local out="" d path sessions ws s st wid
+# The agent families: /cc_* is Claude Code, /cx_* is Codex. Each handler prints
+# its reply on stdout; the dispatcher sends whatever comes back.
+#
+# The two families do the same four things, so the work lives in one
+# family_-prefixed implementation each and the cc_/cx_ handlers are one-line
+# wrappers. That is not tidiness for its own sake: the listing logic below
+# grew a bug once already (deriving session names instead of asking the opener
+# for them), and a second hand-copied version of it is how that happens again.
+#
+# What a family IS, concretely: an opener script that owns the path → session
+# mapping, and a label convention that says which workspaces are its own.
+family_opener() {                         # family_opener cc|cx
+  case "$1" in
+    cc) printf 'claude-open' ;;
+    cx) printf 'codex-open' ;;
+  esac
+}
+
+# running_sessions rows belonging to ONE family. Codex workspaces are labelled
+# "codex:<dir>" by codex-open, Claude Code ones are the bare directory — so the
+# prefix is the whole test. Without this split /cc_ls would report a directory
+# as running when only its Codex session was up, and /cc_kill would then close
+# it.
+family_rows() {                           # family_rows cc|cx
+  running_sessions | awk -F'\t' -v want="$1" '
+    {
+      is_codex = (index($1, "codex:") == 1)
+      if ((want == "cx") != is_codex) next
+      print
+    }'
+}
+
+family_ls() {                             # family_ls cc|cx
+  local fam="$1" out="" d path sessions ws s st wid
   ws="$(workspace_real)"
-  sessions="$(running_sessions)"
+  sessions="$(family_rows "$fam")"
   for d in "$WORKSPACE"/*/; do
     [ -d "$d" ] || continue               # no match: the glob stays literal
     path="$(cd "$d" && pwd -P)"
@@ -149,8 +186,8 @@ cc_ls() {
     fi
   done
   # The loop lists one level only, so a session opened on a nested path (a/b)
-  # appears nowhere above. Listing those separately keeps /cc_ls honest about
-  # what is running.
+  # appears nowhere above. Listing those separately keeps the listing honest
+  # about what is running.
   while IFS=$'\t' read -r s path st wid; do
     [ -n "$s" ] || continue
     case "$path" in
@@ -161,13 +198,16 @@ cc_ls() {
   printf '%s' "$out"
 }
 
-cc_open() {                               # cc_open <dir>
-  local dir="$1" out rc
-  [ -n "$dir" ] || { printf 'usage: /cc_open <dir>'; return; }
-  # stderr is folded in: claude-open reports "already running" there, and that
-  # is exactly the answer worth relaying.
+family_open() {                           # family_open cc|cx <dir>
+  local fam="$1" dir="$2" out rc opener
+  opener="$(family_opener "$fam")"
+  [ -n "$dir" ] || { printf 'usage: /%s_open <dir>' "$fam"; return; }
+  # stderr is folded in: the openers report "already running" there, and that
+  # is exactly the answer worth relaying. codex-open also warns there when the
+  # app-server daemon is not remote-controlled, which is the difference between
+  # a session the phone can drive and one it cannot see.
   set +e
-  out="$(claude-open "$dir" 2>&1)"
+  out="$("$opener" "$dir" 2>&1)"
   rc=$?
   set -e
   if [ $rc -ne 0 ]; then
@@ -176,49 +216,68 @@ cc_open() {                               # cc_open <dir>
   fi
   local session url verb
   session="$(printf '%s' "$out" | head -n1)"
-  # claude-open scrapes this out of the Remote Control banner. It may be
-  # absent (slow start, banner changed), so the reply has to work without it.
-  url="$(printf '%s' "$out" | grep -oE 'https://claude\.ai/code/session_[A-Za-z0-9_-]+' | head -n1)"
   if printf '%s' "$out" | grep -q 'already running'; then
     verb="Already running: ${session}"
   else
     verb="Started ${session} in ${WORKSPACE}/${dir}"
   fi
-  if [ -n "$url" ]; then
-    printf '%s\n\n%s' "$verb" "$url"
-  else
-    printf '%s\n\nOpen the Claude app → Remote Control and pick "%s".' "$verb" "${session#cc-}"
-  fi
+
+  case "$fam" in
+    cc)
+      # claude-open scrapes this out of the Remote Control banner. It may be
+      # absent (slow start, banner changed), so the reply has to work without
+      # it.
+      url="$(printf '%s' "$out" | grep -oE 'https://claude\.ai/code/session_[A-Za-z0-9_-]+' | head -n1)"
+      if [ -n "$url" ]; then
+        printf '%s\n\n%s' "$verb" "$url"
+      else
+        printf '%s\n\nOpen the Claude app → Remote Control and pick "%s".' "$verb" "${session#cc-}"
+      fi
+      ;;
+    cx)
+      # No per-session link exists to scrape: Codex pairs a whole machine, not
+      # a session. The one thing worth relaying instead is whether that pairing
+      # is live, because without it the session runs fine on the server and is
+      # invisible from the phone — a failure with no symptom in the app.
+      if printf '%s' "$out" | grep -q 'not remote-controlled'; then
+        printf '%s\n\nWARNING: this server is not paired with the ChatGPT app, so the session is local only.\nOn the server: codex remote-control start && codex remote-control pair' "$verb"
+      else
+        printf '%s\n\nOpen the ChatGPT app → Codex and pick "%s".\nIt only appears once the session has a first message — send one if the list looks empty.' "$verb" "${session#codex:}"
+      fi
+      ;;
+  esac
 }
 
-cc_sessions() {
-  local s path st wid out="" ws
+family_sessions() {                       # family_sessions cc|cx
+  local fam="$1" s path st wid out="" ws
   ws="$(workspace_real)"
   while IFS=$'\t' read -r s path st wid; do
     [ -n "$s" ] || continue
     # Directory plus agent state. The label and the directory are the same
-    # string now, so printing both would just be saying it twice; the state is
-    # the part that was never available under tmux.
+    # string now (bar the family prefix), so printing both would just be saying
+    # it twice; the state is the part that was never available under tmux.
     out+="• ${path#"$ws"/}  [${st}]"$'\n'
-  done <<<"$(running_sessions)"
-  [ -n "$out" ] || out="(no Claude sessions running)"
+  done <<<"$(family_rows "$fam")"
+  [ -n "$out" ] || out="(no sessions running)"
   printf '%s' "$out"
 }
 
-cc_kill() {                               # cc_kill <dir-or-session>
-  local arg="$1" session rc wid
-  [ -n "$arg" ] || { printf 'usage: /cc_kill <dir>'; return; }
-  # The name comes from claude-open, which owns the path → session mapping.
+family_kill() {                           # family_kill cc|cx <dir>
+  local fam="$1" arg="$2" session rc wid opener
+  opener="$(family_opener "$fam")"
+  [ -n "$arg" ] || { printf 'usage: /%s_kill <dir>' "$fam"; return; }
+  # The name comes from the opener, which owns the path → session mapping.
   # This used to reimplement it and only flattened `/`, so a directory with a
   # `.` in its name could be opened but never killed. Under herdr the mapping
-  # is the identity function, but it is still asked for rather than assumed:
-  # claude-open also does the path validation, so a hostile argument from
-  # Telegram is rejected there instead of reaching herdr.
+  # is nearly the identity function, but it is still asked for rather than
+  # assumed: the opener also does the path validation, so a hostile argument
+  # from Telegram is rejected there instead of reaching herdr.
   #
-  # The old cc-* passthrough is gone. /cc_sessions now prints directories, and
-  # a cc- prefixed name is a tmux-era session that no longer exists.
+  # The old cc-* passthrough is gone. The session listings now print
+  # directories, and a cc- prefixed name is a tmux-era session that no longer
+  # exists.
   set +e
-  session="$(claude-open --session-name "$arg" 2>&1)"
+  session="$("$opener" --session-name "$arg" 2>&1)"
   rc=$?
   set -e
   if [ $rc -ne 0 ]; then
@@ -228,14 +287,35 @@ cc_kill() {                               # cc_kill <dir-or-session>
 
   # Look the workspace up by label and close it by id. claude-main is already
   # filtered out of running_sessions, so this cannot be aimed at the main
-  # session even if someone types its name.
-  wid="$(running_sessions | awk -F'\t' -v l="$session" '$1 == l { print $4; exit }')"
+  # session even if someone types its name. family_rows narrows it further, so
+  # /cc_kill can never close a Codex session or the other way round.
+  wid="$(family_rows "$fam" | awk -F'\t' -v l="$session" '$1 == l { print $4; exit }')"
   if [ -z "$wid" ]; then
     printf 'No session %s.' "$session"; return
   fi
   herdr workspace close "$wid" >/dev/null
-  printf 'Killed %s. Its conversation is gone; /cc_open starts a fresh one.' "$session"
+  # What closing the workspace means differs by family, and saying the wrong one
+  # is worse than saying nothing. Claude Code runs IN the pane, so closing it
+  # ends the conversation. A Codex session runs in the app-server daemon and the
+  # pane only holds a view of it, so this detaches: the thread survives (it is
+  # still in the app and in `codex resume`), and a turn already in flight keeps
+  # running until it finishes or is stopped from `codex agents`.
+  case "$fam" in
+    cc) printf 'Killed %s. Its conversation is gone; /cc_open starts a fresh one.' "$session" ;;
+    cx) printf 'Closed %s. The session itself lives in the app-server daemon, so this only detaches the pane — the thread is still in the app and in `codex resume`, and a turn already running keeps going. To remove the conversation: codex delete <name>.' "$session" ;;
+  esac
 }
+
+cc_ls()       { family_ls cc; }
+cc_open()     { family_open cc "$1"; }
+cc_sessions() { family_sessions cc; }
+cc_kill()     { family_kill cc "$1"; }
+
+cx_ls()       { family_ls cx; }
+cx_open()     { family_open cx "$1"; }
+cx_sessions() { family_sessions cx; }
+cx_kill()     { family_kill cx "$1"; }
+
 
 bot_help() {
   cat <<EOF
@@ -247,6 +327,16 @@ Claude Code (cc_):
                     (creates the directory if it does not exist)
 /cc_sessions        what is running now, with agent state
 /cc_kill <dir>      stop a session
+
+Codex (cx_):
+/cx_ls              directories in ~/workspace
+/cx_open <dir>      start Codex there, attached to this machine's
+                    app-server daemon (creates the directory too)
+/cx_sessions        what is running now, with agent state
+/cx_kill <dir>      stop a session
+
+Codex sessions appear in the ChatGPT app once this server is paired
+(on the server: codex remote-control pair).
 EOF
 }
 
@@ -264,6 +354,11 @@ handle() {                                # handle <chat_id> <text>
     /cc_ls)       send "$chat" "$(cc_ls)" ;;
     /cc_sessions) send "$chat" "$(cc_sessions)" ;;
     /cc_kill)     send "$chat" "$(cc_kill "$arg")" ;;
+    # --- Codex family.
+    /cx_open)     send "$chat" "$(cx_open "$arg")" ;;
+    /cx_ls)       send "$chat" "$(cx_ls)" ;;
+    /cx_sessions) send "$chat" "$(cx_sessions)" ;;
+    /cx_kill)     send "$chat" "$(cx_kill "$arg")" ;;
     # --- global
     /start|/help) send "$chat" "$(bot_help)" ;;
     *)            send "$chat" "Unknown command."$'\n\n'"$(bot_help)" ;;

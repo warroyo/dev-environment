@@ -1,0 +1,30 @@
+[[ -o interactive ]] || return
+
+{{ if eq .role "server" -}}
+# Codex shortcuts. Unlike the claude-* ones in 70_claude.sh, these RUN CODEX
+# LOCALLY, so they only ship to the server — same rule, and the same entry in
+# .chezmoiignore.tmpl, as codex-open itself.
+#
+# `--remote unix://` is what makes a session visible in the ChatGPT app: it
+# attaches to this machine's app-server daemon instead of running an
+# app-server in-process. A plain `codex` works exactly as well on the server
+# and the phone never sees it, with nothing in either UI to say so — which is
+# the entire reason this alias exists rather than being left as something to
+# remember. See docs/server-setup.md section 10.
+#
+# --cd is passed because the session lives in the DAEMON's process, not this
+# shell's, so it does not inherit the directory you are standing in. $PWD is
+# single-quoted on purpose: it has to expand when the alias runs, not when it
+# is defined.
+alias cx='codex --remote unix:// --cd "$PWD"'
+
+# The other shape: a new herdr workspace with Codex in it, rather than Codex in
+# this pane. Same thing the Telegram bot's /cx_open runs, so a session started
+# from a phone and one started here are indistinguishable afterwards.
+alias cxo='codex-open'
+
+# Saved conversations, as opposed to live panes: what exists, and getting rid of
+# it. `codex delete` alone wants a UUID that only its own TUIs will show you.
+alias cxs='codex-sessions'
+alias cxrm='codex-sessions --delete'
+{{- end }}

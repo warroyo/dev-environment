@@ -1,0 +1,231 @@
+#!/usr/bin/env bash
+# Start (or re-attach to) a herdr workspace running Codex in a directory under
+# ~/workspace, so a phone can drive it from the ChatGPT app.
+#
+#   codex-open my-project          # ~/workspace/my-project, created if missing
+#   codex-open a/b                 # nested paths are fine
+#   codex-open --session-name a/b  # print the session name and do nothing else
+#
+# This is claude-open's twin, and deliberately so: same path validation, same
+# herdr workspace, same "never restart something already running". Read the
+# comments in claude-open for the reasoning behind the parts they share — only
+# the differences are explained here.
+#
+# WHAT IS DIFFERENT FROM claude-open
+#
+# 1. There is no --remote-control flag and no per-session URL. Claude Code
+#    enables Remote Control per session and prints a claude.ai link in its
+#    banner; Codex instead has ONE app-server daemon per machine
+#    (codex-app-server.service), enrolled once with `codex remote-control
+#    pair`, and a session becomes visible to the app by ATTACHING to that
+#    daemon — which is what `--remote unix://` below does.
+#
+#    That flag is the whole difference between a session the phone can drive
+#    and one it cannot see, and nothing in the UI says which you have. A plain
+#    `codex` runs its own app-server in-process and talks to OpenAI directly:
+#    verified by fd table, where a plain TUI holds no connection to
+#    ~/.codex/app-server-control/app-server-control.sock and a `--remote` one
+#    does (`ss -xp | grep app-server-control` names the daemon's peer).
+#
+#    `unix://` with no path means the daemon's default socket, the same one
+#    `codex app-server --listen unix://` binds.
+#
+#    Attached is still not VISIBLE: the app lists threads, so a session that
+#    has never been prompted shows up nowhere, which reads from a phone as a
+#    pairing failure. Nothing here can fix that without putting words in the
+#    session, so the reply says it instead.
+#
+# 2. The workspace label is prefixed `codex:`. claude-open uses the bare path,
+#    and a herdr label has to be unique, so without a prefix opening the same
+#    directory for both agents would collide — the second one would report the
+#    first as "already running" and hand back somebody else's session. The `:`
+#    is safe as a separator because the path allow-list below rejects it.
+#
+# 3. Trust is pre-recorded in ~/.codex/config.toml rather than ~/.claude.json,
+#    with the same motivation: started with nobody attached, an interactive
+#    trust prompt has nobody to answer it.
+set -euo pipefail
+
+WORKSPACE="${CLAUDE_WORKSPACE:-$HOME/workspace}"
+HERDR="${HERDR_BIN:-$HOME/.local/bin/herdr}"
+CODEX="${CODEX_BIN:-$HOME/.local/bin/codex}"
+NAME_ONLY=0
+
+usage() {
+  cat <<'EOF'
+usage: codex-open <dir>
+       codex-open --session-name <dir>
+
+  <dir>           path relative to ~/workspace (or an absolute path inside it).
+                  Created if it does not exist.
+  --session-name  print the session name for <dir> and exit, without creating
+                  the directory or starting anything.
+EOF
+}
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --session-name) NAME_ONLY=1; shift ;;
+    -h|--help) usage; exit 0 ;;
+    --) shift; break ;;
+    -*) printf 'codex-open: unknown option %s\n' "$1" >&2; usage >&2; exit 2 ;;
+    *) break ;;
+  esac
+done
+
+[ $# -eq 1 ] || { usage >&2; exit 2; }
+RAW="$1"
+
+# ---------------------------------------------------------------------------
+# Path handling — identical to claude-open, because the argument arrives from a
+# Telegram message either way and the only thing either script may open is a
+# directory inside $WORKSPACE.
+case "$RAW" in
+  "$WORKSPACE"|"$WORKSPACE"/*) TARGET="$RAW" ;;
+  /*) printf 'codex-open: absolute paths outside %s are not allowed\n' "$WORKSPACE" >&2; exit 2 ;;
+  *) TARGET="$WORKSPACE/$RAW" ;;
+esac
+
+case "$RAW" in
+  *..*) printf 'codex-open: ".." is not allowed in a directory name\n' >&2; exit 2 ;;
+esac
+if ! printf '%s' "$RAW" | grep -qE '^[A-Za-z0-9._/-]+$'; then
+  printf 'codex-open: directory name may only contain A-Z a-z 0-9 . _ - /\n' >&2
+  exit 2
+fi
+
+[ "$NAME_ONLY" -eq 1 ] || mkdir -p "$TARGET"
+WORKSPACE_REAL="$(cd "$WORKSPACE" && pwd -P)"
+if [ -d "$TARGET" ]; then
+  TARGET="$(cd "$TARGET" && pwd -P)"
+  case "$TARGET" in
+    "$WORKSPACE_REAL"|"$WORKSPACE_REAL"/*) ;;
+    *) printf 'codex-open: %s resolves outside %s\n' "$TARGET" "$WORKSPACE_REAL" >&2; exit 2 ;;
+  esac
+else
+  case "$TARGET" in
+    "$WORKSPACE"/*) TARGET="$WORKSPACE_REAL/${TARGET#"$WORKSPACE"/}" ;;
+    "$WORKSPACE") TARGET="$WORKSPACE_REAL" ;;
+  esac
+fi
+
+REL="${TARGET#"$WORKSPACE_REAL"/}"
+if [ "$REL" = "$TARGET" ]; then REL="workspace"; fi
+SESSION="codex:${REL}"
+
+if [ "$NAME_ONLY" -eq 1 ]; then
+  printf '%s\n' "$SESSION"
+  exit 0
+fi
+
+command -v python3 >/dev/null 2>&1 || {
+  printf 'codex-open: python3 is required\n' >&2; exit 1; }
+[ -x "$HERDR" ] || { printf 'codex-open: %s not found\n' "$HERDR" >&2; exit 1; }
+[ -x "$CODEX" ] || { printf 'codex-open: %s not found\n' "$CODEX" >&2; exit 1; }
+"$HERDR" status server >/dev/null 2>&1 || {
+  printf 'codex-open: the herdr server is not running (systemctl status herdr-server)\n' >&2
+  exit 1; }
+
+AGENT="$(printf '%s' "$REL" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9_-' '-' | cut -c1-18)"
+case "$AGENT" in [a-z]*) ;; *) AGENT="a${AGENT}" ;; esac
+# `cx-` in the agent name so a herdr sidebar shows at a glance which agent is
+# in a pane; the workspace label already says it, but agent names are what
+# `herdr agent list` reports.
+AGENT="cx-${AGENT%-}-$(printf '%s' "$REL" | sha256sum | cut -c1-6)"
+
+ws_id() {
+  "$HERDR" workspace list 2>/dev/null | python3 -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+except ValueError:
+    sys.exit(0)
+for w in d.get("result", {}).get("workspaces", []):
+    if w.get("label") == sys.argv[1]:
+        print(w["workspace_id"]); break
+' "$SESSION"
+}
+
+# Whether the app can see a session at all is a property of the MACHINE (is the
+# daemon enrolled and paired?), not of the session, so it is worth saying on
+# every path — including "already running", where the answer is just as likely
+# to be what the phone is confused about.
+warn_if_local_only() {
+  local out
+  # Not `if "$CODEX" remote-control start >/dev/null`: that command exits 0
+  # whether the connection came up or not, so an exit-status check silently
+  # always passes. It also prints a human "Error: ..." line with a tty attached
+  # and JSON without one — hence </dev/null, and reading the status field.
+  out="$("$CODEX" remote-control start --json 2>&1 </dev/null || true)"
+  case "$out" in
+    *'"status":"connected"'*) return 0 ;;
+  esac
+  printf 'note: this machine is not paired with the ChatGPT app — the session is local only.\n' >&2
+  printf '      check with: codex remote-control start   (then: codex remote-control pair)\n' >&2
+}
+
+WS="$(ws_id)"
+if [ -n "$WS" ]; then
+  printf '%s\n' "$SESSION"
+  printf 'already running (attach with: claude-attach)\n' >&2
+  warn_if_local_only
+  exit 0
+fi
+
+# ---------------------------------------------------------------------------
+# Pre-record the trust decision, the same problem and fix as in claude-open:
+# Codex asks "do you trust this folder?" the first time it runs somewhere new,
+# and started with nobody attached there is nobody to answer.
+#
+# ~/.codex/config.toml is edited textually rather than through a TOML library,
+# because Python's tomllib can read TOML but not write it, and a rewrite would
+# throw away the file's comments and ordering. Appending a table is enough: a
+# duplicate table would make Codex reject the whole file, so the append only
+# happens when the exact header is absent.
+CODEX_CFG="$HOME/.codex/config.toml"
+if [ -f "$CODEX_CFG" ]; then
+  python3 - "$CODEX_CFG" "$TARGET" <<'PYEOF' || true
+import os, shutil, sys, tempfile
+cfg_path, workdir = sys.argv[1], sys.argv[2]
+header = '[projects."%s"]' % workdir
+try:
+    with open(cfg_path) as f:
+        body = f.read()
+except OSError:
+    sys.exit(0)
+if header in body:
+    sys.exit(0)
+if body and not body.endswith("\n"):
+    body += "\n"
+body += '\n%s\ntrust_level = "trusted"\n' % header
+shutil.copy2(cfg_path, cfg_path + ".bak")
+# Same temp-file-then-rename as claude-open: a live Codex session may be
+# reading this file, and a half-written config.toml fails to parse.
+d = os.path.dirname(cfg_path) or "."
+fd, tmp = tempfile.mkstemp(dir=d)
+with os.fdopen(fd, "w") as f:
+    f.write(body)
+shutil.copymode(cfg_path, tmp)
+os.replace(tmp, cfg_path)
+PYEOF
+fi
+
+PANE="$("$HERDR" workspace create --cwd "$TARGET" --label "$SESSION" --no-focus 2>/dev/null | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+if "error" in d:
+    sys.stderr.write("codex-open: %s\n" % d["error"]); sys.exit(1)
+print(d["result"]["root_pane"]["pane_id"])
+')"
+[ -n "$PANE" ] || { printf 'codex-open: could not create a workspace for %s\n' "$SESSION" >&2; exit 1; }
+
+# --cd pins the directory the daemon opens new tasks in. The pane's own cwd is
+# already $TARGET, but with --remote the session lives in the daemon's process,
+# not the pane's, so the pane's cwd is not what it would otherwise inherit.
+"$HERDR" agent start "$AGENT" --kind codex --pane "$PANE" --timeout 60000 \
+  -- --remote unix:// --cd "$TARGET" >/dev/null
+
+printf '%s\n' "$SESSION"
+
+# Not fatal: the session is up and usable locally either way.
+warn_if_local_only

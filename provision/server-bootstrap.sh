@@ -18,6 +18,11 @@ set -euo pipefail
 
 log() { printf '\n==> %s\n' "$1"; }
 
+# Defined up here rather than beside the dotfiles apply below, because the
+# Codex section needs lib/codex.sh long before that point.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
 if [ "$(id -u)" -eq 0 ]; then
   SUDO=""
 else
@@ -337,22 +342,21 @@ fi
 # automated, the first-run login (`codex login`) is an interactive
 # browser/OAuth flow and stays manual (see docs/server-setup.md).
 #
-# Via npm rather than a standalone installer script, because npm and the
-# ~/.npm-global prefix are already set up above, and its bin dir is already on
-# PATH everywhere Claude Code's is (dot_zshenv, herdr-server.service,
-# claude-telegram-bot.service) — nothing extra needed to reach it from
-# claude-main or any other shell.
+# Installed by OpenAI's own installer script, NOT `npm install -g
+# @openai/codex` as this used to do. The remote-control daemon — what makes a
+# session reachable from the ChatGPT app — only starts from the installer's
+# managed copy at ~/.codex/packages/standalone/current/codex, because that is
+# the fixed path it self-updates. See lib/codex.sh, which also removes an
+# npm-managed Codex left over from the old shape.
+#
+# The AppArmor profile beside it is not optional on Ubuntu 24.04: Codex runs
+# every command through a bundled bubblewrap, and unconfined binaries are not
+# allowed to create user namespaces here.
+# shellcheck source=lib/codex.sh
+source "${SCRIPT_DIR}/lib/codex.sh"
 log "Installing Codex CLI"
-if command -v codex >/dev/null 2>&1; then
-  log "Codex CLI already installed ($(codex --version 2>/dev/null || echo 'version unknown'))"
-else
-  if npm install -g @openai/codex; then
-    log "Codex CLI installed"
-  else
-    log "WARNING: automatic Codex CLI install failed. Install it manually with"
-    log "         'npm install -g @openai/codex', then re-run this script."
-  fi
-fi
+ensure_codex_cli || true
+install_codex_bwrap_apparmor
 
 # ---------------------------------------------------------------------------
 # Second (unrelated) OpenVPN environment — runs directly on the host under
@@ -774,9 +778,6 @@ fi
 # Apply dotfiles, same as the two client bootstrap scripts do. This must come
 # before the tpm plugin install below, since tpm reads the plugin list out of
 # the ~/.tmux.conf that chezmoi writes here.
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-
 # shellcheck source=lib/herdr.sh
 source "${SCRIPT_DIR}/lib/herdr.sh"
 # shellcheck source=lib/chezmoi-apply.sh
@@ -933,6 +934,18 @@ $SUDO systemctl disable claude-tmux.service >/dev/null 2>&1 || true
 # workspace and starts claude in it.
 log "Installing herdr and the persistent session"
 install_herdr_service
+
+# ---------------------------------------------------------------------------
+# The Codex app-server daemon: one daemon per machine, holding every Codex
+# session started here, and the thing the ChatGPT app pairs with. It is the
+# Codex counterpart of `claude --remote-control`, except that it is enrolled
+# once per machine rather than per session.
+#
+# After the chezmoi apply, because codex-open (what the Telegram bot calls) is
+# a dotfile, and after install_herdr_service, because the sessions it starts
+# are herdr workspaces in the same server as claude-main.
+log "Starting the Codex app-server daemon"
+install_codex_daemon_service
 
 # ---------------------------------------------------------------------------
 log "Writing claude-telegram-bot systemd service"

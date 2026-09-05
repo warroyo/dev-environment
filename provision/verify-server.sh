@@ -59,7 +59,18 @@ fi
 if command -v codex >/dev/null 2>&1; then
   ok "codex present ($(codex --version 2>/dev/null || echo '?'))"
 else
-  bad "codex MISSING — re-run server-bootstrap.sh ('npm install -g @openai/codex')"
+  bad "codex MISSING — re-run server-bootstrap.sh"
+fi
+# `codex` being on PATH is not enough: the app-server daemon only starts from
+# the installer-managed copy at this fixed path, so an npm-installed Codex
+# passes the check above and still cannot be driven from the phone.
+if [ -x "$HOME/.codex/packages/standalone/current/codex" ]; then
+  ok "codex is the standalone (installer-managed) build"
+else
+  bad "codex is NOT the standalone build — the app-server daemon cannot start from it."
+fi
+if [ -e "$HOME/.npm-global/bin/codex" ]; then
+  warn "an npm-managed codex is still installed — PATH order decides which one runs ('npm uninstall -g @openai/codex')"
 fi
 
 # ---------------------------------------------------------------------------
@@ -326,7 +337,7 @@ fi
 
 # ---------------------------------------------------------------------------
 section "Telegram bot (phone entry point)"
-for s in claude-open claude-telegram-bot; do
+for s in claude-open codex-open codex-sessions claude-telegram-bot; do
   [ -x "$HOME/.local/bin/$s" ] && ok "$s installed and executable" \
     || bad "$s missing from ~/.local/bin — run chezmoi apply"
 done
@@ -352,6 +363,70 @@ if [ -r "$TG_SECRETS" ]; then
 else
   warn "no ~/.secrets/telegram-bot — the phone entry point is not configured"
   warn "  (expected if unused; see docs/server-setup.md)"
+fi
+
+# ---------------------------------------------------------------------------
+section "Codex app-server daemon (ChatGPT app entry point)"
+# The daemon is what the ChatGPT app pairs with and what every `codex --remote
+# unix://` session attaches to. Nothing about a Codex session LOOKS wrong when
+# this is down — sessions still start and run on the server, they are simply
+# invisible from the phone — so it is worth checking explicitly.
+systemctl is-enabled --quiet codex-app-server.service 2>/dev/null \
+  && ok "codex-app-server.service enabled (starts on boot)" \
+  || bad "codex-app-server.service NOT enabled — re-run server-bootstrap.sh"
+# No is-active check: the unit is Type=oneshot and the daemon detaches, so
+# systemd's view of it says nothing useful. Ask Codex instead.
+if daemon_json="$(codex app-server daemon version 2>/dev/null)"; then
+  case "$daemon_json" in
+    *'"status":"running"'*) ok "app-server daemon running ($(printf '%s' "$daemon_json" | sed -n 's/.*"appServerVersion":"\([^"]*\)".*/\1/p'))" ;;
+    *) bad "app-server daemon not running — start it: codex app-server daemon start" ;;
+  esac
+else
+  bad "app-server daemon not reachable — start it: codex app-server daemon start"
+fi
+# Remote control is a per-machine enrollment with the ChatGPT backend, and it
+# is rejected outright for accounts without MFA ("403 ... Multi-factor
+# authentication required"), so this can fail while everything local is fine.
+if [ "$(cat "$HOME/.codex/app-server-daemon/settings.json" 2>/dev/null | tr -d ' \n')" = '{"remoteControlEnabled":true}' ]; then
+  # Enabled is not the same as enrolled: the flag is local, while enrollment is
+  # a call to the ChatGPT backend that fails for its own reasons (no login, no
+  # MFA on the account). Asking the daemon is the only way to tell them apart,
+  # and the difference is invisible from the phone — sessions simply never
+  # appear.
+  # `remote-control start` exits 0 whether or not the connection came up, and
+  # it prints two different things: a human "Error: ... the connection is
+  # errored." with a tty attached, and the --json object without one. So the
+  # status field is what gets read, from the redirected form.
+  rc_out="$(timeout 60 codex remote-control start --json 2>&1 </dev/null)"
+  case "$rc_out" in
+    *'"status":"connected"'*)
+      ok "remote control enabled and connected" ;;
+    *)
+      bad "remote control enabled but NOT connected — the ChatGPT app sees nothing:"
+      bad "  ${rc_out}"
+      bad "  a 403 'Multi-factor authentication required' at enrollment means the"
+      bad "  account has no MFA: enable 2FA, codex login, then"
+      bad "  codex app-server daemon bootstrap --remote-control" ;;
+  esac
+else
+  warn "remote control not enabled — the ChatGPT app cannot see sessions on this box"
+  warn "  enable it: codex app-server daemon bootstrap --remote-control"
+fi
+# Codex sandboxes every command it runs through a bundled bubblewrap, which
+# cannot create user namespaces on stock Ubuntu 24.04 without this profile.
+# Tested by running something in the sandbox rather than by reading
+# /etc/apparmor.d or aa-status: whether the profile is LOADED needs root to
+# observe, and "a trivial command completes" is the property actually wanted.
+if [ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null || echo 0)" = "1" ]; then
+  if command -v codex >/dev/null 2>&1; then
+    sandbox_out="$(timeout 60 codex sandbox -- /bin/true 2>&1)"
+    if printf '%s' "$sandbox_out" | grep -q 'bwrap:'; then
+      bad "Codex's sandbox cannot start commands: ${sandbox_out}"
+      bad "  the AppArmor profile is missing or not loaded — re-run server-bootstrap.sh"
+    else
+      ok "Codex's sandbox can run commands (AppArmor profile in effect)"
+    fi
+  fi
 fi
 
 # ---------------------------------------------------------------------------

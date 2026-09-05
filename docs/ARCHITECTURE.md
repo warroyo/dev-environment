@@ -100,6 +100,14 @@ re-provision.
   drops everything else without replying. It
   starts and stops sessions; it never relays messages. See
   [`docs/server-setup.md`](server-setup.md#9-manual-the-telegram-bot-start-sessions-from-your-phone).
+- **Phone → server, Codex**: the same bot under `/cx_`, but the remote-control
+  shape is not the same. Claude Code enables Remote Control per session; Codex
+  has one app-server daemon per machine (`codex-app-server.service`), paired
+  once with the ChatGPT app, that every session joins with
+  `codex --remote unix://`. So the unit of trust is this host, not a
+  conversation, and a session started without that flag is invisible to the app
+  while looking perfectly healthy on the server. See
+  [`docs/server-setup.md`](server-setup.md#10-manual-codex-from-the-chatgpt-app-pair-this-machine-once).
 
 ## sshd binding
 

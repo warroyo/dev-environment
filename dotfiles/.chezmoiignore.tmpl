@@ -33,6 +33,12 @@
                                  still ships rather than being retired.
     claude-open                  starts a herdr workspace running `claude` here.
                                  Server only, same rule.
+    codex-open                   the same for `codex`, and additionally
+                                 attaches it to the app-server daemon, which
+                                 only exists on the server. Server only.
+    codex-sessions               lists and deletes saved Codex conversations by
+                                 reading ~/.codex and running `codex delete`.
+                                 Server only, where those sessions live.
     herdr-main-workspace         starts `claude` in the claude-main herdr pane,
                                  over the socket API. Server only, same rule.
     claude-telegram-bot          long-polls Telegram and calls claude-open.
@@ -52,11 +58,17 @@
 */}}
 .local/bin/claude-session
 .local/bin/claude-open
+.local/bin/codex-open
+.local/bin/codex-sessions
 .local/bin/herdr-main-workspace
 {{/*
-  Starts sessions via claude-open, and its systemd unit only exists on the
-  server. Shipping it elsewhere would put a bot token's worth of attack surface
-  on a laptop for no gain.
+  cx / cxo run codex in the current shell, so they follow codex-open exactly.
+*/}}
+.config/shell/source/70_codex.sh
+{{/*
+  Starts sessions via claude-open and codex-open, and its systemd unit only
+  exists on the server. Shipping it elsewhere would put a bot token's worth of
+  attack surface on a laptop for no gain.
 */}}
 .local/bin/claude-telegram-bot
 {{/*

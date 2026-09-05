@@ -45,11 +45,18 @@ so clicking opens the browser on your Mac. See
 [`docs/ARCHITECTURE.md`](ARCHITECTURE.md). Same mechanism, same fix, for
 either CLI's OAuth flow.
 
-Codex has no persistent-session integration here the way Claude Code does
-(no herdr workspace, no systemd unit) — it's a second CLI on PATH, run
-ad hoc inside `claude-main` or any other shell, not a second always-on host.
-If that changes, treat it as its own piece of work rather than an extension
-of this step.
+**Codex needs MFA on the account** if you want to drive it from the ChatGPT
+app. Enrolling this machine for remote control is refused otherwise, and the
+error says so only if you go looking:
+
+```
+remote control server enrollment failed ... HTTP 403 Forbidden
+{"detail":"Multi-factor authentication required"}
+```
+
+Enable 2FA on the ChatGPT account first, then `codex login`. Everything local
+(sessions on the server, `claude-attach`, the CLI itself) works without it —
+only the phone half is gated. See section 10.
 
 ## 3. `tailscale up`
 
@@ -217,9 +224,12 @@ That unit declares its environment explicitly for a second reason too: the
 herdr server hands its own environment to every pane it spawns, so anything
 inherited from whatever launched it ends up inside every agent.
 
-Same reason the Codex CLI is installed with `npm install -g @openai/codex`
-rather than its own installer script — the prefix and the PATH entries were
-already there for exactly this.
+The Codex CLI *used* to be installed this way for the same reason, but no
+longer: its app-server daemon only starts from the copy OpenAI's own installer
+manages at `~/.codex/packages/standalone/current/codex`, so an npm install
+means no ChatGPT app. `provision/lib/codex.sh` installs the standalone build
+and removes an npm-managed one if it finds it. Same CLI and same `~/.codex`
+(auth included) either way — only the install mechanism differs.
 
 This is what makes `npx`-based install CLIs usable directly in the
 `claude-main` session, e.g. [`skills`](https://www.npmjs.com/package/skills)
@@ -351,6 +361,10 @@ starts, lists and stops sessions, nothing else. That's the whole design
 decision: Remote Control already gives the real session (tools, permission
 prompts, full output), so a chat-shaped reimplementation would only be worse.
 
+It does the same for Codex under the `/cx_` prefix, with the ChatGPT app in
+place of the Claude app — see section 10 for the pairing that makes those
+sessions visible.
+
 **In the app:** message [@BotFather](https://t.me/BotFather) → `/newbot`,
 follow the prompts, keep the token. The username must end in `bot`. Then open
 `t.me/<username>` and press Start — a bot cannot message you first, so with no
@@ -387,6 +401,10 @@ cc_ls - directories in ~/workspace
 cc_open - start Claude Code in a directory
 cc_sessions - what is running now
 cc_kill - stop a session
+cx_ls - directories in ~/workspace
+cx_open - start Codex in a directory
+cx_sessions - what Codex sessions are running
+cx_kill - stop a Codex session
 help - all commands
 ```
 
@@ -417,7 +435,16 @@ allow only `a-z`, `0-9` and `_`, hence `cc_`.
 | `/cc_open <dir>` | start Claude Code there with Remote Control on; creates the directory if missing |
 | `/cc_sessions` | what's running now, each directory with its session name |
 | `/cc_kill <dir>` | stop a session (its conversation is gone); takes a `cc-…` name too |
+| `/cx_ls` | same as `/cc_ls`, marked with running **Codex** sessions |
+| `/cx_open <dir>` | start Codex there, attached to the app-server daemon; creates the directory if missing |
+| `/cx_sessions` | Codex sessions running now |
+| `/cx_kill <dir>` | stop a Codex session |
 | `/help` | all families (global, unprefixed) |
+
+The two families never see each other's sessions: `codex-open` labels its
+herdr workspaces `codex:<dir>` and the bot filters on that prefix, so
+`/cc_kill foo` cannot close the Codex session in `foo` (or the reverse), and
+`/cc_ls` does not report `foo` as running because Codex is up in it.
 
 Adding a family later means new handlers plus two lines — one in the
 dispatcher's `case`, one in `bot_help` — and nothing existing gets renamed.
@@ -491,6 +518,161 @@ comes straight from a Telegram message.
 
 Watch it work with `journalctl -u claude-telegram-bot -f`. Unauthorized
 attempts are logged there with their chat id.
+
+## 10. Manual: Codex from the ChatGPT app (pair this machine once)
+
+The Codex counterpart of Claude Code's Remote Control, and it is shaped
+differently in one way that decides everything else:
+
+| | Claude Code | Codex |
+|---|---|---|
+| What is remote-controlled | one **session** (`claude --remote-control`) | the **machine** (one app-server daemon) |
+| How the app finds it | a `claude.ai/code/session_…` link per session | the paired machine's session list |
+| How a session joins | it is the session | `codex --remote unix://` attaches to the daemon |
+| Set up | per session, automatic | once per machine, manual pairing |
+
+So there is a daemon on this box (`codex-app-server.service`, written by
+`provision/lib/codex.sh`), every session `codex-open` starts attaches to it,
+and the ChatGPT app talks to the daemon rather than to any one session.
+
+**Pair it** (once, and again only if you revoke it):
+
+```sh
+codex remote-control pair      # prints a short-lived code
+```
+
+Enter that code in the ChatGPT app. After that, `/cx_open <dir>` from Telegram
+— or `codex-open <dir>` over SSH, or a plain `codex --remote unix://` in any
+directory — shows up in the app's list.
+
+**From a herdr pane on the server**, two shortcuts (`70_codex.sh`, server-only
+because they run Codex locally):
+
+| Alias | Runs | Gives you |
+|---|---|---|
+| `cx` | `codex --remote unix:// --cd "$PWD"` | Codex in the pane you are standing in |
+| `cxo <dir>` | `codex-open <dir>` | a new herdr workspace with Codex in it, same as `/cx_open` |
+| `cxs [query]` | `codex-sessions` | saved conversations, newest first, with ids |
+| `cxrm [query]` | `codex-sessions --delete` | delete them (fzf picker with no query) |
+
+**A session with no messages does not appear in the app.** The list is of
+threads, not of processes, so a freshly started session — however correctly
+attached — is invisible until you type the first prompt into it. From the
+phone that reads exactly like pairing is broken. Send anything from the pane
+(or from Telegram's `/cx_open` then a prompt in the pane) and it shows up.
+
+**`--remote unix://` is the whole trick, and its absence is silent.** A plain
+`codex` runs its own app-server in-process and talks to OpenAI directly: it
+works perfectly on the server and the app never sees it. Nothing in either UI
+says which kind of session you have. To tell them apart:
+
+```sh
+ss -xp | grep app-server-control     # one line per attached session
+```
+
+`codex-open` always passes the flag, so this only bites sessions started by
+hand.
+
+### Detaching is not stopping
+
+A `--remote` session runs inside the daemon; the TUI is a view of it. So
+`ctrl+c` (and closing the pane, and `/cx_kill`) **detaches** — Codex says so
+itself:
+
+```
+Disconnected from this task. Any running work continues.
+```
+
+The three verbs, kept apart:
+
+| Want | Do |
+|---|---|
+| leave, come back later | `ctrl+c`, then `codex resume <id>` (or pick it in the app) |
+| stop a turn that is running | `codex agents`, select the task, and press the interrupt key its footer names |
+| remove the conversation | `codex delete <id-or-name>` (`codex archive` to just hide it) |
+
+`codex-sessions` (aliases `cxs` / `cxrm`) is the non-TUI way to do all of
+this:
+
+```sh
+cxs                       # every saved session, newest first, with its id
+cxs dev-environment       # only those matching a name, directory or id
+cxrm                      # pick with fzf (multi-select), confirm, delete
+cxrm <query>              # delete what matches, after confirming
+cxrm --yes <query>        # no prompt, for scripts
+```
+
+It exists because `codex delete` is hard to drive by hand: non-interactively it
+insists on `--force` **and a UUID** (a thread name only works down its
+interactive path), and the only two places a UUID is shown are TUIs.
+
+It reads the rollout files under `~/.codex/sessions/`, not
+`~/.codex/session_index.jsonl` — the index looks authoritative and is not. It
+is append-only, one line per rename, and it misses sessions outright: a
+`codex exec` run writes a rollout and never appears in it. The index is
+consulted only for display names. Deleting delegates to `codex delete --force`
+rather than unlinking the file, so Codex cleans up its own sqlite history too.
+
+**Interrupting is not removing, and the printed hint is not reliable.** On
+disconnect Codex prints "Stop the current turn: run ... agents, select this
+task, and press ctrl + x" — but that key is assembled from the resolved keymap
+at print time (there is no `ctrl+x` string in the binary), and the picker's own
+footer here reads `ctrl + r remove`. Interrupting also does nothing at all to
+an idle session, which reads as "the key does not work". Prefer `codex delete`
+over either key: same outcome, no dependence on which binding won.
+
+This is the opposite of Claude Code here, where the session runs in the pane
+and closing the workspace ends it — which is why `/cc_kill` and `/cx_kill` say
+different things.
+
+### When the app sees nothing
+
+- **`Multi-factor authentication required` (HTTP 403)** on
+  `codex remote-control start` or `pair`. Enrollment refuses accounts without
+  MFA. Enable 2FA on the ChatGPT account, `codex login` again, then
+  `codex app-server daemon bootstrap --remote-control`.
+- **Sessions run but never appear.** Either the daemon is not enrolled
+  (`codex remote-control start` reports it) or the session was started without
+  `--remote unix://` (see above).
+- **The daemon is gone after a reboot.** `codex app-server daemon bootstrap`
+  leaves a bare process, not a service — `codex-app-server.service` is what
+  brings it back, so check it is enabled.
+
+### Codex's sandbox needs an AppArmor profile here
+
+Codex runs every command it executes through bubblewrap, which needs to create
+user namespaces. Ubuntu 24.04 forbids that to unconfined binaries
+(`kernel.apparmor_restrict_unprivileged_userns=1`), and the failure names
+neither AppArmor nor Codex:
+
+```
+bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted
+```
+
+Claude Code never hits this because it does not sandbox the commands it runs —
+it runs them in the shell and gates them with permission prompts. Codex
+sandboxes unconditionally instead, so the same box breaks for one and not the
+other.
+
+The bootstrap writes `/etc/apparmor.d/codex-bwrap` granting `userns` and loads
+it. It names **two** binaries: Codex prefers a system `bwrap` on PATH and only
+falls back to its bundled copy, and `/usr/bin/bwrap` is present here as a
+dependency of the `code` package — so a profile covering only the bundled one
+passes its own test while Codex still fails. The bundled path globs over the
+release directory rather than following the `current` symlink, because AppArmor
+matches the resolved path and Codex updates itself into a new directory.
+
+What this grants is narrow: a program invoking bwrap may create user
+namespaces. Anything able to call bwrap could already sandbox itself — that is
+what bwrap is for — and every other unconfined binary stays restricted. The
+blunt alternative, `kernel.apparmor_restrict_unprivileged_userns=0`, drops the
+protection machine-wide and is deliberately not what this does.
+
+Check it with:
+
+```sh
+codex sandbox -- /bin/true     # silence is a pass
+```
 
 ## Dev session log
 
