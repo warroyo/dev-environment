@@ -289,6 +289,59 @@ if command -v npm >/dev/null 2>&1; then
 fi
 
 # ---------------------------------------------------------------------------
+# Go — the official tarball into /usr/local/go, not apt.
+#
+# Ubuntu's `golang-go` trails upstream by a long way, and Go's own release
+# tarball is the way every Go install doc assumes. Unlike Node and Terraform
+# there is no upstream apt repo to track, so this pins a version and verifies
+# it, the same shape as lib/herdr.sh: ask the vendor's manifest for the sha256
+# rather than hard-coding one that goes stale at the next bump.
+#
+# Symlinked into /usr/local/bin rather than adding /usr/local/go/bin to PATH:
+# that directory is already on PATH for interactive shells AND for the systemd
+# units (herdr-server, claude-telegram-bot, codex-app-server), which each spell
+# their PATH out explicitly. A new PATH entry would have to be added in four
+# places and would be missing from any that got forgotten.
+#
+# ~/go/bin (GOPATH binaries, what `go install` writes) is separate and already
+# handled by 40_path.sh.
+GO_VERSION="${GO_VERSION:-1.27.1}"
+log "Installing Go ${GO_VERSION}"
+if [ -x /usr/local/go/bin/go ] && \
+   [ "$(/usr/local/go/bin/go version 2>/dev/null | awk '{print $3}')" = "go${GO_VERSION}" ]; then
+  log "Go ${GO_VERSION} already installed"
+else
+  GO_TARBALL="go${GO_VERSION}.linux-$(dpkg --print-architecture).tar.gz"
+  GO_SHA="$(curl -fsSL 'https://go.dev/dl/?mode=json&include=all' | python3 -c '
+import json, sys
+want = sys.argv[1]
+for rel in json.load(sys.stdin):
+    for f in rel.get("files", []):
+        if f.get("filename") == want:
+            print(f.get("sha256", "")); raise SystemExit
+' "$GO_TARBALL")"
+  if [ -z "$GO_SHA" ]; then
+    log "WARNING: no published checksum for ${GO_TARBALL} — skipping the Go install."
+    log "         Check the version pin in this script against https://go.dev/dl/"
+  else
+    GO_TMP="$(mktemp -d)"
+    if curl -fsSL "https://go.dev/dl/${GO_TARBALL}" -o "${GO_TMP}/${GO_TARBALL}" && \
+       printf '%s  %s\n' "$GO_SHA" "${GO_TMP}/${GO_TARBALL}" | sha256sum -c - >/dev/null 2>&1; then
+      # Removed rather than extracted over: Go's own instructions say so, and an
+      # in-place extract leaves files from the previous version behind.
+      $SUDO rm -rf /usr/local/go
+      $SUDO tar -C /usr/local -xzf "${GO_TMP}/${GO_TARBALL}"
+      $SUDO ln -sf /usr/local/go/bin/go /usr/local/bin/go
+      $SUDO ln -sf /usr/local/go/bin/gofmt /usr/local/bin/gofmt
+      log "Go $(/usr/local/go/bin/go version | awk '{print $3}') installed"
+    else
+      log "WARNING: Go download failed or its checksum did not match — not installed."
+    fi
+    rm -rf "$GO_TMP"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
 # Terraform — via HashiCorp's apt repo, same pattern as eza's: add the repo
 # once, then let apt track and patch it like everything else installed this
 # way (Docker, Tailscale, Node.js).

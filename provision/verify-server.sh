@@ -29,7 +29,7 @@ fi
 
 # ---------------------------------------------------------------------------
 section "Tooling"
-for c in zsh tmux herdr git docker kubectl terraform chezmoi tailscale mosh-server rg fzf eza kubectx kubens; do
+for c in zsh tmux herdr git docker kubectl terraform go chezmoi tailscale mosh-server rg fzf eza kubectx kubens; do
   if command -v "$c" >/dev/null 2>&1; then ok "$c present"; else bad "$c MISSING"; fi
 done
 # krew is not a command of its own — it is a kubectl plugin, so "installed" and

@@ -239,6 +239,19 @@ for pulling a Claude Code skill from a GitHub repo:
 npx skills add <owner>/<repo>
 ```
 
+### Go
+
+Installed from Go's own release tarball into `/usr/local/go`, pinned in
+`server-bootstrap.sh` and checked against the sha256 that go.dev publishes for
+that exact file. Ubuntu's `golang-go` is too far behind to be worth tracking,
+and Go ships no apt repo of its own — so this is the one toolchain here that is
+pinned rather than followed, and bumping it means editing `GO_VERSION`.
+
+`go` and `gofmt` are symlinked into `/usr/local/bin`, which is already on PATH
+for interactive shells and named explicitly by every systemd unit here, so
+nothing else needs a new PATH entry. `~/go/bin` — where `go install` puts
+binaries — is separate and handled by `40_path.sh`.
+
 ### Terraform
 
 Installed from HashiCorp's apt repo (same pattern as `eza`'s repo add): the
