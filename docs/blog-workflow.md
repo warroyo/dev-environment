@@ -37,6 +37,7 @@ committed to the blog repo itself.
 | repo clones | this repo, `provision/lib/repos.sh` | Both repos are infrastructure, not incidental checkouts |
 | `pitches/` staging | the `dev-log` repo | Private by construction |
 | `/post-scaffold`, `/post-ship`, `blog-style.md` | the `warroyo-blog` repo | Only know Hugo. Public is fine, and they travel with the site they describe |
+| `will-prose` skill | its own private repo, cloned to `~/workspace/will-prose` and symlinked to `~/.claude/skills/will-prose` | Voice rules and a corpus of past posts. Available in every session, editable like any other repo |
 
 **The brief is the only thing that crosses.** Nothing copies dev-log content
 into the blog automatically. `/post-brief` flags every hostname, cluster name,
@@ -90,7 +91,16 @@ and `localhost:1313` is no use from a phone regardless.
 
 ## Setup
 
-`server-bootstrap.sh` clones both repos (`provision/lib/repos.sh`). It sets up
-no GitHub credentials of its own, so on a fresh machine the private `dev-log`
-clone will fail with a warning rather than aborting the run — add a key, then
-re-run. `verify-server.sh` reports anything that did not land.
+`server-bootstrap.sh` clones all three repos (`provision/lib/repos.sh`). It sets
+up no GitHub credentials of its own, so on a fresh machine the private `dev-log`
+and `will-prose` clones will fail with a warning rather than aborting the run —
+run `gh auth login`, then re-run. `verify-server.sh` reports anything that did
+not land.
+
+`will-prose` is the one repo the bootstrap also *updates*: every run
+fast-forwards it, but only when the tree is clean and on `main`, so an
+in-progress edit to the skill is never touched. Between runs, pull it by hand:
+
+```sh
+git -C ~/workspace/will-prose pull --ff-only
+```

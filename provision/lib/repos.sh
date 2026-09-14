@@ -65,13 +65,90 @@ ensure_repo() {
   return 0
 }
 
-# The list. Both are needed by the blog writing flow:
+# update_repo_if_clean <dest>
+#
+# The one exception to ensure_repo's "never touch an existing checkout" rule,
+# for repos this machine CONSUMES rather than works in — a skill, where a stale
+# copy silently means Claude Code writes against old rules.
+#
+# Still refuses anything that could cost work: it only fast-forwards, only on a
+# clean tree, and only when the checked-out branch is the remote's default. A
+# feature branch or an uncommitted edit means someone is working on the skill
+# here, so it is left exactly as it is.
+#
+# Never fatal, like ensure_repo. GIT_TERMINAL_PROMPT=0 so a private repo with no
+# credentials fails fast instead of hanging the bootstrap on a password prompt.
+update_repo_if_clean() {
+  local dest="$1" name branch default
+  name="$(basename "$dest")"
+  [ -d "$dest/.git" ] || return 0
+
+  if [ -n "$(git -C "$dest" status --porcelain 2>/dev/null)" ]; then
+    echo "  ${name} has local changes — not pulling"
+    return 0
+  fi
+
+  branch="$(git -C "$dest" symbolic-ref --short -q HEAD || true)"
+  default="$(git -C "$dest" symbolic-ref --short -q refs/remotes/origin/HEAD || true)"
+  if [ -z "$branch" ] || [ "origin/${branch}" != "${default:-origin/main}" ]; then
+    echo "  ${name} is not on its default branch (${branch:-detached}) — not pulling"
+    return 0
+  fi
+
+  if GIT_TERMINAL_PROMPT=0 git -C "$dest" pull -q --ff-only 2>/dev/null; then
+    echo "  ${name} up to date ($(git -C "$dest" rev-parse --short HEAD))"
+  else
+    echo "  WARNING: could not fast-forward ${name} — no credentials, offline," >&2
+    echo "           or local commits that diverge from origin" >&2
+  fi
+  return 0
+}
+
+# link_skill <repo-dir> <skill-name>
+#
+# Point ~/.claude/skills/<skill-name> at a checkout whose root is the skill
+# (SKILL.md at the top level). A symlink rather than cloning straight into
+# ~/.claude/skills, so the checkout lives under ~/workspace where it can be
+# opened and edited like any other repo — including from the phone with
+# /cc_open — and edits are live in Claude Code without a copy step.
+#
+# Replaces a symlink that points elsewhere; never replaces a real directory.
+link_skill() {
+  local src="$1" skill="$2" link
+  link="$HOME/.claude/skills/${skill}"
+
+  if [ ! -f "$src/SKILL.md" ]; then
+    echo "  WARNING: ${src}/SKILL.md not found — not linking skill ${skill}" >&2
+    return 0
+  fi
+
+  mkdir -p "$HOME/.claude/skills"
+  if [ -L "$link" ]; then
+    if [ "$(readlink "$link")" = "$src" ]; then
+      echo "  skill ${skill} already linked"
+      return 0
+    fi
+    ln -sfn "$src" "$link"
+    echo "  re-pointed skill ${skill} at ${src}"
+  elif [ -e "$link" ]; then
+    echo "  WARNING: ${link} exists and is not a symlink — leaving it alone" >&2
+  else
+    ln -s "$src" "$link"
+    echo "  linked skill ${skill} -> ${src}"
+  fi
+  return 0
+}
+
+# The list:
 #
 #   dev-log        PRIVATE. Raw session material and the pitches/ staging area
 #                  that /post-ideas and /post-brief read.
 #   warroyo-blog   PUBLIC. The Hugo site. Must live under ~/workspace
 #                  specifically, because that is where claude-telegram-bot
 #                  resolves /cc_open <dir> — the phone entry point to the flow.
+#   will-prose     PRIVATE. The Claude Code skill for writing in the blog's
+#                  voice. Unlike the other two it is pulled on every run (see
+#                  update_repo_if_clean) and linked into ~/.claude/skills.
 #
 # A note on the failure you will actually hit: this bootstrap sets up no GitHub
 # credentials of its own — there is no `gh auth login` step, and private_dot_ssh/
@@ -83,4 +160,8 @@ ensure_repo() {
 ensure_work_repos() {
   ensure_repo warroyo/dev-log      "$HOME/dev-log"
   ensure_repo warroyo/warroyo-blog "$HOME/workspace/warroyo-blog"
+
+  ensure_repo warroyo/will-prose   "$HOME/workspace/will-prose"
+  update_repo_if_clean             "$HOME/workspace/will-prose"
+  link_skill                       "$HOME/workspace/will-prose" will-prose
 }

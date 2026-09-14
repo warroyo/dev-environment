@@ -454,6 +454,23 @@ else
   bad "~/workspace/warroyo-blog NOT cloned — re-run server-bootstrap.sh"
 fi
 
+# The voice skill. Checked through the link, not just the clone: a checkout
+# that ~/.claude/skills does not point at is invisible to Claude Code.
+PROSE_REPO="$HOME/workspace/will-prose"
+PROSE_LINK="$HOME/.claude/skills/will-prose"
+if [ -d "$PROSE_REPO/.git" ]; then
+  ok "~/workspace/will-prose cloned"
+  if [ -L "$PROSE_LINK" ] && [ "$(readlink -f "$PROSE_LINK")" = "$(readlink -f "$PROSE_REPO")" ] \
+     && [ -f "$PROSE_LINK/SKILL.md" ]; then
+    ok "will-prose skill linked into ~/.claude/skills"
+  else
+    bad "~/.claude/skills/will-prose does not point at ~/workspace/will-prose —"
+    bad "  re-run server-bootstrap.sh"
+  fi
+else
+  bad "~/workspace/will-prose NOT cloned — re-run server-bootstrap.sh once credentials exist"
+fi
+
 for cmd in post-ideas post-brief; do
   [ -f "$HOME/.claude/commands/${cmd}.md" ] \
     && ok "/${cmd} applied" \
