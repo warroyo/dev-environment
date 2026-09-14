@@ -171,12 +171,42 @@ EOF
 # starts keep it, and leaves an updater process alongside. What it does NOT do
 # is survive a reboot — it is a bare pid, not a service — hence the unit.
 #
-# Type=oneshot + RemainAfterExit, not Type=simple: `daemon start` returns as
-# soon as the daemon is up, and the daemon itself detaches. systemd therefore
-# does not supervise the process — Codex's own pid file and updater loop do.
-# The unit's job is only "run this once at boot".
+# The UNIT runs `bootstrap`, not this script. It used to be split: the unit ran
+# `daemon start` and this function called `bootstrap` from whatever shell ran
+# the provisioning. That put the updater, and any daemon bootstrap restarted, in
+# the login session's cgroup instead of the unit's. Now every Codex process
+# lives in the unit's cgroup, and stopping the unit really stops all of it.
+# `daemon stop` alone leaves the updater running.
+#
+# Type=oneshot + RemainAfterExit, not Type=simple: `bootstrap` returns as soon
+# as the daemon is up, and the daemon itself detaches. systemd therefore does
+# not supervise the process — Codex's own pid file and updater loop do. The
+# catch is that the unit reads "active (exited)" even with the daemon dead, so
+# `systemctl start` is a no-op then, and only `restart` brings it back.
+#
+# WHY THE UNIT WAITS FOR NTP
+#
+# Codex decides a daemon is its own by ~/.codex/app-server-daemon/app-server.pid,
+# which holds the pid AND its wall-clock start time:
+#
+#   {"pid":2115,"processStartTime":"Mon Sep 14 08:45:31 2026"}
+#
+# Every later command recomputes that time from /proc, and if it no longer
+# matches, deletes the file as stale. The daemon keeps running and keeps serving
+# the socket, but from then on `remote-control start`, `pair` and `bootstrap`
+# all fail with:
+#
+#   Error: app server is running but is not managed by codex app-server daemon
+#
+# Stepping the clock after the daemon starts is enough to cause that, because a
+# process's wall-clock start time is derived from boot time, which moves with
+# the clock. This box boots from an RTC about a second off, and timesyncd
+# stepped it 20 seconds after the unit had started the daemon. Waiting for
+# NTPSynchronized first means the step happens before the daemon exists. The
+# wait is bounded, so an offline boot still starts the daemon, 60 seconds later.
 install_codex_daemon_service() {
   local unit_path=/etc/systemd/system/codex-app-server.service tmp
+  local unit_changed=0 reason="" rc_out=""
 
   tmp="$(mktemp)"
   cat >"$tmp" <<EOF
@@ -195,8 +225,16 @@ Environment=HOME=${HOME}
 # Same PATH reasoning as herdr-server.service and claude-telegram-bot.service:
 # systemd's default omits ~/.local/bin, where the codex shim lives.
 Environment=PATH=${HOME}/.local/bin:${HOME}/.krew/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-ExecStart=${HOME}/.local/bin/codex app-server daemon start
-ExecStop=${HOME}/.local/bin/codex app-server daemon stop
+# Wait for the boot-time clock step to happen BEFORE the daemon records its
+# start time — see lib/codex.sh. Leading '-' so a timeout still starts it.
+ExecStartPre=-/usr/bin/timeout 60 /bin/sh -c "until timedatectl show -p NTPSynchronized --value | grep -qx yes; do sleep 1; done"
+# bootstrap enrolls remote control and starts the updater. It fails without a
+# login or without MFA on the account, and a plain start still gives local
+# sessions a daemon to attach to.
+ExecStart=/bin/sh -c "${HOME}/.local/bin/codex app-server daemon bootstrap --remote-control || exec ${HOME}/.local/bin/codex app-server daemon start"
+# Leading '-': a disowned daemon (see above) makes this fail, and the cgroup
+# kill that follows is what actually stops it, updater included.
+ExecStop=-${HOME}/.local/bin/codex app-server daemon stop
 
 [Install]
 WantedBy=multi-user.target
@@ -208,24 +246,71 @@ EOF
     $SUDO cp "$tmp" "$unit_path"
     $SUDO chmod 644 "$unit_path"
     $SUDO systemctl daemon-reload
+    unit_changed=1
   fi
   rm -f "$tmp"
 
   $SUDO systemctl enable codex-app-server.service >/dev/null 2>&1 || true
+
+  # Nothing below ever starts the daemon from this shell. `remote-control
+  # start` would, if no daemon were up, so it is only asked once one is.
+  if [ "$unit_changed" -eq 1 ]; then
+    reason="the unit changed"
+  elif ! _codex_daemon_running; then
+    reason="the daemon is not running"
+  else
+    rc_out="$("$CODEX_BIN" remote-control start --json 2>&1 </dev/null || true)"
+    case "$rc_out" in
+      *'not managed by codex app-server daemon'*)
+        reason="Codex has disowned the running daemon (its pid file was dropped)" ;;
+    esac
+  fi
+
+  if [ -n "$reason" ]; then
+    # restart, not start: RemainAfterExit keeps the unit "active" with the
+    # daemon gone, and start would do nothing. This drops any Codex session
+    # attached right now; its conversation survives and `codex resume` gets it.
+    log "  restarting codex-app-server.service: ${reason}"
+    $SUDO systemctl restart codex-app-server.service || \
+      log "  WARNING: codex-app-server.service failed — check 'journalctl -u codex-app-server'."
+    rc_out=""
+    if _codex_daemon_running; then
+      rc_out="$("$CODEX_BIN" remote-control start --json 2>&1 </dev/null || true)"
+    fi
+  fi
 
   # Remote control is a per-machine ENROLLMENT, not just a flag: the daemon
   # registers with the ChatGPT backend, which rejects accounts without MFA
   # ("HTTP 403 ... Multi-factor authentication required"). So this is allowed
   # to fail without failing the bootstrap — the daemon still runs and local
   # sessions still work; only the phone half waits for `codex login`.
-  if "$CODEX_BIN" app-server daemon bootstrap --remote-control >/dev/null 2>&1; then
-    log "  app-server daemon running with remote control enabled"
-    log "  pair a phone with: codex remote-control pair"
-  else
-    $SUDO systemctl start codex-app-server.service >/dev/null 2>&1 || true
-    log "  WARNING: could not enable remote control. Usually one of:"
-    log "           - not logged in yet          -> codex login"
-    log "           - the account has no MFA     -> enable 2FA, then codex login again"
-    log "           Check with: codex remote-control start"
-  fi
+  #
+  # `remote-control start` exits 0 either way, so read its status field.
+  case "$rc_out" in
+    *'"status":"connected"'*)
+      log "  app-server daemon running with remote control connected"
+      log "  pair a phone with: ./provision/codex-pair.sh" ;;
+    "")
+      log "  WARNING: the app-server daemon is not running — check 'journalctl -u codex-app-server'." ;;
+    *)
+      log "  WARNING: remote control is not connected. Usually one of:"
+      log "           - not logged in yet          -> codex login"
+      log "           - the account has no MFA     -> enable 2FA, then codex login again"
+      log "           Then: sudo systemctl restart codex-app-server"
+      log "           Check with: codex remote-control start" ;;
+  esac
+}
+
+# _codex_daemon_running
+#
+# True when a daemon answers on the control socket. `daemon version` never
+# starts one, which is why it is the probe here. Captured rather than piped to
+# grep -q, because under pipefail an early grep exit can fail the pipeline.
+_codex_daemon_running() {
+  local out
+  out="$("$CODEX_BIN" app-server daemon version 2>/dev/null </dev/null || true)"
+  case "$out" in
+    *'"status":"running"'*) return 0 ;;
+  esac
+  return 1
 }

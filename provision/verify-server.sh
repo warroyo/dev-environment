@@ -379,10 +379,13 @@ systemctl is-enabled --quiet codex-app-server.service 2>/dev/null \
 if daemon_json="$(codex app-server daemon version 2>/dev/null)"; then
   case "$daemon_json" in
     *'"status":"running"'*) ok "app-server daemon running ($(printf '%s' "$daemon_json" | sed -n 's/.*"appServerVersion":"\([^"]*\)".*/\1/p'))" ;;
-    *) bad "app-server daemon not running — start it: codex app-server daemon start" ;;
+    *) bad "app-server daemon not running — start it: sudo systemctl restart codex-app-server" ;;
   esac
 else
-  bad "app-server daemon not reachable — start it: codex app-server daemon start"
+  # restart, not start, and not `codex app-server daemon start` by hand: the
+  # unit is RemainAfterExit so start is a no-op, and a daemon started from this
+  # shell lives in the login session instead of the unit.
+  bad "app-server daemon not reachable — start it: sudo systemctl restart codex-app-server"
 fi
 # Remote control is a per-machine enrollment with the ChatGPT backend, and it
 # is rejected outright for accounts without MFA ("403 ... Multi-factor
@@ -401,16 +404,21 @@ if [ "$(cat "$HOME/.codex/app-server-daemon/settings.json" 2>/dev/null | tr -d '
   case "$rc_out" in
     *'"status":"connected"'*)
       ok "remote control enabled and connected" ;;
+    *'not managed by codex app-server daemon'*)
+      # The pid file was dropped as stale (a clock step after start does it —
+      # see lib/codex.sh), so no codex command can manage this daemon now.
+      bad "the daemon is running but Codex has disowned it — remote control and pairing refuse"
+      bad "  fix: sudo systemctl restart codex-app-server" ;;
     *)
       bad "remote control enabled but NOT connected — the ChatGPT app sees nothing:"
       bad "  ${rc_out}"
       bad "  a 403 'Multi-factor authentication required' at enrollment means the"
       bad "  account has no MFA: enable 2FA, codex login, then"
-      bad "  codex app-server daemon bootstrap --remote-control" ;;
+      bad "  sudo systemctl restart codex-app-server" ;;
   esac
 else
   warn "remote control not enabled — the ChatGPT app cannot see sessions on this box"
-  warn "  enable it: codex app-server daemon bootstrap --remote-control"
+  warn "  enable it: sudo systemctl restart codex-app-server  (the unit runs bootstrap --remote-control)"
 fi
 # Codex sandboxes every command it runs through a bundled bubblewrap, which
 # cannot create user namespaces on stock Ubuntu 24.04 without this profile.

@@ -81,6 +81,13 @@ case "$rc_out" in
     info "connected as $(printf '%s' "$rc_out" | sed -n 's/.*"serverName":"\([^"]*\)".*/\1/p')" ;;
   *)
     printf '\n%s\n' "$rc_out"
+    # The daemon lost its pid file (see lib/codex.sh: a clock step after it
+    # started is enough), so no CLI command can manage it any more. Restarting
+    # the unit kills the orphan along with its cgroup and starts a managed one.
+    if printf '%s' "$rc_out" | grep -qi 'not managed by codex app-server daemon'; then
+      die "the daemon is running but Codex no longer recognises it as its own.
+       Fix with: sudo systemctl restart ${UNIT}   then re-run this script."
+    fi
     if printf '%s' "$rc_out" | grep -qi 'multi-factor'; then
       die "this account has no MFA, and enrollment requires it. Enable 2FA on
        the ChatGPT account, run 'codex login' again, then re-run this script."

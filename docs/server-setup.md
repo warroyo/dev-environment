@@ -650,6 +650,15 @@ different things.
 - **The daemon is gone after a reboot.** `codex app-server daemon bootstrap`
   leaves a bare process, not a service — `codex-app-server.service` is what
   brings it back, so check it is enabled.
+- **`app server is running but is not managed by codex app-server daemon`.**
+  The daemon is up, but Codex has disowned it, so `remote-control start`,
+  `pair` and `daemon bootstrap` all refuse. Codex records the daemon in
+  `~/.codex/app-server-daemon/app-server.pid` as a pid plus a wall-clock start
+  time. It deletes that file when the start time no longer matches, and a
+  clock step does that. At boot, NTP stepped this box's clock by about a second,
+  20 seconds after the unit started the daemon. The unit now waits for NTP sync
+  first. If it happens anyway, `sudo systemctl restart codex-app-server` fixes it,
+  and a bootstrap re-run does the same when it detects the state.
 
 ### Codex's sandbox needs an AppArmor profile here
 
