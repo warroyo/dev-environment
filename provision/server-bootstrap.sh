@@ -948,7 +948,7 @@ Environment=HOME=${HOME}
 # without this the unit fails with "claude: command not found". ~/.krew/bin is
 # here for the same reason it is in 40_path.sh: kubectl discovers plugins by
 # scanning PATH, so without it Claude Code in this session sees no krew plugins
-# (and no `kubectl krew`) even though they are installed.
+# (and no \`kubectl krew\`) even though they are installed.
 Environment=PATH=${HOME}/.local/bin:${HOME}/.krew/bin:${HOME}/.npm-global/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 # -A is attach-or-create: tmux-continuum's restore may have already created
 # claude-main by the time this runs, and plain \`new-session\` would fail with
