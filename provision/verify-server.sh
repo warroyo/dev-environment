@@ -558,7 +558,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-section "Lab subnet routing (LAN/Teleport clients -> tun0)"
+section "Lab subnet routing (LAN/Teleport/tailnet clients -> tun0)"
 LAB_SUBNET="10.47.0.0/16"
 LAB_DNS="172.21.0.90"
 
@@ -669,6 +669,34 @@ else
   ok "tun0 absent — skipping route checks (normal; 'client-vpn up' to connect)"
 fi
 
+# Advertising the prefix and having it APPROVED are two different things, and
+# the gap between them is silent: this box looks configured, the client sees no
+# route at all, and nothing anywhere logs a complaint. Check both separately.
+if tailscale status >/dev/null 2>&1; then
+  # Both of these read a named key rather than grepping for the CIDR: the
+  # prefix appears in more than one place in that JSON, so a bare grep would
+  # report "advertised" on the strength of some unrelated field.
+  if tailscale debug prefs 2>/dev/null \
+       | python3 -c 'import json,sys; sys.exit(0 if sys.argv[1] in (json.load(sys.stdin).get("AdvertiseRoutes") or []) else 1)' \
+           "$LAB_SUBNET" 2>/dev/null; then
+    ok "${LAB_SUBNET} is advertised to the tailnet"
+    if tailscale status --json 2>/dev/null \
+         | python3 -c 'import json,sys; sys.exit(0 if sys.argv[1] in (json.load(sys.stdin).get("Self",{}).get("PrimaryRoutes") or []) else 1)' \
+             "$LAB_SUBNET" 2>/dev/null; then
+      ok "${LAB_SUBNET} is approved — tailnet clients receive the route"
+    else
+      bad "${LAB_SUBNET} is advertised but NOT approved, so no tailnet client"
+      bad "  gets it. Approve it in the admin console (Machines -> this host ->"
+      bad "  Edit route settings) or via autoApprovers in the policy file."
+    fi
+  else
+    bad "${LAB_SUBNET} is not advertised to the tailnet — the personal laptop"
+    bad "  reaches the lab only from the LAN; re-run server-bootstrap.sh"
+  fi
+else
+  warn "tailscale is down — skipping the subnet-route checks"
+fi
+
 # ---------------------------------------------------------------------------
 section "Split DNS for set.lab (dnsmasq on :5300)"
 LAB_ZONE="set.lab"
@@ -718,6 +746,19 @@ if [ -n "$dns_listeners" ]; then
   else
     bad "  loopback ONLY — no client can reach this. The LAN address probably"
     bad "  changed since bootstrap; re-run server-bootstrap.sh"
+  fi
+  # The tailnet address is worth naming rather than letting "at least one
+  # non-loopback address" cover it: the listen list is built from LAN addresses,
+  # which excludes 100.64/10 twice over, so this is the one that goes missing
+  # while every other check here passes.
+  if [ -n "$TS_IP" ]; then
+    if printf '%s\n' "$dns_listeners" | grep -q "^${TS_IP}:"; then
+      ok "  tailnet address ${TS_IP} is bound"
+    else
+      bad "  tailnet address ${TS_IP} is NOT bound, so the personal laptop's"
+      bad "  *.set.lab lookups fail while its route to the lab looks perfect."
+      bad "  Re-run server-bootstrap.sh with Tailscale up."
+    fi
   fi
 else
   bad "nothing is listening on UDP ${LAB_DNS_PORT}"

@@ -137,6 +137,13 @@ one connection and **routes** `10.47.0.0/16` and the lab resolver
 `172.21.0.90` for LAN clients — including anything arriving over the UDM SE's
 Teleport tunnel. No proxy, no browser extension: the laptop just has a route.
 
+Everything in this section is **the work laptop's path**, which needs a static
+route on the gateway because this machine never joins the tailnet (constraint
+#2). The personal laptop gets the same subnet a different way — the server
+advertises it as a Tailscale subnet route, so there is no gateway or travel
+router in the picture at all. See
+[`docs/client-personal-setup.md`](client-personal-setup.md).
+
 Only those two prefixes are routed. The tunnel also pushes `10.0.0.0/10`,
 which contains the home LAN and quite possibly whatever wifi you're sitting
 on, and `172.17.0.0/24`, which is Docker's usual bridge. Neither belongs in a

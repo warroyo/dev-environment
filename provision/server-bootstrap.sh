@@ -740,6 +740,34 @@ fi
 log "  Gateway side is manual: a static route for ${LAB_SUBNET} pointing at"
 log "  this box. See docs/client-work-setup.md."
 
+# Advertise the same prefix into the tailnet, so tailnet clients get the lab by
+# route too and not just LAN and Teleport clients. This is what replaces the
+# travel router for the personal laptop: no static route on anyone's gateway,
+# and it follows the machine onto any network.
+#
+# `tailscale set`, NOT `tailscale up`: `up` applies the flags it is given and
+# resets every preference it is not given back to its default, so bolting
+# --advertise-routes onto the earlier `tailscale up` would silently be a
+# different command than the one that joined this machine. `set` changes the
+# one preference and leaves the rest alone.
+#
+# Nothing else is needed here. The forward and NAT rules above are scoped by
+# destination rather than by inbound interface — the fix for the two-VLAN bug —
+# so a packet arriving on tailscale0 matches the same rules a LAN packet does.
+if tailscale status >/dev/null 2>&1; then
+  if $SUDO tailscale set --advertise-routes="${LAB_SUBNET}"; then
+    log "  advertising ${LAB_SUBNET} to the tailnet"
+    log "  APPROVAL IS MANUAL: an advertised route does nothing until it is"
+    log "  approved (admin console -> Machines -> this host -> Edit route"
+    log "  settings), or by an autoApprovers rule in the tailnet policy file."
+  else
+    log "  WARNING: could not advertise ${LAB_SUBNET}; check 'tailscale set'"
+  fi
+else
+  log "  Tailscale is not up, so ${LAB_SUBNET} was NOT advertised. Re-run this"
+  log "  script after 'sudo tailscale up'."
+fi
+
 # ---------------------------------------------------------------------------
 # Split DNS for the lab zone, served on a port nothing intercepts.
 #
@@ -783,6 +811,25 @@ DNS_LISTEN="127.0.0.1"
 for ip in "${DNS_LISTEN_IPS[@]}"; do
   DNS_LISTEN="${DNS_LISTEN},${ip}"
 done
+
+# Plus the tailnet address, which is the one the personal laptop asks on.
+#
+# Both filters above exclude it deliberately — once by interface name, and
+# again because 100.64.0.0/10 is not RFC1918 — so it is added by name here
+# rather than by widening them, which would also catch tun0 and start offering
+# the lab a resolver it never asked for.
+#
+# Easy to get wrong: bind-dynamic binds the LISTED addresses only. Without this
+# the route works, dnsmasq is running, and every *.set.lab lookup from the
+# laptop still fails, because nothing is listening on the address it asked.
+TS_DNS_IP="$(tailscale ip -4 2>/dev/null | head -n1 || true)"
+if [ -n "$TS_DNS_IP" ]; then
+  DNS_LISTEN="${DNS_LISTEN},${TS_DNS_IP}"
+else
+  log "  WARNING: Tailscale is down, so dnsmasq will NOT listen on the tailnet"
+  log "  address and the personal laptop's split DNS will fail. Re-run this"
+  log "  script after 'sudo tailscale up'."
+fi
 
 # The config is written BEFORE the package is installed, deliberately. Ubuntu's
 # dnsmasq starts on install with an empty config, which means port 53 on the

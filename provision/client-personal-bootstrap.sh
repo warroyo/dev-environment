@@ -95,12 +95,32 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 source "${SCRIPT_DIR}/lib/chezmoi-apply.sh"
 apply_dotfiles personal "$REPO_ROOT"
 
-# Split DNS for the lab's internal zone. Useful here only while this machine is
-# on the home LAN, where the server routes the lab for it — the mesh VPN does
-# not carry those routes. Off the LAN the entry is harmless but dead, which is
-# what the short timeout in the lib is for.
+# Split DNS for the lab's internal zone, over the tailnet.
+#
+# This used to be useful on the home LAN only: the server routed the lab for
+# LAN clients, the tailnet carried no such route, and off the LAN the resolver
+# entry was dead but harmless. The server now advertises 10.47.0.0/16 as a
+# tailnet subnet route, so both halves — the route and the names — work from
+# anywhere the tailnet reaches.
+#
+# The server's tailnet address is resolved here rather than written down. That
+# needs `tailscale up` to have happened, which on a first run it has not, so
+# failing to resolve it is a skip with instructions rather than a fatal error.
 # shellcheck source=lib/lab-dns.sh
 source "${SCRIPT_DIR}/lib/lab-dns.sh"
-install_lab_resolver
+
+# One source of truth for the server's tailnet name: the same value the managed
+# SSH config templates into `Host claude-server`.
+SERVER_HOST="${SERVER_HOST:-$(awk -F'"' '/^serverHost:/ {print $2}' "${REPO_ROOT}/dotfiles/.chezmoidata.yaml")}"
+
+if LAB_DNS_SERVER="$(lab_dns_server_over_tailscale "$SERVER_HOST")"; then
+  log "Lab split DNS over the tailnet (${SERVER_HOST} is ${LAB_DNS_SERVER})"
+  install_lab_resolver
+else
+  log "Skipping lab split DNS: ${SERVER_HOST} does not resolve on the tailnet"
+  echo "  Sign in first ('tailscale up' — see docs/client-personal-setup.md §2),"
+  echo "  then re-run this script. Any /etc/resolver/set.lab from an earlier run"
+  echo "  is left alone, so it may still hold a stale address."
+fi
 
 log "Done. See docs/client-personal-setup.md for the remaining manual steps (tailscale up, etc.)."

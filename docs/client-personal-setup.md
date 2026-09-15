@@ -24,11 +24,34 @@ version, so both ends have to agree. The version lives in
 `provision/lib/herdr.sh` and nowhere else.
 
 It also writes `/etc/resolver/set.lab` so the lab's internal zone — and only
-that zone — resolves through the lab's own DNS server. That needs `sudo`, so
-the run will prompt. It's useful on this machine only while you're on the home
-LAN, where the server routes the lab; the mesh VPN doesn't carry those routes,
-so off the LAN the entry is dead but harmless. Delete the file if you'd rather
-not have it. See [`docs/client-work-setup.md`](client-work-setup.md) §6.
+that zone — resolves through the server's dnsmasq, pointed at the server's
+**tailnet** address. That needs `sudo`, so the run will prompt. The server
+advertises `10.47.0.0/16` as a subnet route, so the lab works from any network
+the tailnet reaches, not just the home LAN. Delete the file if you'd rather not
+have it. See [`docs/client-work-setup.md`](client-work-setup.md) §6.
+
+**This step is skipped on a first run**, because it resolves the server's
+address with `tailscale ip -4` and step 2 below hasn't happened yet. The script
+says so and continues. Re-run it after `tailscale up`:
+
+```sh
+./provision/client-personal-bootstrap.sh
+```
+
+Re-running is also how a changed tailnet address gets picked up — nothing is
+hardcoded, so the file is only as current as the last run.
+
+To check it, with `client-vpn up` run on the server:
+
+```sh
+tailscale status | grep ubuntu-home             # the peer is up
+netstat -rn | grep 10.47                        # subnet route present, via utun
+dscacheutil -q host -a name auto.gpu.set.lab    # a name resolves
+```
+
+`dig` and `nslookup` **ignore** `/etc/resolver` entirely — they query a server
+directly and will report failure while Chrome, `curl` and `ping` all work. The
+equivalent by hand is `dig -p 5300 @<server-tailnet-ip> auto.gpu.set.lab`.
 
 ### If you already had apps installed
 

@@ -186,14 +186,37 @@ out `tun0`, masqueraded so the lab — which has no route back to this LAN, let
 alone to the gateway's Teleport pool — can answer. The forward rules are scoped
 by destination rather than by inbound interface on purpose: this box has LAN
 legs on two VLANs, and pinning them to one silently broke clients on the other
-(requests forwarded, every reply dropped). The
-work laptop reaches the subnet over the gateway. `lab-routing.service` owns the
-`FORWARD` and NAT rules and reinstalls them on boot; `verify-server.sh` checks
-them against the kernel.
+(requests forwarded, every reply dropped). That same property is what later
+made the tailnet path free: a packet arriving on `tailscale0` matches the rules
+a LAN packet does, so adding it needed no new rule.
+`lab-routing.service` owns the `FORWARD` and NAT rules and reinstalls them on
+boot; `verify-server.sh` checks them against the kernel.
+
+Clients reach those rules two different ways, because the two laptops are on
+different networks:
+
+- **`work`** — over the gateway, which needs a static route for
+  `10.47.0.0/16` pointing at this box, and whatever carries the laptop home
+  (the split-tunnel OpenVPN profile, or Teleport on a travel router) has to
+  pass that route on.
+- **`personal`** — the server advertises `10.47.0.0/16` as a Tailscale subnet
+  route (`tailscale set --advertise-routes`, not `tailscale up`, which resets
+  every preference it isn't given). The route then follows the laptop onto any
+  network, with no gateway configuration anywhere and no travel router.
+  Advertising alone is not enough: an unapproved route is silently absent on
+  every client, which is why `verify-server.sh` checks advertised and approved
+  as separate things.
 
 Names are a separate mechanism, because routing alone was not enough. dnsmasq
 runs here on **port 5300** forwarding `set.lab` into the tunnel, and clients
-point `/etc/resolver/set.lab` at this box rather than at the lab resolver.
+point `/etc/resolver/set.lab` at this box rather than at the lab resolver — the
+work laptop at its LAN address, the personal laptop at its tailnet address,
+which `client-personal-bootstrap.sh` resolves with `tailscale ip -4` at
+provision time rather than hardcoding. Port 5300 is kept for both even though
+the tailnet needs no defence against port-53 interception (those queries ride
+inside WireGuard): one dnsmasq holds one port, and a second instance on 53
+would buy nothing.
+
 Pointing at `172.21.0.90:53` directly is what it did first, and it failed the
 moment the laptop sat behind a gateway that DNAT's all port-53 traffic to
 itself — the route was intact and traceroute proved it, but traceroute never
