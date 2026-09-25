@@ -25,7 +25,9 @@ version, so both ends have to agree. The version lives in
 
 It also writes `/etc/resolver/set.lab` so the lab's internal zone — and only
 that zone — resolves through the server's dnsmasq, pointed at the server's
-**tailnet** address. That needs `sudo`, so the run will prompt. The server
+**tailnet** address first and its **LAN** address (`10.10.2.116`) second, so
+the zone still resolves at home with Tailscale off. That needs `sudo`, so the
+run will prompt. The server
 advertises `10.47.0.0/16` as a subnet route, so the lab works from any network
 the tailnet reaches, not just the home LAN. Delete the file if you'd rather not
 have it. See [`docs/client-work-setup.md`](client-work-setup.md) §6.

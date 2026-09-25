@@ -47,7 +47,14 @@ LAB_DNS_DOMAIN="set.lab"
 #
 # The LAN address is the default because it is the one that cannot be
 # discovered.
-LAB_DNS_SERVER="${LAB_DNS_SERVER:-10.10.2.116}"
+#
+# LAB_DNS_SERVER may hold several addresses, space-separated, and each becomes
+# its own `nameserver` line. mDNSResponder falls through to the next one when a
+# server does not answer, which is how the personal client covers both paths:
+# tailnet first, LAN second, so the zone still resolves at home with Tailscale
+# off.
+LAB_DNS_LAN_SERVER="10.10.2.116"
+LAB_DNS_SERVER="${LAB_DNS_SERVER:-${LAB_DNS_LAN_SERVER}}"
 LAB_DNS_PORT="${LAB_DNS_PORT:-5300}"
 
 # Print the server's tailnet IPv4 address, for use as LAB_DNS_SERVER, or return
@@ -95,11 +102,14 @@ install_lab_resolver() {
   # makes that a multi-second hang on a typo'd hostname. Three seconds is long
   # enough for a 46ms round trip over the tunnel and short enough not to feel
   # like the machine has frozen.
-  local desired
+  local desired server nameservers=""
+  for server in $LAB_DNS_SERVER; do
+    nameservers+="nameserver ${server}"$'\n'
+  done
   desired="$(cat <<EOF
 # Managed by dev-environment/provision — do not edit by hand.
 # Split DNS: only ${LAB_DNS_DOMAIN} resolves here. See provision/lib/lab-dns.sh.
-nameserver ${LAB_DNS_SERVER}
+${nameservers%$'\n'}
 port ${LAB_DNS_PORT}
 timeout 3
 EOF
@@ -110,7 +120,7 @@ EOF
     return 0
   fi
 
-  log "Configuring lab split DNS for *.${LAB_DNS_DOMAIN} -> ${LAB_DNS_SERVER}:${LAB_DNS_PORT}"
+  log "Configuring lab split DNS for *.${LAB_DNS_DOMAIN} -> ${LAB_DNS_SERVER} (port ${LAB_DNS_PORT})"
   sudo mkdir -p /etc/resolver
   printf '%s\n' "$desired" | sudo tee "$resolver_file" >/dev/null
   sudo chmod 644 "$resolver_file"
@@ -126,5 +136,7 @@ EOF
   log "  NOTE: dig and nslookup IGNORE /etc/resolver — they query a server"
   log "        directly and will report failure while everything else works."
   log "        The equivalent by hand is:"
-  log "          dig -p ${LAB_DNS_PORT} @${LAB_DNS_SERVER} <host>.${LAB_DNS_DOMAIN}"
+  for server in $LAB_DNS_SERVER; do
+    log "          dig -p ${LAB_DNS_PORT} @${server} <host>.${LAB_DNS_DOMAIN}"
+  done
 }

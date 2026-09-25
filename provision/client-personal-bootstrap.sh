@@ -113,8 +113,12 @@ source "${SCRIPT_DIR}/lib/lab-dns.sh"
 # SSH config templates into `Host claude-server`.
 SERVER_HOST="${SERVER_HOST:-$(awk -F'"' '/^serverHost:/ {print $2}' "${REPO_ROOT}/dotfiles/.chezmoidata.yaml")}"
 
-if LAB_DNS_SERVER="$(lab_dns_server_over_tailscale "$SERVER_HOST")"; then
-  log "Lab split DNS over the tailnet (${SERVER_HOST} is ${LAB_DNS_SERVER})"
+# The LAN address goes in second, so the zone still resolves at home when
+# Tailscale is off. Away from home with Tailscale off, neither answers — the
+# server is unreachable either way — and `timeout 3` bounds the wait.
+if tailnet_ip="$(lab_dns_server_over_tailscale "$SERVER_HOST")"; then
+  log "Lab split DNS over the tailnet (${SERVER_HOST} is ${tailnet_ip}), LAN fallback ${LAB_DNS_LAN_SERVER}"
+  LAB_DNS_SERVER="${tailnet_ip} ${LAB_DNS_LAN_SERVER}"
   install_lab_resolver
 else
   log "Skipping lab split DNS: ${SERVER_HOST} does not resolve on the tailnet"
