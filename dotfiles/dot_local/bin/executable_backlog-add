@@ -1,0 +1,185 @@
+#!/usr/bin/env bash
+# Add one item to the personal backlog, a user-level GitHub Projects (v2) board
+# (server only). The backlog skill funnels through this one script, so there is
+# exactly one place that knows the project number, the field names, and the
+# name -> id lookups the Projects API insists on.
+#
+# Usage: backlog-add [-s status] [-p priority] [-k kind] [-a area]
+#                    [-b body|-] [-u issue-or-pr-url] [title]
+#
+#   -s  Status    Inbox (default), Next, In Progress, Done
+#   -p  Priority  High, Medium, Low
+#   -k  Kind      Tech, Idea, Chore, Personal
+#   -a  Area      free text: a repo or topic name
+#   -b  body      markdown body for a draft item; `-b -` reads it from stdin
+#                 (stdin is never read unless asked for this way)
+#   -u  url       add an existing issue or PR instead of creating a draft
+#                 (title and body are ignored — the issue already has them)
+#
+# Option names are matched case-insensitively against what the project
+# actually has, looked up on every run. Nothing here stores an option id:
+# GitHub regenerates them whenever a field's options are edited, so a stored
+# id goes stale silently.
+#
+# Needs `gh` authenticated with the `project` scope, which the default login
+# does not include: gh auth refresh -s project
+set -euo pipefail
+
+# Deliberately not identifying: "@me" is whoever gh is logged in as, and the
+# number is only meaningful under that account.
+OWNER="${BACKLOG_OWNER:-@me}"
+PROJECT="${BACKLOG_PROJECT:-3}"
+
+usage() {
+  sed -n '7,17p' "$0" | sed 's/^# \{0,1\}//' >&2
+  exit 2
+}
+
+status="Inbox" priority="" kind="" area="" body="" url=""
+while getopts "s:p:k:a:b:u:h" opt; do
+  case "$opt" in
+    s) status="$OPTARG" ;;
+    p) priority="$OPTARG" ;;
+    k) kind="$OPTARG" ;;
+    a) area="$OPTARG" ;;
+    b) body="$OPTARG" ;;
+    u) url="$OPTARG" ;;
+    *) usage ;;
+  esac
+done
+shift $((OPTIND - 1))
+title="$*"
+
+if [ -z "$url" ] && [ -z "${title//[[:space:]]/}" ]; then
+  echo "backlog-add: a title (or -u url) is required" >&2
+  usage
+fi
+
+# Stdin is read only when asked for with `-b -`, never just because it is not
+# a terminal. Claude Code runs commands with stdin attached to a socket that
+# stays open, so "not a tty, therefore read it" blocks forever on every call
+# that passes no body.
+if [ "$body" = "-" ]; then
+  body="$(cat)"
+fi
+
+# Everything below talks GraphQL directly rather than through `gh project`.
+# Those subcommands fetch far more than they use, cost a large slice of the
+# hourly point budget per call, and get throttled after a few dozen items;
+# this is three small requests per item.
+if [ "$OWNER" = "@me" ]; then
+  root='viewer'
+else
+  root="user(login: \"$OWNER\")"
+fi
+
+# shellcheck disable=SC2016  # GraphQL variables, not shell
+project="$(gh api graphql -F number="$PROJECT" -f query='
+query($number: Int!) {
+  owner: '"$root"' {
+    projectV2(number: $number) {
+      id
+      fields(first: 50) {
+        nodes {
+          ... on ProjectV2FieldCommon { id name }
+          ... on ProjectV2SingleSelectField { options { id name } }
+        }
+      }
+    }
+  }
+}')"
+
+project_id="$(jq -r '.data.owner.projectV2.id // empty' <<<"$project")"
+if [ -z "$project_id" ]; then
+  echo "backlog-add: project ${PROJECT} not found for ${OWNER}" >&2
+  exit 1
+fi
+
+# One row per (field, option): name, field id, option name, option id. Text
+# fields get a single row with the option columns empty.
+fields="$(jq -r '
+  .data.owner.projectV2.fields.nodes[] | . as $f
+  | if .options then (.options[] | [$f.name, $f.id, .name, .id])
+    else [$f.name, $f.id, "", ""] end
+  | @tsv' <<<"$project")"
+
+# field_id <field-name>
+field_id() {
+  awk -F'\t' -v f="$1" 'tolower($1) == tolower(f) { print $2; exit }' <<<"$fields"
+}
+
+# option_id <field-name> <option-name>
+option_id() {
+  awk -F'\t' -v f="$1" -v o="$2" \
+    'tolower($1) == tolower(f) && tolower($3) == tolower(o) { print $4; exit }' <<<"$fields"
+}
+
+# Resolve everything BEFORE creating the item, so a typo in an option name
+# fails cleanly instead of leaving a half-labelled item on the board.
+declare -a select_fields=() select_options=()
+for pair in "Status=$status" "Priority=$priority" "Kind=$kind"; do
+  name="${pair%%=*}" value="${pair#*=}"
+  [ -n "$value" ] || continue
+  fid="$(field_id "$name")"
+  oid="$(option_id "$name" "$value")"
+  if [ -z "$fid" ] || [ -z "$oid" ]; then
+    valid="$(awk -F'\t' -v f="$name" 'tolower($1) == tolower(f) && $3 != "" { print $3 }' <<<"$fields" | paste -sd, - | sed 's/,/, /g')"
+    echo "backlog-add: no ${name} option \"${value}\" (have: ${valid:-none — field missing})" >&2
+    exit 1
+  fi
+  select_fields+=("$fid")
+  select_options+=("$oid")
+done
+
+area_fid=""
+if [ -n "$area" ]; then
+  area_fid="$(field_id Area)"
+  if [ -z "$area_fid" ]; then
+    echo "backlog-add: project has no Area field" >&2
+    exit 1
+  fi
+fi
+
+# shellcheck disable=SC2016
+if [ -n "$url" ]; then
+  content_id="$(gh api graphql -f url="$url" -f query='
+    query($url: URI!) { resource(url: $url) { ... on Issue { id } ... on PullRequest { id } } }' \
+    --jq '.data.resource.id // empty')"
+  if [ -z "$content_id" ]; then
+    echo "backlog-add: ${url} is not an issue or pull request I can see" >&2
+    exit 1
+  fi
+  item_id="$(gh api graphql -f project="$project_id" -f content="$content_id" -f query='
+    mutation($project: ID!, $content: ID!) {
+      addProjectV2ItemById(input: {projectId: $project, contentId: $content}) { item { id } }
+    }' --jq '.data.addProjectV2ItemById.item.id')"
+else
+  item_id="$(gh api graphql -f project="$project_id" -f title="$title" -f body="$body" -f query='
+    mutation($project: ID!, $title: String!, $body: String) {
+      addProjectV2DraftIssue(input: {projectId: $project, title: $title, body: $body}) { projectItem { id } }
+    }' --jq '.data.addProjectV2DraftIssue.projectItem.id')"
+fi
+
+# All field values in one request, one aliased mutation each. The ids come
+# straight from the API and the area travels as a variable, so nothing
+# user-supplied is spliced into the query text.
+set_field() { # <alias> <field-id> <value-literal>
+  printf '%s: updateProjectV2ItemFieldValue(input: {projectId: $project, itemId: $item, fieldId: "%s", value: %s}) { clientMutationId }\n' "$1" "$2" "$3"
+}
+mutations=""
+for i in "${!select_fields[@]}"; do
+  mutations+="$(set_field "f$i" "${select_fields[$i]}" "{singleSelectOptionId: \"${select_options[$i]}\"}")"$'\n'
+done
+[ -n "$area_fid" ] && mutations+="$(set_field area "$area_fid" '{text: $area}')"$'\n'
+
+if [ -n "$mutations" ]; then
+  # shellcheck disable=SC2016
+  gh api graphql --silent -f project="$project_id" -f item="$item_id" -f area="$area" \
+    -f query='mutation($project: ID!, $item: ID!, $area: String) {'"$mutations"'}'
+fi
+
+summary="Status=${status}"
+[ -n "$priority" ] && summary+=", Priority=${priority}"
+[ -n "$kind" ] && summary+=", Kind=${kind}"
+[ -n "$area" ] && summary+=", Area=${area}"
+printf 'added: %s [%s]\n' "${url:-$title}" "$summary"

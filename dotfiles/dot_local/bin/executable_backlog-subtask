@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+# Add or tick a sub-task inside a backlog topic (server only). Sub-tasks are
+# markdown checklist lines in a draft item's body, and the API can only replace
+# a body whole, so this is the read-modify-write the backlog skill would
+# otherwise do by hand: find the topic, change one line, write the body back.
+#
+# Usage: backlog-subtask <topic> <task text>      append "- [ ] <task text>"
+#        backlog-subtask -x <topic> <task text>   tick the sub-task matching it
+#        backlog-subtask -u <topic> <task text>   untick it
+#
+#   <topic>  part of the topic's title (case-insensitive), or its DI_… id.
+#            Must match exactly one item; Done topics are searched too.
+#   <task>   with -x / -u, part of an existing sub-task line. Must match
+#            exactly one line in that state.
+#
+# Refuses anything ambiguous and lists the candidates instead of guessing.
+set -euo pipefail
+
+usage() {
+  sed -n '7,14p' "$0" | sed 's/^# \{0,1\}//' >&2
+  exit 2
+}
+
+mode="add"
+while getopts "xuh" opt; do
+  case "$opt" in
+    x) mode="tick" ;;
+    u) mode="untick" ;;
+    *) usage ;;
+  esac
+done
+shift $((OPTIND - 1))
+[ $# -ge 2 ] || usage
+topic="$1"
+shift
+task="$*"
+if [ -z "${task//[[:space:]]/}" ]; then
+  echo "backlog-subtask: empty task text" >&2
+  exit 2
+fi
+
+# backlog-list already knows the project and flattens items; reuse it rather
+# than keep a second copy of the query.
+matches="$(backlog-list -A -j | jq -c --arg t "$topic" '
+  select((.content_id == $t) or (.title | ascii_downcase | contains($t | ascii_downcase)))')"
+
+count="$(grep -c . <<<"$matches" || true)"
+if [ "$count" -eq 0 ]; then
+  echo "backlog-subtask: no topic matching \"${topic}\"" >&2
+  exit 1
+elif [ "$count" -gt 1 ]; then
+  echo "backlog-subtask: \"${topic}\" matches ${count} topics, be more specific:" >&2
+  jq -r '"  \(.title)  \(.content_id)"' <<<"$matches" >&2
+  exit 1
+fi
+
+title="$(jq -r .title <<<"$matches")"
+draft_id="$(jq -r .content_id <<<"$matches")"
+body="$(jq -r .body <<<"$matches")"
+if [ "$(jq -r '.url // empty' <<<"$matches")" != "" ]; then
+  echo "backlog-subtask: \"${title}\" is an issue or PR, not a draft — edit it on GitHub" >&2
+  exit 1
+fi
+
+if [ "$mode" = "add" ]; then
+  # Keep the checklist contiguous: no blank line when the body already ends in
+  # a checklist line, one blank line after prose.
+  last="$(awk 'NF { l = $0 } END { print l }' <<<"$body")"
+  if [ -z "$body" ]; then
+    new_body="- [ ] ${task}"
+  elif [[ "$last" =~ ^[[:space:]]*-\ \[[\ xX]\] ]]; then
+    new_body="${body%$'\n'}"$'\n'"- [ ] ${task}"
+  else
+    new_body="${body%$'\n'}"$'\n\n'"- [ ] ${task}"
+  fi
+  verb="added to"
+else
+  if [ "$mode" = "tick" ]; then from='[ ]' to='[x]'; else from='[x]' to='[ ]'; fi
+  # Lines in the right state whose text contains the search string.
+  hits="$(awk -v from="$from" -v t="$task" '
+    { l = tolower($0) }
+    index(l, "- " tolower(from)) && index(l, tolower(t)) { print NR "\t" $0 }' <<<"$body")"
+  n="$(grep -c . <<<"$hits" || true)"
+  if [ "$n" -eq 0 ]; then
+    echo "backlog-subtask: no ${from} sub-task matching \"${task}\" in \"${title}\"" >&2
+    exit 1
+  elif [ "$n" -gt 1 ]; then
+    echo "backlog-subtask: \"${task}\" matches ${n} sub-tasks in \"${title}\", be more specific:" >&2
+    cut -f2- <<<"$hits" | sed 's/^/  /' >&2
+    exit 1
+  fi
+  line="$(cut -f1 <<<"$hits")"
+  task="$(cut -f2- <<<"$hits" | sed -E 's/^[[:space:]]*- \[[ xX]\] //')"
+  new_body="$(awk -v n="$line" -v to="$to" '
+    NR == n { sub(/\[[ xX]\]/, to) } { print }' <<<"$body")"
+  [ "$mode" = "tick" ] && verb="ticked in" || verb="unticked in"
+fi
+
+# shellcheck disable=SC2016  # GraphQL variables, not shell
+gh api graphql --silent -f id="$draft_id" -f body="$new_body" -f query='
+  mutation($id: ID!, $body: String!) {
+    updateProjectV2DraftIssue(input: {draftIssueId: $id, body: $body}) { draftIssue { id } }
+  }'
+
+open="$(grep -cE '^[[:space:]]*- \[ \]' <<<"$new_body" || true)"
+printf '%s "%s": %s (%s open)\n' "$verb" "$title" "$task" "$open"

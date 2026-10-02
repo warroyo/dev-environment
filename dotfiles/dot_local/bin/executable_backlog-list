@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+# Read the personal backlog (server only): the retrieval half of the backlog
+# skill, next to backlog-add. One GraphQL query for the whole board, filtered
+# locally — `gh project item-list` costs far more of the hourly point budget
+# for the same data, which matters when a session reads the board repeatedly.
+#
+# Usage: backlog-list [-s status] [-p priority] [-k kind] [-a area]
+#                     [-q text] [-A] [-v] [-j]
+#
+#   -s  Status    only this status (default: everything except Done)
+#   -p  Priority  only this priority
+#   -k  Kind      only this kind
+#   -a  Area      only areas containing this text
+#   -q  text      only items whose title or body contains this text
+#   -A            include Done items
+#   -v            print each item's body (the sub-task checklist) too
+#   -j            raw JSON, one object per item, for further processing
+#
+# All matching is case-insensitive. Each line ends with the item's content id
+# (DI_… for a draft), which is what `gh project item-edit --id` takes to
+# change a title or body.
+set -euo pipefail
+
+OWNER="${BACKLOG_OWNER:-@me}"
+PROJECT="${BACKLOG_PROJECT:-3}"
+
+usage() {
+  sed -n '7,17p' "$0" | sed 's/^# \{0,1\}//' >&2
+  exit 2
+}
+
+status="" priority="" kind="" area="" text="" all=0 verbose=0 json=0
+while getopts "s:p:k:a:q:Avjh" opt; do
+  case "$opt" in
+    s) status="$OPTARG" ;;
+    p) priority="$OPTARG" ;;
+    k) kind="$OPTARG" ;;
+    a) area="$OPTARG" ;;
+    q) text="$OPTARG" ;;
+    A) all=1 ;;
+    v) verbose=1 ;;
+    j) json=1 ;;
+    *) usage ;;
+  esac
+done
+
+if [ "$OWNER" = "@me" ]; then
+  root='viewer'
+else
+  root="user(login: \"$OWNER\")"
+fi
+
+# shellcheck disable=SC2016  # GraphQL variables, not shell
+query='
+query($number: Int!, $cursor: String) {
+  owner: '"$root"' {
+    projectV2(number: $number) {
+      items(first: 100, after: $cursor) {
+        pageInfo { hasNextPage endCursor }
+        nodes {
+          id
+          content {
+            ... on DraftIssue { id title body }
+            ... on Issue { id title body url }
+            ... on PullRequest { id title body url }
+          }
+          fieldValues(first: 30) {
+            nodes {
+              ... on ProjectV2ItemFieldSingleSelectValue { name field { ... on ProjectV2SingleSelectField { name } } }
+              ... on ProjectV2ItemFieldTextValue { text field { ... on ProjectV2Field { name } } }
+            }
+          }
+        }
+      }
+    }
+  }
+}'
+
+# Flatten each item to {id, content_id, title, body, url, status, priority,
+# kind, area}, filter, then order by status (board order) and priority.
+filter='
+def lc: (. // "") | ascii_downcase;
+def has($needle): ($needle == "") or (lc | contains($needle | ascii_downcase));
+def is($want): ($want == "") or (lc == ($want | ascii_downcase));
+[ .[] | .data.owner.projectV2.items.nodes[]
+  | (reduce (.fieldValues.nodes[] | select(.field.name != null)) as $v ({};
+      .[$v.field.name | ascii_downcase] = ($v.name // $v.text))) as $f
+  | { id, content_id: .content.id, title: .content.title, body: (.content.body // ""),
+      url: (.content.url // null),
+      status: $f.status, priority: $f.priority, kind: $f.kind, area: $f.area }
+  | select(.status | is($status))
+  | select(($all == "1") or ($status != "") or ((.status | lc) != "done"))
+  | select(.priority | is($priority))
+  | select(.kind | is($kind))
+  | select(.area | has($area))
+  | select((.title | has($text)) or (.body | has($text)))
+]
+| sort_by(
+    ({"in progress": 0, "next": 1, "inbox": 2, "done": 3}[.status | lc] // 4),
+    ({"high": 0, "medium": 1, "low": 2}[.priority | lc] // 3),
+    (.area | lc), (.title | lc))
+| .[]
+| if $json == "1" then .
+  else
+    "[\(.status // "no status")] \(.title)"
+    + "  (" + ([.kind, .priority, .area] | map(select(. != null and . != "")) | join(", ")) + ")"
+    + "  \(.content_id)"
+    + (if .url then "\n    \(.url)" else "" end)
+    + (if $verbose == "1" and .body != "" then "\n" + (.body | split("\n") | map("    " + .) | join("\n")) + "\n" else "" end)
+  end'
+
+raw_flag=(-r)
+[ "$json" -eq 1 ] && raw_flag=(-c)
+
+# --paginate emits one JSON document per page; jq -s gathers them into the
+# array the filter expects. (gh grew --slurp for this only in later releases.)
+gh api graphql --paginate -F number="$PROJECT" -f query="$query" \
+  | jq -s "${raw_flag[@]}" \
+      --arg status "$status" --arg priority "$priority" --arg kind "$kind" \
+      --arg area "$area" --arg text "$text" \
+      --arg all "$all" --arg verbose "$verbose" --arg json "$json" \
+      "$filter"
