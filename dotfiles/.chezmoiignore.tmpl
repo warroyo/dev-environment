@@ -72,25 +72,42 @@
 */}}
 .local/bin/claude-telegram-bot
 {{/*
-  Dev session log: the shared writer, the /log-session command, and the
-  CLAUDE.md priming note all only make sense where Claude Code itself runs.
+  The CLAUDE.md priming note for the dev log and the vault only makes sense
+  where Claude Code itself runs.
+
+  The tooling it refers to is NOT listed here, because chezmoi no longer ships
+  it: /log-session, the second-brain skill, dev-log-entry and vault-note live
+  in the second-brain repo under .tools/ and are symlinked into place by
+  link_vault_tooling (provision/lib/repos.sh), which only the server bootstrap
+  calls. That call is their role gate now.
 */}}
-.local/bin/dev-log-entry
-.claude/commands/log-session.md
 .claude/CLAUDE.md
 {{/*
-  Blog writing flow. /post-ideas and /post-brief read ~/dev-log directly and are
+  Blog writing flow. /post-ideas and /post-brief read ~/second-brain directly and are
   the private half of a split described in dot_zshenv — the public half
   (/post-scaffold, /post-ship) lives in the warroyo-blog repo and is not managed
   here at all. Same rule as the writer above: they only make sense where Claude
   Code runs.
 
   DEV_LOG_PITCHES needs no entry here. It lives in .zshenv, which has to ship
-  everywhere, and self-gates on ~/dev-log existing — a directory only ever
-  cloned on the server (provision/lib/repos.sh).
+  everywhere, and self-gates on ~/second-brain existing. That directory is now
+  cloned on every machine (provision/lib/repos.sh) — the vault itself is not
+  role-gated, only the commands above that write to it — so the variable is set
+  everywhere and simply unused where those commands do not ship.
 */}}
 .claude/commands/post-ideas.md
 .claude/commands/post-brief.md
+{{/*
+  Backlog: the backlog skill and the backlog-add / backlog-list /
+  backlog-subtask scripts it funnels through. Same rule again — a skill is only any use where Claude Code runs.
+  The whole skills directory is ignored, not just backlog/, so a restricted
+  client does not grow an empty ~/.claude/skills.
+*/}}
+.local/bin/backlog-add
+.local/bin/backlog-list
+.local/bin/backlog-subtask
+.claude/skills
+.claude/skills/**
 {{- end }}
 
 {{- if or (eq .role "server") (eq .role "personal") }}

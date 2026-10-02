@@ -5,7 +5,7 @@ argument-hint: <slug> [angle or notes]
 
 Build the brief for one post and walk its redaction list with the user.
 
-**This command is the boundary.** `~/dev-log` is private and deliberately
+**This command is the boundary.** `~/second-brain` is private and deliberately
 unfiltered — internal command output, vendor detail, half-formed notes. The blog
 is public. The brief written here is the *only* thing allowed to cross, and it
 does not cross until the user has approved every redaction. Nothing downstream
@@ -14,7 +14,7 @@ re-checks what you let through, so do not treat this as a formality.
 Slug comes from `$ARGUMENTS` (first word); anything after it is the user's own
 steer on angle, and should be honoured.
 
-1. Identify the source entries in `~/dev-log/entries/`.
+1. Identify the source entries in `~/second-brain/entries/`.
 
    The post does **not** have to have come from a `/post-ideas` survey — the user
    may simply describe what they want to write, and the words after the slug are
@@ -77,14 +77,19 @@ steer on angle, and should be honoured.
    `pitched` until every item has been answered.** If the user stops partway,
    leave `status: draft` and say which items are still open — a half-approved
    brief must not look ready to scaffold.
-6. Commit the pitch to `~/dev-log` **and push it**, matching what
+6. Commit the pitch to `~/second-brain` **and push it**, matching what
    `dev-log-entry` does for entries — best-effort, so a failed push (offline,
    no credentials) does not fail the brief:
 
    ```sh
-   git -C ~/dev-log add pitches/ && git -C ~/dev-log commit -q -m "<message>"
-   git -C ~/dev-log push -q >/dev/null 2>&1 || true
+   git -C ~/second-brain add pitches/ && git -C ~/second-brain commit -q -m "<message>"
+   git -C ~/second-brain pull -q --rebase --autostash >/dev/null 2>&1 \
+     || git -C ~/second-brain rebase --abort >/dev/null 2>&1 || true
+   git -C ~/second-brain push -q >/dev/null 2>&1 || true
    ```
+
+   The pull is there because the vault is also edited from Obsidian on the Mac,
+   so origin is often ahead and a bare push would be rejected.
 
    A pitch that only exists on one machine defeats the point — the whole flow is
    meant to be resumable from the phone. Say whether the push landed; if it did

@@ -55,8 +55,8 @@ cd ~/dev-environment
 ./provision/client-work-bootstrap.sh
 ```
 
-Installs Ghostty, Mosh, chezmoi, and VS Code via Homebrew — **no Tailscale,
-no Claude Code** — sets `claude-code.autoInstallIdeExtension: false` in VS
+Installs Ghostty, Mosh, chezmoi, gh, Obsidian, and VS Code via Homebrew — **no
+Tailscale, no Claude Code** — clones the `second-brain` vault (§7), sets `claude-code.autoInstallIdeExtension: false` in VS
 Code's settings so opening an integrated terminal there never silently
 installs the Claude Code extension, and ends with `chezmoi apply`. chezmoi
 itself runs normally here; `.chezmoiignore.tmpl` keeps `claude-session` and
@@ -252,3 +252,49 @@ There used to be a `browser-vpn` script here — an `ssh -D` SOCKS5 proxy to the
 server, driven by a browser extension. The routed path replaced it and it is
 gone. If you find a reference to it, or a Zero Omega profile still pointed at
 `127.0.0.1:1080`, both are stale.
+
+## 7. Manual: the second-brain vault in Obsidian
+
+The bootstrap installs Obsidian and `gh`, and clones the private
+`warroyo/second-brain` repo to `~/second-brain` — the same vault, at the same
+path, as on the server and the personal Air. This does not touch the "no Claude
+Code here" rule: the vault is markdown in a git repo. The commands that *write*
+dev-log entries (`dev-log-entry`, `/log-session`, `/post-brief`) are still
+server-only; here you read those entries and write your own notes.
+
+Two things are different from the personal Air, both because this machine
+already has a work identity.
+
+**The GitHub account.** The vault belongs to the personal account. If `gh` is
+already logged in to a work account, add the personal one beside it rather than
+replacing it:
+
+```sh
+gh auth login                 # github.com, HTTPS, the PERSONAL account
+gh auth status                # both accounts listed
+gh auth setup-git             # git uses gh's token for github.com
+./provision/client-work-bootstrap.sh    # the clone that warned first time now lands
+```
+
+`gh auth switch` changes which account is active. Pushes from Obsidian use the
+active one, so if a sync starts failing with a 404 on a repo that plainly
+exists, the work account is active.
+
+**The commit identity.** `~/.gitconfig.local` on this machine carries the work
+name and email, and the vault would inherit them. Set the personal identity on
+this one repo:
+
+```sh
+git -C ~/second-brain config user.name  "your-name"
+git -C ~/second-brain config user.email "your-personal-address"
+```
+
+That is repo-local, so work commits everywhere else are unaffected.
+
+Then the Obsidian side is identical to the personal Air — open
+`~/second-brain` as a vault, install the **Git** community plugin, set it to
+rebase and auto-sync. See
+[client-personal-setup.md §3b](client-personal-setup.md#3b-manual-the-second-brain-vault-in-obsidian).
+
+GitHub is reached directly, not through the OpenVPN tunnel to the server, so
+the vault syncs whether or not the VPN is up.

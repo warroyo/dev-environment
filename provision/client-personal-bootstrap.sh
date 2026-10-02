@@ -34,6 +34,9 @@ ensure_formula fzf                     fzf
 ensure_formula starship                starship
 ensure_formula zsh-autosuggestions
 ensure_formula zsh-syntax-highlighting
+# gh is what authenticates the clone of the private second-brain vault below,
+# and the pushes the Obsidian Git plugin makes from it afterwards.
+ensure_formula gh                      gh
 
 # herdr: the terminal multiplexer being A/B'd against tmux for the persistent
 # Claude Code session (see install_herdr_service in lib/herdr.sh for the server
@@ -82,6 +85,9 @@ log "Installing apps"
 ensure_cask ghostty              "Ghostty.app"
 ensure_cask visual-studio-code   "Visual Studio Code.app"
 ensure_cask font-meslo-lg-nerd-font
+# Obsidian opens ~/second-brain (cloned further down) as a vault. Both Macs get
+# it; the server is headless and only holds the clone.
+ensure_cask obsidian             "Obsidian.app"
 
 if command -v code >/dev/null 2>&1; then
   log "Installing VS Code Remote-SSH extension"
@@ -94,6 +100,16 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 # shellcheck source=lib/chezmoi-apply.sh
 source "${SCRIPT_DIR}/lib/chezmoi-apply.sh"
 apply_dotfiles personal "$REPO_ROOT"
+
+# The Obsidian vault. After apply_dotfiles so ~/.gitconfig is in place, and at
+# ~/second-brain to match the server, where dev-log-entry writes into the same
+# repo. Private, so on a first run — before `gh auth login` — this warns and
+# moves on; re-run afterwards. GIT_TERMINAL_PROMPT=0 so that case is a warning
+# rather than a username prompt in the middle of the bootstrap.
+# shellcheck source=lib/repos.sh
+source "${SCRIPT_DIR}/lib/repos.sh"
+log "Cloning the second-brain vault"
+GIT_TERMINAL_PROMPT=0 ensure_vault_repo
 
 # Split DNS for the lab's internal zone, over the tailnet.
 #

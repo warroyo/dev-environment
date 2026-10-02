@@ -698,31 +698,65 @@ codex sandbox -- /bin/true     # silence is a pass
 
 ## Dev session log
 
-A standalone, **private** `~/dev-log` git repo, pushed to a private GitHub
-repo (`warroyo/dev-log`) via the `origin` remote, collects short, curated
-notes from Claude Code sessions across every project on this machine —
-decisions, pitfalls, reusable commands, follow-ups. It's raw material for
-later blog posts and skills, not a transcript dump. See
-[`~/dev-log/README.md`](../../dev-log/README.md) for the entry format.
+`~/second-brain` is a standalone, **private** git repo, pushed to a private
+GitHub repo (`warroyo/second-brain`) via the `origin` remote. It is an Obsidian
+vault — the same repo is cloned on both Macs and opened there, see
+[client-personal-setup.md](client-personal-setup.md#3b-manual-the-second-brain-vault-in-obsidian)
+— and its `entries/` folder is the dev log: short, curated notes from Claude
+Code sessions across every project on this machine — decisions, pitfalls,
+reusable commands, follow-ups. It's raw material for later blog posts and
+skills, not a transcript dump. See `~/second-brain/README.md` for the vault
+layout and the entry format.
 
-Two chezmoi-managed, server-only files handle it, applied by
-`server-bootstrap.sh` like the rest of the dotfiles — nothing manual:
+The repo used to be `warroyo/dev-log` at `~/dev-log`. The writer and the
+variable kept their names (`dev-log-entry`, `DEV_LOG_DIR`, `DEV_LOG_PITCHES`)
+because the dev log is still what they are about; only where it lives changed.
 
-- The shared writer
-  ([`dev-log-entry`](../dotfiles/dot_local/bin/executable_dev-log-entry)),
-  invoked by...
-- ...the on-demand
-  [`/log-session`](../dotfiles/dot_claude/commands/log-session.md) command,
-  the only way entries get written.
+The tooling lives **in the vault repo**, under `~/second-brain/.tools/`, not in
+this one. The vault's README defines the layout and the frontmatter, and the
+scripts enforce them; keeping both in one repo means they change in one commit
+and cannot drift. `.tools/` is a dot-folder so Obsidian ignores it.
+
+| In the vault | Is | Reaches Claude Code as |
+|---|---|---|
+| `.tools/skills/log-session/` | the `/log-session` skill — the only way entries get written | `~/.claude/skills/log-session` |
+| `.tools/bin/dev-log-entry` | the shared writer it pipes to | `~/.local/bin/dev-log-entry` |
+| `.tools/skills/second-brain/` | the skill for `topics/`, `notes/`, `inbox/` | `~/.claude/skills/second-brain` |
+| `.tools/bin/vault-note` | its writer and linter | `~/.local/bin/vault-note` |
+
+What this repo does is make them available. `server-bootstrap.sh` clones the
+vault and then calls `link_vault_tooling` (`provision/lib/repos.sh`), which
+symlinks all four into place — the same mechanism as the `will-prose` skill.
+Nothing manual, and safe to re-run: a link pointing elsewhere is repointed, a
+real file in the way is left alone with a warning. Because they are symlinks
+into the checkout, a change to a skill or script pushed from any machine is
+live on the server at the next pull, with no bootstrap re-run.
+
+Two consequences worth knowing:
+
+- **They depend on the clone.** The vault is private and the bootstrap sets up
+  no GitHub credentials, so on a fresh machine the first run warns, links
+  nothing, and `/log-session` does not exist yet. `gh auth login`, re-run.
+  `verify-server.sh` reports each missing link as a failure until then.
+- **Role gating is the link, not chezmoi.** The Macs clone the vault too,
+  `.tools/` included, but only the server bootstrap links it, and there is no
+  Claude Code on the Macs to run it.
+
+These were chezmoi-managed files in this repo until 2026-10-02
+(`dot_local/bin/executable_dev-log-entry`, `dot_claude/commands/log-session.md`).
+`/log-session` became a skill in the move; the old command file is listed in
+`.chezmoiremove` so it cannot shadow it.
 
 Usage: run `/log-session` (optionally with a note, e.g.
 `/log-session remember the flaky DNS workaround`) at a natural stopping
 point, or when Claude proactively suggests it per the `CLAUDE.md` priming
 below. It drafts an entry from the conversation so far, derives the project
 slug from the current repo's directory name, and pipes the entry to
-`dev-log-entry`, which appends it to `entries/YYYY-MM-DD-<slug>.md`,
-commits, and pushes to `origin` — best-effort, so a write never fails just
-because the box is offline. Pushing relies on `gh` being authenticated
+`dev-log-entry`, which appends it to `entries/YYYY-MM-DD-<slug>-<session>.md`
+(adding YAML frontmatter — `type`, `project`, `date`, `session` — when it
+creates the file), commits, rebases onto `origin` and pushes — best-effort, so
+a write never fails just because the box is offline. The rebase is there
+because Obsidian on the Mac pushes to the same repo. Pushing relies on `gh` being authenticated
 (`gh auth login`); the git credential helper for `github.com`/
 `gist.github.com` is wired to `gh` in
 [`dot_gitconfig.platform.tmpl`](../dotfiles/dot_gitconfig.platform.tmpl) so
@@ -738,6 +772,80 @@ session that may never see a true "session end" — it would have fired
 (and had to be debounced) dozens of times a day. `CLAUDE.md` guidance,
 loaded automatically at the start of every session, does the same priming
 job without an event/script to maintain.
+
+### Notes in the vault
+
+The dev log is one folder of the vault. The others — `topics/`, `notes/`,
+`inbox/` — hold notes written by hand in Obsidian or by Claude Code on request,
+and those get the same treatment as entries: one script that owns the folder,
+the filename and the frontmatter, so a note written from any session in any
+repo lands where Obsidian's queries expect it.
+
+All three pieces live in the vault and are linked as described above:
+
+- `vault-note` (`.tools/bin/vault-note`) has three
+  subcommands. `new -k topic|note|inbox -t "Title"` creates a note with
+  frontmatter (`type`, `created`, `tags`, `aliases`, optional `project`) and
+  refuses to overwrite. `save <path>` lints, commits and pushes a note that was
+  edited in place. `lint` checks the whole vault — frontmatter present, `type`
+  matching the folder, kebab-case filenames, nothing at the root or in an
+  unknown folder — and is read-only.
+- The `second-brain` skill (`.tools/skills/second-brain/SKILL.md`) drives it: "make a note of that", "start a topic on X", "file my
+  inbox". It decides the folder, checks for an existing topic before creating
+  a duplicate, and keeps tasks out (those go to the backlog).
+- `~/second-brain/CLAUDE.md`, in the vault repo, is the short version of the
+  same rules for a session started inside the vault.
+
+`inbox/` is exempt from the lint on purpose: it is where a note typed straight
+into Obsidian lands (the vault's tracked `.obsidian/app.json` sets it as the
+new-note folder), and it gets its frontmatter when it is filed.
+
+`verify-server.sh` runs `vault-note lint` and warns on anything it finds.
+
+## Backlog
+
+A private, user-level GitHub Projects board holds the backlog — tech debt,
+ideas, chores, anything else. It is a project rather than a repo on purpose:
+repos here are each about one thing, and the backlog sits above all of them.
+Items are draft items, so nothing needs a repo to live in, and a draft
+converts to a real issue in any repo later if it grows a discussion.
+
+An item is a topic, not a task: the individual things to do sit inside it as
+a markdown checklist in the body. Small housekeeping (lab teardown, commit
+reminders) stays off the board.
+
+Four chezmoi-managed, server-only files, same shape as the dev log:
+
+- [`backlog-add`](../dotfiles/dot_local/bin/executable_backlog-add) creates an
+  item and sets its `Status`, `Priority`, `Kind` and `Area` fields.
+- [`backlog-list`](../dotfiles/dot_local/bin/executable_backlog-list) reads
+  the board in one GraphQL query, filtered by field or text.
+- [`backlog-subtask`](../dotfiles/dot_local/bin/executable_backlog-subtask)
+  appends a sub-task to a topic's checklist, or ticks one off.
+- The [`backlog`](../dotfiles/dot_claude/skills/backlog/SKILL.md) skill drives
+  all three: "add that to the backlog" becomes a topic or a new line in an existing
+  topic's checklist, and "what's next" or "what's open for this repo" becomes
+  a read.
+
+Bulk changes need pacing. GitHub throttles bursts of project mutations long
+before the hourly point budget is spent, and `gh project` subcommands are
+expensive per call.
+
+The script points at project number `3` under whoever `gh` is logged in as;
+override with `BACKLOG_PROJECT` and `BACKLOG_OWNER`.
+
+One manual step, once per machine: the default `gh` login does not carry the
+`project` scope.
+
+```sh
+gh auth refresh -s project
+```
+
+On this headless box that runs the device flow — it prints a one-time code to
+enter at <https://github.com/login/device> from any machine with a browser.
+
+Views (board layout, grouping) and the built-in workflows are not reachable
+through the API and have to be set up by hand in the web UI.
 
 ## Verification: automated health check
 

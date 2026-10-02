@@ -442,13 +442,72 @@ section "Blog writing flow (dev-log -> post)"
 # The clones are provisioned by lib/repos.sh, which warns rather than aborts
 # when GitHub credentials are missing — so a missing repo here is the expected
 # way that failure surfaces. See docs/blog-workflow.md.
-if [ -d "$HOME/dev-log/.git" ]; then
-  ok "~/dev-log cloned"
-  [ -d "$HOME/dev-log/pitches" ] \
-    && ok "~/dev-log/pitches exists (brief staging area)" \
-    || warn "~/dev-log/pitches missing — created by the first /post-brief"
+if [ -d "$HOME/second-brain/.git" ]; then
+  ok "~/second-brain cloned"
+  [ -d "$HOME/second-brain/pitches" ] \
+    && ok "~/second-brain/pitches exists (brief staging area)" \
+    || warn "~/second-brain/pitches missing — created by the first /post-brief"
+  # The repo was renamed from warroyo/dev-log. GitHub redirects the old URL,
+  # so a stale remote keeps working right up until something else takes the
+  # name — worth a warning, not a failure.
+  case "$(git -C "$HOME/second-brain" remote get-url origin 2>/dev/null)" in
+    *warroyo/second-brain*) ok "~/second-brain origin is warroyo/second-brain" ;;
+    *) warn "~/second-brain origin is not warroyo/second-brain — git remote set-url origin https://github.com/warroyo/second-brain.git" ;;
+  esac
 else
-  bad "~/dev-log NOT cloned — re-run server-bootstrap.sh once credentials exist"
+  bad "~/second-brain NOT cloned — re-run server-bootstrap.sh once credentials exist"
+fi
+# A real directory here is a checkout from before the rename that nothing
+# writes to any more. A symlink to ~/second-brain is fine: it is the compat
+# shim for sessions started with the old path in their environment.
+if [ -d "$HOME/dev-log" ] && [ ! -L "$HOME/dev-log" ]; then
+  warn "~/dev-log is still a real directory — the vault moved to ~/second-brain; move it (mv ~/dev-log ~/second-brain)"
+fi
+
+# The vault's own Claude Code tooling. It lives in the vault repo under .tools/
+# and reaches Claude Code only through the symlinks link_vault_tooling makes
+# (lib/repos.sh), so each is checked THROUGH its link, the same way will-prose
+# is below: a file that exists in the checkout but is not linked is invisible.
+# A real file where a link should be is the old chezmoi-deployed copy, which
+# would silently keep running after the vault's version moved on.
+VAULT_TOOLS="$HOME/second-brain/.tools"
+vault_tooling_ok=1
+for skill in log-session second-brain; do
+  link="$HOME/.claude/skills/${skill}"
+  if [ -L "$link" ] && [ "$(readlink -f "$link")" = "$(readlink -f "$VAULT_TOOLS/skills/${skill}")" ] \
+     && [ -f "$link/SKILL.md" ]; then
+    ok "${skill} skill linked into ~/.claude/skills from the vault"
+  else
+    bad "~/.claude/skills/${skill} does not point at ${VAULT_TOOLS}/skills/${skill} — re-run server-bootstrap.sh"
+    vault_tooling_ok=0
+  fi
+done
+for bin in dev-log-entry vault-note; do
+  link="$HOME/.local/bin/${bin}"
+  if [ -L "$link" ] && [ "$(readlink -f "$link")" = "$(readlink -f "$VAULT_TOOLS/bin/${bin}")" ] \
+     && [ -x "$link" ]; then
+    ok "${bin} linked onto PATH from the vault"
+  elif [ -e "$link" ] && [ ! -L "$link" ]; then
+    bad "~/.local/bin/${bin} is a real file, not a link into the vault — rm it, then re-run server-bootstrap.sh"
+    vault_tooling_ok=0
+  else
+    bad "~/.local/bin/${bin} does not point at ${VAULT_TOOLS}/bin/${bin} — re-run server-bootstrap.sh"
+    vault_tooling_ok=0
+  fi
+done
+# /log-session used to be a chezmoi-managed command. Left behind, it and the
+# skill of the same name would both answer to /log-session.
+[ -e "$HOME/.claude/commands/log-session.md" ] \
+  && bad "~/.claude/commands/log-session.md still exists — it moved into the vault as a skill; run 'chezmoi apply'"
+
+# The lint is a warning: a note typed into Obsidian on a Mac and left without
+# frontmatter is something to tidy, not a broken server.
+if [ "$vault_tooling_ok" -eq 1 ]; then
+  if lint_out="$("$HOME/.local/bin/vault-note" lint 2>&1)"; then
+    ok "vault-note lint: every note has its metadata and is in the right folder"
+  else
+    warn "vault-note lint found $(printf '%s\n' "$lint_out" | grep -c .) problem(s) — run 'vault-note lint'"
+  fi
 fi
 
 # Must be under ~/workspace specifically: that is where claude-telegram-bot
@@ -485,6 +544,24 @@ for cmd in post-ideas post-brief; do
     || bad "/${cmd} MISSING — run 'chezmoi apply'"
 done
 
+# Backlog capture. The scope is a warning, not a failure: it needs a browser
+# approval that bootstrap cannot do, and nothing else on the box depends on it.
+backlog_ok=1
+[ -f "$HOME/.claude/skills/backlog/SKILL.md" ] || backlog_ok=0
+for bin in backlog-add backlog-list backlog-subtask; do
+  [ -x "$HOME/.local/bin/${bin}" ] || backlog_ok=0
+done
+if [ "$backlog_ok" -eq 1 ]; then
+  ok "backlog skill + backlog-add/-list/-subtask applied"
+else
+  bad "backlog skill or one of its scripts MISSING — run 'chezmoi apply'"
+fi
+if gh auth status 2>&1 | grep -q "'project'"; then
+  ok "gh token carries the project scope"
+else
+  warn "gh token lacks the project scope — run 'gh auth refresh -s project'"
+fi
+
 # Checked NON-interactively on purpose, and this is the whole point of the
 # check: it lives in .zshenv rather than a .zshrc fragment because herdr starts
 # `claude` under systemd, which never reads .zshrc. If this only passed under
@@ -492,10 +569,10 @@ done
 BLOG_ENV="$(zsh -c 'printf %s "${DEV_LOG_PITCHES:-}"' 2>/dev/null)"
 if [ -n "$BLOG_ENV" ]; then
   ok "DEV_LOG_PITCHES set non-interactively ($BLOG_ENV)"
-elif [ ! -d "$HOME/dev-log" ]; then
-  warn "DEV_LOG_PITCHES unset because ~/dev-log is missing — clone it first"
+elif [ ! -d "$HOME/second-brain" ]; then
+  warn "DEV_LOG_PITCHES unset because ~/second-brain is missing — clone it first"
 else
-  bad "DEV_LOG_PITCHES not set despite ~/dev-log existing — check ~/.zshenv"
+  bad "DEV_LOG_PITCHES not set despite ~/second-brain existing — check ~/.zshenv"
 fi
 
 # ---------------------------------------------------------------------------

@@ -52,6 +52,11 @@ ensure_formula fzf                     fzf
 ensure_formula starship                starship
 ensure_formula zsh-autosuggestions
 ensure_formula zsh-syntax-highlighting
+# gh authenticates the clone of the private second-brain vault below, and the
+# pushes the Obsidian Git plugin makes from it. The probe matters here: a work
+# laptop may well already have gh, logged in to a work account — see
+# docs/client-work-setup.md §7 for adding the personal one alongside it.
+ensure_formula gh                      gh
 
 # herdr, for the same reason mosh is here and by the same rule as
 # claude-attach: it is a multiplexer client that draws terminals owned by the
@@ -82,6 +87,12 @@ log "Installing apps"
 ensure_cask ghostty              "Ghostty.app"
 ensure_cask visual-studio-code   "Visual Studio Code.app"
 ensure_cask font-meslo-lg-nerd-font
+# Obsidian opens ~/second-brain (cloned further down) as a vault. Notes are not
+# Claude Code: the vault is plain markdown in a git repo, and nothing about
+# reading or writing it here touches constraint #1. What stays server-only is
+# the tooling that WRITES to it from Claude Code (.tools/ in the vault), which
+# is only ever linked into place by the server bootstrap.
+ensure_cask obsidian             "Obsidian.app"
 
 # The "never auto-install the Claude Code IDE extension" guard is NOT patched
 # in here. chezmoi copies the managed dot_config/vscode/settings.json over the
@@ -99,6 +110,19 @@ source "${SCRIPT_DIR}/lib/chezmoi-apply.sh"
 # the VS Code auto-install guard. No hostname has to match for this to work —
 # and an unset role falls back to "restricted", which resolves identically.
 apply_dotfiles work "$REPO_ROOT"
+
+# The Obsidian vault, at ~/second-brain like on the other two machines. After
+# apply_dotfiles so ~/.gitconfig is in place. Private, so before `gh auth
+# login` with the personal account this warns and moves on; re-run afterwards.
+# GIT_TERMINAL_PROMPT=0 so that case is a warning rather than a username prompt
+# in the middle of the bootstrap.
+#
+# Only ensure_vault_repo is called. ensure_work_repos — the blog and the
+# will-prose skill — stays server-only.
+# shellcheck source=lib/repos.sh
+source "${SCRIPT_DIR}/lib/repos.sh"
+log "Cloning the second-brain vault"
+GIT_TERMINAL_PROMPT=0 ensure_vault_repo
 
 # Split DNS for the lab's internal zone. This machine is the one that actually
 # needs it: it reaches the lab over Teleport, through the routing the server

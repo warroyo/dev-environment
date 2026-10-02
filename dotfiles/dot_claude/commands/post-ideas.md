@@ -1,5 +1,5 @@
 ---
-description: Survey ~/dev-log for post-worthy material, or find what supports a post you already want to write
+description: Survey ~/second-brain for post-worthy material, or find what supports a post you already want to write
 argument-hint: [description of the post you want]
 ---
 
@@ -16,9 +16,9 @@ follow *Directed mode* at the bottom instead. The description may be loose — "
 thing about tokens meaning different things", "that networking mess from a couple
 weeks back" — so search on substance, not keywords, and say what you matched.
 
-1. Read every entry in `~/dev-log/entries/*.md`. See `~/dev-log/README.md` for
+1. Read every entry in `~/second-brain/entries/*.md`. See `~/second-brain/README.md` for
    the entry format.
-2. Read every pitch in `$DEV_LOG_PITCHES` (`~/dev-log/pitches/*.md`) and collect
+2. Read every pitch in `$DEV_LOG_PITCHES` (`~/second-brain/pitches/*.md`) and collect
    the entries named in their `sources:` lists. Those have already been claimed
    — exclude them, and say how many you skipped so it's clear nothing vanished
    silently.

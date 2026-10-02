@@ -19,3 +19,15 @@
 # hatch, so this one is a second name for the same thing.
 # Removed 2026-08-19. See docs/server-setup.md.
 .local/bin/claude-attach-herdr
+
+# /log-session as a chezmoi-managed COMMAND. It moved into the second-brain
+# vault as a skill (.tools/skills/log-session, linked into ~/.claude/skills by
+# provision/lib/repos.sh). Left on disk, the command and the skill would both
+# answer to /log-session and the stale one would keep working.
+# Removed 2026-10-02. See docs/server-setup.md.
+#
+# Deliberately NOT listed: .local/bin/dev-log-entry and .local/bin/vault-note.
+# Those paths are still in use — as symlinks into the vault — and an entry here
+# would delete the symlinks on every apply. link_bin in repos.sh warns about a
+# leftover real file at either path instead.
+.claude/commands/log-session.md

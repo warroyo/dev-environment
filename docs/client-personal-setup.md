@@ -12,7 +12,7 @@ cd ~/dev-environment
 ./provision/client-personal-bootstrap.sh
 ```
 
-Installs Tailscale, Ghostty, Mosh, chezmoi, and VS Code + the Remote-SSH
+Installs Tailscale, Ghostty, Mosh, chezmoi, gh, Obsidian, and VS Code + the Remote-SSH
 extension via Homebrew, and ends by applying the dotfiles
 (`chezmoi init --apply`).
 
@@ -114,6 +114,39 @@ with a `Host claude-server` entry pointing at the server's Tailscale
 hostname (`dotfiles/private_dot_ssh/private_config.tmpl`). Open the command palette →
 "Remote-SSH: Connect to Host..." → `claude-server` should already be listed
 with no further config.
+
+## 3b. Manual: the second-brain vault in Obsidian
+
+The bootstrap installs Obsidian and `gh`, and clones the private
+`warroyo/second-brain` repo to `~/second-brain`. The clone needs GitHub
+credentials the script does not set up, so on a first run it prints a warning
+and carries on. Log in, wire git to `gh`, and re-run:
+
+```sh
+gh auth login                 # HTTPS, authenticate in the browser
+gh auth setup-git             # git pushes from Obsidian use the gh token
+./provision/client-personal-bootstrap.sh
+```
+
+Then, once:
+
+1. Obsidian → **Open folder as vault** → `~/second-brain`.
+2. Settings → Community plugins → turn on community plugins → install and
+   enable **Git** (`obsidian-git`).
+3. In the Git plugin settings, set **Auto commit-and-sync interval** (10
+   minutes is fine), turn on **Pull on startup**, and set **Sync method** to
+   **Rebase**.
+
+Rebase matters because the vault has two writers. The server's
+`dev-log-entry` commits a session entry to `entries/` and pushes; the Mac
+pushes whatever you wrote by hand. Both rebase onto `origin` before pushing,
+so neither needs the other to be idle. Per-machine UI state
+(`.obsidian/workspace*.json`) is in the vault's `.gitignore`, so the two never
+conflict over which pane was open.
+
+`entries/` and `pitches/` belong to the Claude Code commands on the server —
+read them in Obsidian, link to them, but write your own notes in `topics/`,
+`notes/` and `inbox/`. The layout is in `~/second-brain/README.md`.
 
 ## 4. Try it
 

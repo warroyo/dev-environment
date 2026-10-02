@@ -1,6 +1,6 @@
 # Blog workflow: dev-log entry → published post
 
-Turning raw session material in `~/dev-log` into a post on
+Turning raw session material in `~/second-brain` into a post on
 [blog.warroyo.com](https://blog.warroyo.com/), without the agent writing the
 prose and without the private log leaking into a public repo.
 
@@ -25,7 +25,7 @@ Steps 1–2 run anywhere on the server. Steps 3 and 6 run inside
 
 ## Why it is split across two repos
 
-`~/dev-log` is private and deliberately unfiltered — internal command output,
+`~/second-brain` is private and deliberately unfiltered — internal command output,
 cluster names, vendor detail, half-formed notes. `warroyo-blog` is public. The
 two commands that read the log stay private; the two that only know Hugo are
 committed to the blog repo itself.
@@ -35,7 +35,7 @@ committed to the blog repo itself.
 | `/post-ideas`, `/post-brief` | this repo, `dotfiles/dot_claude/commands/` | Read the private log. Role-gated to the server in `.chezmoiignore.tmpl` |
 | `DEV_LOG_PITCHES` | this repo, `dotfiles/dot_zshenv` | Lets the public commands find the brief without hard-coding the private path |
 | repo clones | this repo, `provision/lib/repos.sh` | Both repos are infrastructure, not incidental checkouts |
-| `pitches/` staging | the `dev-log` repo | Private by construction |
+| `pitches/` staging | the `second-brain` repo | Private by construction |
 | `/post-scaffold`, `/post-ship`, `blog-style.md` | the `warroyo-blog` repo | Only know Hugo. Public is fine, and they travel with the site they describe |
 | `will-prose` skill | its own private repo, cloned to `~/workspace/will-prose` and symlinked to `~/.claude/skills/will-prose` | Voice rules and a corpus of past posts. Available in every session, editable like any other repo |
 
@@ -92,7 +92,7 @@ and `localhost:1313` is no use from a phone regardless.
 ## Setup
 
 `server-bootstrap.sh` clones all three repos (`provision/lib/repos.sh`). It sets
-up no GitHub credentials of its own, so on a fresh machine the private `dev-log`
+up no GitHub credentials of its own, so on a fresh machine the private `second-brain`
 and `will-prose` clones will fail with a warning rather than aborting the run —
 run `gh auth login`, then re-run. `verify-server.sh` reports anything that did
 not land.
