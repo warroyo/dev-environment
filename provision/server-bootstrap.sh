@@ -29,9 +29,14 @@ else
   SUDO="sudo"
 fi
 
+# unattended-upgrades holds the dpkg lock for minutes at a time and fires on
+# its own timer, so a re-run can land in the middle of one. Wait for the lock
+# rather than dying halfway through the script.
+APT_GET="$SUDO apt-get -o DPkg::Lock::Timeout=600"
+
 # ---------------------------------------------------------------------------
 log "Updating apt package index"
-$SUDO apt-get update -qq
+$APT_GET update -qq
 
 log "Installing base packages"
 # zsh: the shell dot_zshrc.tmpl targets — without it the server never reads
@@ -41,7 +46,7 @@ log "Installing base packages"
 # zsh-autosuggestions / zsh-syntax-highlighting: without these (and starship
 # below) a fresh zsh gives you the bare `hostname%` default prompt, which is
 # a downgrade from Ubuntu's stock bash.
-$SUDO apt-get install -y --no-install-recommends \
+$APT_GET install -y --no-install-recommends \
   zsh zsh-autosuggestions zsh-syntax-highlighting \
   tmux git curl wget ca-certificates gnupg build-essential \
   mosh ripgrep fd-find bat fzf
@@ -55,8 +60,8 @@ if ! command -v eza >/dev/null 2>&1; then
   echo "deb [signed-by=/etc/apt/keyrings/gierens.gpg] http://deb.gierens.de stable main" \
     | $SUDO tee /etc/apt/sources.list.d/gierens.list >/dev/null
   $SUDO chmod 644 /etc/apt/keyrings/gierens.gpg /etc/apt/sources.list.d/gierens.list
-  $SUDO apt-get update -qq
-  $SUDO apt-get install -y eza
+  $APT_GET update -qq
+  $APT_GET install -y eza
 else
   log "eza already installed"
 fi
@@ -268,7 +273,7 @@ fi
 log "Installing Node.js"
 if ! command -v node >/dev/null 2>&1; then
   curl -fsSL https://deb.nodesource.com/setup_lts.x | $SUDO -E bash -
-  $SUDO apt-get install -y nodejs
+  $APT_GET install -y nodejs
 else
   log "Node.js already installed ($(node --version))"
 fi
@@ -352,8 +357,8 @@ if ! command -v terraform >/dev/null 2>&1; then
     | $SUDO gpg --dearmor -o /etc/apt/keyrings/hashicorp-archive-keyring.gpg
   echo "deb [signed-by=/etc/apt/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" \
     | $SUDO tee /etc/apt/sources.list.d/hashicorp.list >/dev/null
-  $SUDO apt-get update -qq
-  $SUDO apt-get install -y terraform
+  $APT_GET update -qq
+  $APT_GET install -y terraform
 else
   log "Terraform already installed ($(terraform version | head -n1))"
 fi
@@ -447,7 +452,7 @@ log "Setting up the second (unrelated) OpenVPN environment on the host"
 # openvpn-systemd-resolved ships update-systemd-resolved, which is what applies
 # the tunnel's pushed DNS. Without it the tunnel comes up fine and internal
 # names still do not resolve — see the drop-in further down.
-$SUDO apt-get install -y --no-install-recommends openvpn openvpn-systemd-resolved
+$APT_GET install -y --no-install-recommends openvpn openvpn-systemd-resolved
 
 OVPN_CONF="/etc/openvpn/client/client-env.conf"
 LEGACY_GLUETUN_DIR="/opt/claude-env-vpn"
@@ -863,7 +868,7 @@ server=/${LAB_ZONE}/${LAB_DNS}
 cache-size=1000
 EOF
 
-$SUDO apt-get install -y --no-install-recommends dnsmasq
+$APT_GET install -y --no-install-recommends dnsmasq
 $SUDO systemctl enable dnsmasq >/dev/null 2>&1 || true
 # restart, not start: picks up an edited config on a re-run.
 $SUDO systemctl restart dnsmasq || \
