@@ -217,6 +217,12 @@ the tailnet needs no defence against port-53 interception (those queries ride
 inside WireGuard): one dnsmasq holds one port, and a second instance on 53
 would buy nothing.
 
+Names the lab resolver does not have go in
+[`provision/lab-hosts`](../provision/lab-hosts), in `/etc/hosts` layout.
+`server-bootstrap.sh` renders each line as a dnsmasq `host-record`, so every
+client gets the name with no change on the client side. This box's own
+`/etc/hosts` stays out of it (`no-hosts`): an entry there resolves only here.
+
 Pointing at `172.21.0.90:53` directly is what it did first, and it failed the
 moment the laptop sat behind a gateway that DNAT's all port-53 traffic to
 itself — the route was intact and traceroute proved it, but traceroute never

@@ -841,6 +841,19 @@ else
   bad "nothing is listening on UDP ${LAB_DNS_PORT}"
 fi
 
+# Local records from provision/lab-hosts. These need no tunnel, so a failure
+# here is dnsmasq or a stale config, never the lab resolver.
+if [ -f "$DNSMASQ_CONF" ] && command -v dig >/dev/null 2>&1; then
+  while IFS=, read -r name addr; do
+    if dig +short +time=3 +tries=1 -p "$LAB_DNS_PORT" @127.0.0.1 "$name" \
+         2>/dev/null | grep -qx "$addr"; then
+      ok "local record ${name} -> ${addr}"
+    else
+      bad "local record ${name} does not answer ${addr} — re-run server-bootstrap.sh"
+    fi
+  done < <(sed -n 's/^[[:space:]]*host-record=//p' "$DNSMASQ_CONF")
+fi
+
 # The end-to-end question, and the only one that catches a tunnel that is up
 # but no longer carrying the lab resolver.
 if ip link show tun0 >/dev/null 2>&1; then

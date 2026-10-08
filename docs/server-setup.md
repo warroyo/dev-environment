@@ -335,6 +335,23 @@ Teleport clients and answered by it, which reads as a broken route until you
 notice the reply arrives faster than the real resolver could send it. Full
 write-up in `docs/client-work-setup.md` §6.
 
+### Adding a lab name the lab resolver doesn't have
+
+Don't put it in `/etc/hosts`. dnsmasq runs with `no-hosts`, so an entry there
+resolves on this box and nowhere else. Instead:
+
+1. Add a line to `provision/lab-hosts`, in `/etc/hosts` layout
+   (`10.47.7.47   git.gpu.set.lab`). The name must be inside `set.lab`, and the
+   address should be inside `10.47.0.0/16` so clients have a route to it.
+2. Re-run `server-bootstrap.sh`. It renders each line as a `host-record=` in
+   `/etc/dnsmasq.d/lab-split-dns.conf` and restarts dnsmasq.
+3. Run `verify-server.sh`. It checks every record under "Split DNS for
+   set.lab".
+
+The clients need no change, since they already send all of `set.lab` here. To
+remove a name, delete its line and re-run. The conf is regenerated, so nothing
+stale is left behind.
+
 The client side is manual and lives in `docs/client-work-setup.md` §6: a static
 route for `10.47.0.0/16` on the UDM SE pointing at this box, and a
 `/etc/resolver/set.lab` entry on the laptop.

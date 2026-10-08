@@ -836,6 +836,28 @@ else
   log "  script after 'sudo tailscale up'."
 fi
 
+# Local records from provision/lab-hosts, for names the lab resolver does not
+# have. dnsmasq answers these itself and forwards every other set.lab name.
+#
+# host-record rather than dropping no-hosts or adding addn-hosts: this box's
+# own /etc/hosts stays out of DNS, and the records live in the one generated
+# file, so a removed line is gone on the next run instead of lingering in a
+# second file nothing cleans up. A name outside the zone is skipped, because
+# clients only send set.lab here and the record would never be asked for.
+LAB_HOSTS_FILE="${SCRIPT_DIR}/lab-hosts"
+LAB_HOST_RECORDS=""
+if [ -f "$LAB_HOSTS_FILE" ]; then
+  while read -r addr names; do
+    case "$addr" in ''|'#'*) continue ;; esac
+    for name in ${names%%#*}; do
+      case "$name" in
+        *."${LAB_ZONE}") LAB_HOST_RECORDS+="host-record=${name},${addr}"$'\n' ;;
+        *) log "  WARNING: ${name} in lab-hosts is outside ${LAB_ZONE}, skipping" ;;
+      esac
+    done
+  done < "$LAB_HOSTS_FILE"
+fi
+
 # The config is written BEFORE the package is installed, deliberately. Ubuntu's
 # dnsmasq starts on install with an empty config, which means port 53 on the
 # wildcard address — and that collides with systemd-resolved's 127.0.0.53:53
@@ -865,6 +887,8 @@ no-resolv
 no-hosts
 server=/${LAB_ZONE}/${LAB_DNS}
 
+# Local records, generated from provision/lab-hosts — edit that file, not these.
+${LAB_HOST_RECORDS}
 cache-size=1000
 EOF
 
