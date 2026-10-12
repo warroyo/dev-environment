@@ -864,6 +864,44 @@ enter at <https://github.com/login/device> from any machine with a browser.
 Views (board layout, grouping) and the built-in workflows are not reachable
 through the API and have to be set up by hand in the web UI.
 
+## Lab credentials
+
+Lab logins expire. A `kubectl` session on the Supervisor lasts hours, so most
+mornings start with `You must be logged in to the server`, and an agent that
+hits it cannot type a password into the `vcf` prompt.
+
+The logins live in one file, `~/.lab.env`, mode 600 and never in git: vCenter
+(which is also the Supervisor login), the VCF Automation provider
+administrator, and the API token of the VCF Automation tenant org. One file
+in the home directory, so no repo has to be found first.
+
+Three chezmoi-managed files, in
+[`dotfiles/dot_claude/skills/lab-creds/`](../dotfiles/dot_claude/skills/lab-creds):
+
+- [`lab.env.example`](../dotfiles/dot_claude/skills/lab-creds/lab.env.example)
+  is the template. The hosts and usernames are filled in, the secrets are
+  blank.
+- [`refresh.sh`](../dotfiles/dot_claude/skills/lab-creds/executable_refresh.sh)
+  checks the `sup-gpu` and `vcfa` contexts and logs back in to the one that
+  has expired. It hands the secret to `vcf context refresh` in
+  `VCF_CLI_VSPHERE_PASSWORD` or `VCF_CLI_VCFA_API_TOKEN`, which the CLI reads
+  in place of its prompt.
+- The [`lab-creds`](../dotfiles/dot_claude/skills/lab-creds/SKILL.md) skill
+  triggers on the login errors, runs the script, and says how to reach the
+  vCenter and VCF Automation APIs without printing a secret.
+
+Manual, once per machine:
+
+```sh
+cp ~/.claude/skills/lab-creds/lab.env.example ~/.lab.env
+chmod 600 ~/.lab.env
+$EDITOR ~/.lab.env        # fill in the three secrets
+~/.claude/skills/lab-creds/refresh.sh
+```
+
+Both contexts must already exist (`vcf context create`); the script refreshes
+a login, it does not create one.
+
 ## Verification: automated health check
 
 ```sh
