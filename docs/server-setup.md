@@ -29,8 +29,9 @@ group membership doesn't apply to your current shell session until you log
 out and back in — the script uses `sudo docker` internally to work around
 that, but your own `docker` commands will need a fresh login.
 
-The script now also installs the Claude Code CLI and the Codex CLI, applies
-the dotfiles via chezmoi, installs the tmux plugins, and sets up the
+The script now also installs the Claude Code CLI and the Codex CLI, installs
+OpenAI's Codex plugin for Claude Code (`codex@openai-codex`, which gives
+`/codex:review`, `/codex:rescue` and friends), applies the dotfiles via chezmoi, installs the tmux plugins, and sets up the
 persistent herdr session — those are no longer separate manual steps.
 
 ## 2. Authenticate the Claude Code and Codex CLIs

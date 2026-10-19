@@ -417,6 +417,29 @@ ensure_codex_cli || true
 install_codex_bwrap_apparmor
 
 # ---------------------------------------------------------------------------
+# OpenAI's Codex plugin for Claude Code (/codex:review, /codex:rescue, ...).
+# This is how Claude Code reaches Codex now: `codex mcp-server` was removed in
+# Codex CLI 0.154.0, so the old `claude mcp add codex -- codex mcp-server`
+# registration no longer starts.
+#
+# The marketplace is added by HTTPS URL, not `openai/codex-plugin-cc`: the
+# GitHub shorthand clones over SSH, which fails on a fresh server before its
+# GitHub key is set up. `plugin install` is already a no-op when the plugin
+# is installed. The plugin drives the Codex CLI, so `codex login` (manual,
+# docs/server-setup.md) still has to happen before it does anything.
+log "Installing the Codex plugin for Claude Code"
+if command -v claude >/dev/null 2>&1; then
+  if ! claude plugin marketplace list 2>/dev/null | grep -q 'openai/codex-plugin-cc'; then
+    claude plugin marketplace add https://github.com/openai/codex-plugin-cc.git \
+      || log "WARNING: adding the openai-codex marketplace failed."
+  fi
+  claude plugin install codex@openai-codex \
+    || log "WARNING: installing codex@openai-codex failed — re-run this script."
+else
+  log "WARNING: 'claude' is not on PATH — skipping the Codex plugin."
+fi
+
+# ---------------------------------------------------------------------------
 # Second (unrelated) OpenVPN environment — runs directly on the host under
 # systemd.
 #
