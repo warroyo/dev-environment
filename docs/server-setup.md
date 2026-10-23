@@ -903,6 +903,20 @@ $EDITOR ~/.lab.env        # fill in the three secrets
 Both contexts must already exist (`vcf context create`); the script refreshes
 a login, it does not create one.
 
+## GitHub repo conventions
+
+The [`github-repo`](../dotfiles/dot_claude/skills/github-repo/SKILL.md) skill
+holds how a personal repo is laid out and documented. The README has a badge
+line, then Overview, How it works, Quick start and Repo structure, and nothing
+else. Depth goes under `docs/` (architecture, decisions, FAQ, configuration,
+upgrading, development). It has one status badge per workflow and a release
+badge per release train.
+
+It applies only to repos owned by the `warroyo` GitHub account. The skill
+checks the remote's owner first and leaves shared orgs such as
+`modern-apps-5` alone. The first repo laid out this way is
+warroyo/platform-observability-addon.
+
 ## Verification: automated health check
 
 ```sh
