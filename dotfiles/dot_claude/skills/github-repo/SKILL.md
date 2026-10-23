@@ -65,8 +65,10 @@ Directly under the title, one line, no others:
   `[![release](https://img.shields.io/github/v/release/<owner>/<repo>?sort=semver)](https://github.com/<owner>/<repo>/releases)`
 - several release trains distinguished by tag prefix (e.g. `onboarder-v*`):
   one badge per train with `filter`, e.g. `?filter=onboarder-v*&sort=semver`.
-- a published helm chart repo with no GitHub release: a shields `dynamic/yaml`
-  badge on the chart's `index.yaml`, query `$.entries.<chart>[0].version`.
+- a helm chart: publish it to OCI on GitHub Packages (`helm push` to
+  `oci://ghcr.io/<owner>/<repo>/charts`), not a GitHub Pages index, and have
+  the release workflow create a GitHub release `<chart>-<version>` per version,
+  so the chart gets a release badge with `filter=<chart>-*`.
 
 Check every badge URL resolves (`curl -sI`) before committing.
 
