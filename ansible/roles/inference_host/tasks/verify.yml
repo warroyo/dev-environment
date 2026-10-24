@@ -8,7 +8,8 @@
     echo "MemTotal: $(awk '/MemTotal/ {printf "%d GiB", $2/1048576}' /proc/meminfo)"
     command -v vulkaninfo >/dev/null && vulkaninfo --summary 2>/dev/null | awk -F= '/deviceName/ {print "Vulkan:" $2}'
     command -v llama-server >/dev/null && echo "llama.cpp: $(readlink -f "$(command -v llama-server)")"
-    systemctl is-active gufo.service 2>/dev/null | sed 's/^/gufo: /' || true
+    echo "llama-swap: $(systemctl is-active llama-swap.service 2>/dev/null)"
+    curl -s --max-time 3 "http://$(tailscale ip -4):{{ llama_swap_port }}/running" | sed 's/^/running: /' || true
   register: inference_state
   args:
     executable: /bin/bash

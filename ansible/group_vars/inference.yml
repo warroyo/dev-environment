@@ -30,12 +30,42 @@ inference_models:
     include:
       - "Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf"               # 21.2 GiB
 
-# Flash-Next with the MTP draft, 2 sessions. Off until the llama.cpp baseline
-# and the 30-minute thermal test pass (setup steps 6 and 7).
-gufo_enabled: false
-gufo_model: qwen3.8-flash-next/UD-Q4_K_XL/Qwen3.8-Flash-Next-UD-Q4_K_XL-00001-of-00004.gguf
-gufo_args:
-  - --speculative mtp
-  - --mtp-model /models/qwen3.8-flash-next/MTP/mtp-Qwen3.8-Flash-Next-shared-Q8_0.gguf
-  - --sessions 2
-  - --context 131072
+# What llama-swap serves. Clients send these names as `model`.
+# Flash-Next fills the box, so it runs alone. The two small models fit together
+# (~31 + ~21 GiB of weights) and stay loaded side by side.
+llama_swap_groups:
+  big:
+    swap: true
+    exclusive: true
+  small:
+    swap: false
+    exclusive: true
+
+llama_swap_models:
+  qwen3.8-flash-next:
+    engine: gufo
+    group: big
+    model: qwen3.8-flash-next/UD-Q4_K_XL/Qwen3.8-Flash-Next-UD-Q4_K_XL-00001-of-00004.gguf
+    args:
+      - --speculative mtp
+      - --mtp-model /models/qwen3.8-flash-next/MTP/mtp-Qwen3.8-Flash-Next-shared-Q8_0.gguf
+      - --sessions 2
+      - --context 131072
+  qwen3.8-27b:
+    engine: gufo
+    group: small
+    model: qwen3.8-27b/Qwen3.8-27B-UD-Q8_K_XL.gguf
+    args:
+      - --speculative dflash2
+      - --dflash-model /models/qwen3.8-27b-dflash2/Qwen3.8-27B-DFlash2-Q4_K_M.gguf
+      - --sessions 2
+      - --context 65536
+  qwen3.6-35b-a3b:
+    engine: llama.cpp
+    group: small
+    model: qwen3.6-35b-a3b/Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf
+    args:
+      - --spec-type draft-mtp
+      - --parallel 2
+      - --ctx-size 131072
+      - --jinja

@@ -61,9 +61,30 @@ inference_model_download_hours: 6
 # --- Gufo ----------------------------------------------------------------------
 # Pre-1.0 and released almost daily: pin tag and digest, never :latest.
 gufo_image: ghcr.io/gufo-org/toolboxes/gufo-runtime:0.23.0@sha256:ec8c3f0bf06100304f5105590cfe98d62bf21ff133e8c2dea95955eb4028ddb2
-gufo_port: 8080
-# false: image pulled and quadlet written, but the service is not started.
-gufo_enabled: false
-# Path under models_dir to the model (the first shard of a split GGUF).
-gufo_model: ""
-gufo_args: []
+
+# --- llama-swap: the one endpoint, swapping models on request ------------------
+# Each request names a model; llama-swap starts its engine (a Gufo container or
+# llama-server) and stops whatever the model's group says must make room.
+llama_swap_version: "266"
+llama_swap_sha256: 7daa0170f997c1e60ebc749e8cb13f4ae9966fd73e9d5fca334770dcce5c4ab5
+# Listens on the tailnet address only: neither llama-swap nor the engines
+# authenticate, so the tailnet policy is the access control.
+llama_swap_port: 8080
+# false: installed and configured, but not running.
+llama_swap_enabled: true
+# Seconds a model may take to become healthy. Flash-Next reads ~104 GiB.
+llama_swap_health_timeout: 900
+# Idle seconds before a model unloads; 0 keeps it loaded until swapped out.
+llama_swap_ttl: 0
+
+# Models llama-swap serves, keyed by the model name clients send. Each entry:
+#   engine: gufo | llama.cpp
+#   model:  path under inference_models_dir (the first shard of a split GGUF)
+#   group:  a key of llama_swap_groups
+#   args:   extra engine arguments, one per item
+llama_swap_models: {}
+# Groups decide what runs together. swap: false lets every member stay loaded
+# at once; exclusive: true unloads every other group when a member starts.
+llama_swap_groups: {}
+# Models to load when llama-swap starts. Empty: nothing loads until requested.
+llama_swap_preload: []

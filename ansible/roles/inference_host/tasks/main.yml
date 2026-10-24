@@ -14,9 +14,9 @@
   ansible.builtin.import_tasks: models.yml
   tags: [models]
 
-- name: Gufo
-  ansible.builtin.import_tasks: gufo.yml
-  tags: [gufo]
+- name: Model serving with llama-swap
+  ansible.builtin.import_tasks: serve.yml
+  tags: [serve]
 
 - name: Report
   ansible.builtin.import_tasks: verify.yml
