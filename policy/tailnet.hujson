@@ -31,7 +31,10 @@
 		{"src": ["autogroup:member"], "dst": ["*"], "ip": ["*"]},
 	],
 
-	// Rules are matched in order; the first one that matches wins.
+	// Keep the user lists of these rules disjoint. When an accept rule and a
+	// check rule both match a login, the check wins, whatever the order:
+	// with autogroup:nonroot in the check rule, `agent` got a browser check
+	// too (2026-10-24).
 	"ssh": [
 		// Routine agent work: logs, service status, restarting the agent's own
 		// user services. No sudo on that account.
@@ -41,14 +44,14 @@
 			"dst":    ["tag:lab"],
 			"users":  ["agent"],
 		},
-		// Anything else, your own account included, needs a fresh browser
-		// login. The ssh session prints the URL and waits; once you approve,
-		// the same source is trusted for checkPeriod.
+		// Your own account needs a fresh browser login. The ssh session prints
+		// the URL and waits; once you approve, the same source is trusted for
+		// checkPeriod. No other account on a target is reachable at all.
 		{
 			"action":      "check",
 			"src":         ["autogroup:member"],
 			"dst":         ["tag:lab"],
-			"users":       ["autogroup:nonroot"],
+			"users":       ["warroyo"],
 			"checkPeriod": "12h",
 		},
 		// Tailscale's default: SSH between your own untagged devices.

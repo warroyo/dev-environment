@@ -22,7 +22,7 @@ server (untagged, yours)                       target (tag:lab)
   - `agent`: no password, no sudo, in `systemd-journal` and `adm` so it can
     read logs, with lingering on so its own user services outlive a session.
     Accepted with no prompt.
-  - your own account: has sudo, and needs a Tailscale **check**. The first
+  - your own account (named in the policy's check rule): has sudo, and needs a Tailscale **check**. The first
     connection prints a login URL and waits. Opening it is the approval, and
     it holds for 12 hours.
 - **Targets are tagged.** A tag takes the machine out of your ownership, so it
