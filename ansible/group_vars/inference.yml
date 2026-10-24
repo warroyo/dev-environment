@@ -4,8 +4,9 @@
 inference_gpu_users:
   - "{{ lookup('env', 'USER') }}"
 
-# Revisions are the ones Gufo's own model guides pin. Qwen3.6 35B-A3B, the third
-# candidate, is not pinned yet.
+# The Qwen3.8 revisions are the ones Gufo's own model guides pin. Qwen3.6
+# 35B-A3B is not a Gufo model, so it runs on the llama.cpp build; its GGUF
+# carries the MTP head.
 inference_models:
   - name: qwen3.8-flash-next
     repo: unsloth/Qwen3.8-Flash-Next-GGUF
@@ -23,6 +24,11 @@ inference_models:
     revision: 2d9571f8ce46e151f61c6499c99dee6079e1d610
     include:
       - "Qwen3.8-27B-DFlash2-Q4_K_M.gguf"
+  - name: qwen3.6-35b-a3b
+    repo: unsloth/Qwen3.6-35B-A3B-MTP-GGUF
+    revision: 5bc3e238d916f48a861bac2f8a1990a0e9b7e98d
+    include:
+      - "Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf"               # 21.2 GiB
 
 # Flash-Next with the MTP draft, 2 sessions. Off until the llama.cpp baseline
 # and the 30-minute thermal test pass (setup steps 6 and 7).
