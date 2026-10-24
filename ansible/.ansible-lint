@@ -1,0 +1,5 @@
+---
+# Role variables keep the shorter inference_/gufo_/llama_cpp_ prefixes, which
+# read better in group_vars than inference_host_.
+skip_list:
+  - var-naming[no-role-prefix]

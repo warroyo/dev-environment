@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# Runs one playbook from this directory against the tailnet hosts in the group
+# of the same name.
+#
+#   ansible/play inference --check --diff   # preview: what would change
+#   ansible/play inference                  # apply
+#   ansible/play inference --tags models    # one part only
+#
+# Why a wrapper: SSH as the admin account goes through a Tailscale check, which
+# prints a login URL and waits. Ansible would swallow that URL and appear to
+# hang. So each host is touched once here first, where the URL is visible;
+# after approval the check holds for 12 hours and Ansible connects cleanly.
+set -euo pipefail
+
+cd "$(dirname "${BASH_SOURCE[0]}")"
+
+group="${1:?usage: play <playbook-name> [ansible-playbook args]}"
+shift
+[ -f "${group}.yml" ] || { echo "play: no playbook ${group}.yml" >&2; exit 2; }
+
+hosts="$(./inventory/tailnet.py | jq -r --arg g "$group" \
+  '(.[$g].hosts // [])[] as $h | ._meta.hostvars[$h].ansible_host')"
+[ -n "$hosts" ] || { echo "play: no tailnet hosts tagged tag:${group}" >&2; exit 1; }
+
+for h in $hosts; do
+  echo "== Tailscale check for ${h} (open the URL if one is printed)"
+  ssh -o ConnectTimeout=15 "$h" true
+done
+
+# ansible-core comes from server-bootstrap.sh; uvx covers a machine without it.
+if command -v ansible-playbook >/dev/null 2>&1; then
+  exec ansible-playbook "${group}.yml" "$@"
+fi
+exec uvx --from ansible-core ansible-playbook "${group}.yml" "$@"

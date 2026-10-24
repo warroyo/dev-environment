@@ -1,0 +1,23 @@
+- name: Create the models directory
+  ansible.builtin.file:
+    path: "{{ inference_models_dir }}"
+    state: directory
+    mode: "0755"
+
+# `hf download` resumes partial files, and the .complete marker (holding the
+# revision) skips a model already fetched. Changing a revision downloads again.
+- name: Download models (about 100 GiB for Flash-Next; runs in the background)
+  ansible.builtin.shell:
+    cmd: >-
+      hf download {{ item.repo | quote }}
+      --revision {{ item.revision | quote }}
+      --repo-type model
+      --include {% for p in item.include %}{{ p | quote }} {% endfor %}
+      --local-dir {{ (inference_models_dir ~ '/' ~ item.name) | quote }}
+      && echo {{ item.revision | quote }} > {{ (inference_models_dir ~ '/' ~ item.name ~ '/.complete-' ~ item.revision) | quote }}
+    creates: "{{ inference_models_dir }}/{{ item.name }}/.complete-{{ item.revision }}"
+  loop: "{{ inference_models }}"
+  loop_control:
+    label: "{{ item.name }}"
+  async: "{{ (inference_model_download_hours | int) * 3600 }}"
+  poll: 30

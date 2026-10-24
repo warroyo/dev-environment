@@ -1,0 +1,13 @@
+- name: Install inference packages
+  ansible.builtin.apt:
+    name: "{{ inference_packages }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Let GPU users reach /dev/kfd and /dev/dri outside containers
+  ansible.builtin.user:
+    name: "{{ item }}"
+    groups: [render, video]
+    append: true
+  loop: "{{ inference_gpu_users }}"

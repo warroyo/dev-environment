@@ -1,0 +1,3 @@
+# Managed by dev-environment ansible (role inference_host). Do not edit here.
+# GTT cap for the iGPU: {{ inference_gtt_gib }} GiB = {{ inference_gtt_pages }} pages of 4 KiB.
+GRUB_CMDLINE_LINUX_DEFAULT="$GRUB_CMDLINE_LINUX_DEFAULT ttm.pages_limit={{ inference_gtt_pages }} ttm.page_pool_size={{ inference_gtt_pages }}"

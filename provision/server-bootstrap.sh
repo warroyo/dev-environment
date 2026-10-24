@@ -43,13 +43,16 @@ log "Installing base packages"
 #      any of this repo's shell config.
 # mosh: the *server* side (mosh-server) is required for the clients' mosh to
 #      work at all.
+# ansible-core / jq: ansible/play, which configures the lab targets from here
+#      (docs/inference-host.md).
 # zsh-autosuggestions / zsh-syntax-highlighting: without these (and starship
 # below) a fresh zsh gives you the bare `hostname%` default prompt, which is
 # a downgrade from Ubuntu's stock bash.
 $APT_GET install -y --no-install-recommends \
   zsh zsh-autosuggestions zsh-syntax-highlighting \
   tmux git curl wget ca-certificates gnupg build-essential \
-  mosh ripgrep fd-find bat fzf
+  mosh ripgrep fd-find bat fzf \
+  ansible-core jq
 
 # eza isn't in Ubuntu's default repos; add its apt repo once.
 if ! command -v eza >/dev/null 2>&1; then
