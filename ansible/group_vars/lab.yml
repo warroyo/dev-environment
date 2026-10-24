@@ -1,0 +1,8 @@
+# Every lab target, whatever else it is tagged.
+
+# Ubuntu 25.10 and later make sudo-rs the default `sudo`. It does not print the
+# prompt Ansible passes with -p, so Ansible waits for one that never comes:
+#   Timeout (12s) waiting for privilege escalation prompt
+# The original sudo is still installed alongside it as sudo.ws. Override this
+# per host for a target without sudo.ws (macOS, older Ubuntu).
+ansible_become_exe: sudo.ws
