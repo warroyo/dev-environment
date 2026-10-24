@@ -1,0 +1,23 @@
+- name: Packages
+  ansible.builtin.import_tasks: packages.yml
+  tags: [packages]
+
+- name: GTT memory and kdump
+  ansible.builtin.import_tasks: memory.yml
+  tags: [memory]
+
+- name: Build llama.cpp for Vulkan
+  ansible.builtin.import_tasks: llamacpp.yml
+  tags: [llamacpp]
+
+- name: Model files
+  ansible.builtin.import_tasks: models.yml
+  tags: [models]
+
+- name: Gufo
+  ansible.builtin.import_tasks: gufo.yml
+  tags: [gufo]
+
+- name: Report
+  ansible.builtin.import_tasks: verify.yml
+  tags: [always]

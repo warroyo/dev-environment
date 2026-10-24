@@ -1,0 +1,69 @@
+# Defaults for one Strix Halo inference box. Per-group values, such as which
+# models to download, live in group_vars/inference.yml.
+
+# --- Memory ------------------------------------------------------------------
+# The iGPU borrows system RAM through GTT. ttm.pages_limit caps it, in 4 KiB
+# pages, so the OS always keeps the rest. 116 GiB fits Flash-Next at Q4 (about
+# 112 GiB) and leaves about 5 GiB of the ~121 GiB Linux sees.
+inference_gtt_gib: 116
+# The play refuses a cap that leaves the OS less than this.
+inference_os_floor_gib: 4
+# kdump reserves up to 2 GiB with crashkernel=. On a box this tight, the model
+# gets it instead.
+inference_disable_kdump: true
+# Kernel parameters only take effect after a reboot. false: the play says a
+# reboot is pending and stops there. true: it reboots and waits.
+inference_reboot: false
+
+# --- Packages ----------------------------------------------------------------
+inference_packages:
+  # Gufo runs in a container with ROCm inside it; the host needs only podman.
+  - podman
+  - crun
+  # llama.cpp Vulkan build: the known-good fallback engine.
+  - build-essential
+  - cmake
+  - ninja-build
+  - pkg-config
+  - git
+  - glslc
+  - libvulkan-dev
+  - spirv-headers
+  - libcurl4-openssl-dev
+  - libssl-dev
+  - mesa-vulkan-drivers
+  - vulkan-tools
+  # Model downloads (`hf`) and monitoring.
+  - python3-huggingface-hub
+  - lm-sensors
+  - radeontop
+  - nvtop
+  - htop
+
+# Accounts that use the GPU outside a container (llama-bench, nvtop).
+inference_gpu_users: []
+
+# --- llama.cpp (Vulkan) --------------------------------------------------------
+# Each version builds into its own directory and the old builds are kept, so
+# going back is a symlink change. Bump deliberately: a newer build broke
+# concurrent requests for others.
+llama_cpp_version: v0.7.0
+llama_cpp_root: /opt/llama.cpp
+
+# --- Models --------------------------------------------------------------------
+inference_models_dir: /models
+# Each entry: name (a directory under models_dir), repo, revision (a commit,
+# never a branch), include (patterns passed to `hf download --include`).
+inference_models: []
+# Hours a single download may take before the play gives up on it.
+inference_model_download_hours: 6
+
+# --- Gufo ----------------------------------------------------------------------
+# Pre-1.0 and released almost daily: pin tag and digest, never :latest.
+gufo_image: ghcr.io/gufo-org/toolboxes/gufo-runtime:0.23.0@sha256:ec8c3f0bf06100304f5105590cfe98d62bf21ff133e8c2dea95955eb4028ddb2
+gufo_port: 8080
+# false: image pulled and quadlet written, but the service is not started.
+gufo_enabled: false
+# Path under models_dir to the model (the first shard of a split GGUF).
+gufo_model: ""
+gufo_args: []

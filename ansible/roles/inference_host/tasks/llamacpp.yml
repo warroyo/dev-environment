@@ -1,0 +1,39 @@
+# One build directory per version, kept after an upgrade: rolling back is
+# pointing the symlinks at the older directory.
+- name: Set the llama.cpp build directory
+  ansible.builtin.set_fact:
+    llama_cpp_build: "{{ llama_cpp_root }}/{{ llama_cpp_version }}"
+
+- name: Check out llama.cpp {{ llama_cpp_version }}
+  ansible.builtin.git:
+    repo: https://github.com/ggml-org/llama.cpp.git
+    dest: "{{ llama_cpp_build }}/src"
+    version: "{{ llama_cpp_version }}"
+    depth: 1
+
+- name: Configure llama.cpp for Vulkan
+  ansible.builtin.command:
+    cmd: >-
+      cmake -S src -B build -G Ninja
+      -DCMAKE_BUILD_TYPE=Release -DGGML_VULKAN=ON -DLLAMA_CURL=ON
+    chdir: "{{ llama_cpp_build }}"
+    creates: "{{ llama_cpp_build }}/build/build.ninja"
+  # In check mode the checkout above did not happen, so there is no directory
+  # to run in.
+  when: not ansible_check_mode
+
+- name: Build llama.cpp (several minutes on first run)
+  ansible.builtin.command:
+    cmd: cmake --build build --parallel
+    chdir: "{{ llama_cpp_build }}"
+    creates: "{{ llama_cpp_build }}/build/bin/llama-server"
+  when: not ansible_check_mode
+
+- name: Put this build's tools on PATH
+  ansible.builtin.file:
+    src: "{{ llama_cpp_build }}/build/bin/{{ item }}"
+    dest: /usr/local/bin/{{ item }}
+    state: link
+    force: true
+  loop: [llama-server, llama-cli, llama-bench]
+  when: not ansible_check_mode

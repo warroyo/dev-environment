@@ -1,0 +1,8 @@
+# The local model server: GTT memory, llama.cpp on Vulkan, model files, and
+# Gufo as a podman quadlet. Hosts are the tailnet peers tagged tag:inference.
+# Run it with ./play inference. See docs/inference-host.md.
+- name: Inference host
+  hosts: inference
+  become: true
+  roles:
+    - inference_host
