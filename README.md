@@ -27,6 +27,7 @@ picture, then follow the setup doc for whichever machine you're on.
 | Ubuntu server | `provision/server-bootstrap.sh` | [`docs/server-setup.md`](docs/server-setup.md) |
 | Personal MacBook Air | `provision/client-personal-bootstrap.sh` | [`docs/client-personal-setup.md`](docs/client-personal-setup.md) |
 | Work MacBook Pro | `provision/client-work-bootstrap.sh` | [`docs/client-work-setup.md`](docs/client-work-setup.md) |
+| Lab target (any box agents SSH into) | `provision/lab-target-bootstrap.sh`, copied over and run there | [`docs/lab-access.md`](docs/lab-access.md) |
 
 ```sh
 git clone <this-repo-url> ~/dev-environment
@@ -50,6 +51,7 @@ On the server, check the result at any time with:
 ```
 docs/         architecture + per-machine setup docs
 provision/    one idempotent bootstrap script per machine role
+policy/       tailnet policy file (tags and SSH rules), applied by hand
 dotfiles/     single chezmoi source for all machines (layer 1 everywhere,
               layer 2's client half everywhere, its host half server-only)
   .chezmoidata.yaml    non-identifying defaults (role fallback, server host)
