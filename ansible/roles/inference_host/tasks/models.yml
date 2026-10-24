@@ -4,18 +4,24 @@
     state: directory
     mode: "0755"
 
-# `hf download` resumes partial files, and the .complete marker (holding the
-# revision) skips a model already fetched. Changing a revision downloads again.
+# `hf download` resumes partial files, and the .complete marker skips a model
+# already fetched.
 - name: Download models (about 100 GiB for Flash-Next; runs in the background)
   ansible.builtin.shell:
+    # One --include per pattern. `--include A B` makes hf read B as a filename
+    # to fetch, and named files override --include, so only B arrives.
     cmd: >-
       hf download {{ item.repo | quote }}
       --revision {{ item.revision | quote }}
       --repo-type model
-      --include {% for p in item.include %}{{ p | quote }} {% endfor %}
+      {% for p in item.include %}--include {{ p | quote }} {% endfor %}
       --local-dir {{ (inference_models_dir ~ '/' ~ item.name) | quote }}
-      && echo {{ item.revision | quote }} > {{ (inference_models_dir ~ '/' ~ item.name ~ '/.complete-' ~ item.revision) | quote }}
-    creates: "{{ inference_models_dir }}/{{ item.name }}/.complete-{{ item.revision }}"
+      && echo {{ item.revision | quote }} > {{ (inference_models_dir ~ '/' ~ item.name ~ '/' ~ marker) | quote }}
+    creates: "{{ inference_models_dir }}/{{ item.name }}/{{ marker }}"
+  vars:
+    # The marker covers the revision and the patterns, so changing either
+    # downloads again (hf skips files it already has).
+    marker: ".complete-{{ item.revision }}-{{ (item.include | join(',')) | hash('sha1') | truncate(8, True, '') }}"
   loop: "{{ inference_models }}"
   loop_control:
     label: "{{ item.name }}"
