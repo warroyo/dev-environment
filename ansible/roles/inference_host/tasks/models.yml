@@ -21,3 +21,5 @@
     label: "{{ item.name }}"
   async: "{{ (inference_model_download_hours | int) * 3600 }}"
   poll: 30
+  # Ansible refuses async tasks in check mode.
+  when: not ansible_check_mode
