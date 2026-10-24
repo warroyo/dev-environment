@@ -1,0 +1,62 @@
+// Tailnet policy file — the source of truth for who reaches which lab machine.
+//
+// Not applied automatically. Paste it into the admin console
+// (https://login.tailscale.com/admin/acls/file) and use the console's preview
+// before saving. Saving REPLACES whatever policy is there, so diff it against
+// the live one first: anything there that is not here (an autoApprovers block
+// for the server's advertised route, say) is lost on save.
+//
+// Model, in one paragraph: your own devices are untagged and owned by you, so
+// they keep reaching everything. Lab targets are tagged, which takes them out
+// of your ownership: they reach nothing on their own, and SSH into them is
+// decided only by the rules below. Agents run on the server as you, so on the
+// tailnet an agent and you are the same identity; what separates them is the
+// account on the far side. `agent` is accepted without ceremony; your own
+// account needs a browser re-auth (`check`), which is the approval step.
+//
+// See docs/lab-access.md.
+{
+	"tagOwners": {
+		// Any machine an agent may SSH into. Set by lab-target-bootstrap.sh.
+		"tag:lab": ["autogroup:admin"],
+		// Model servers. Added on top of tag:lab while the box is being built;
+		// drop tag:lab from it later to make it API-only.
+		"tag:inference": ["autogroup:admin"],
+	},
+
+	"grants": [
+		// Your devices reach everything, as they did before this file existed.
+		// Tagged machines get no grant, so they cannot start connections into
+		// the tailnet.
+		{"src": ["autogroup:member"], "dst": ["*"], "ip": ["*"]},
+	],
+
+	// Rules are matched in order; the first one that matches wins.
+	"ssh": [
+		// Routine agent work: logs, service status, restarting the agent's own
+		// user services. No sudo on that account.
+		{
+			"action": "accept",
+			"src":    ["autogroup:member"],
+			"dst":    ["tag:lab"],
+			"users":  ["agent"],
+		},
+		// Anything else, your own account included, needs a fresh browser
+		// login. The ssh session prints the URL and waits; once you approve,
+		// the same source is trusted for checkPeriod.
+		{
+			"action":      "check",
+			"src":         ["autogroup:member"],
+			"dst":         ["tag:lab"],
+			"users":       ["autogroup:nonroot"],
+			"checkPeriod": "12h",
+		},
+		// Tailscale's default: SSH between your own untagged devices.
+		{
+			"action": "check",
+			"src":    ["autogroup:member"],
+			"dst":    ["autogroup:self"],
+			"users":  ["autogroup:nonroot", "root"],
+		},
+	],
+}

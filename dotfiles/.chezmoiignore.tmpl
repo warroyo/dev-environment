@@ -116,6 +116,14 @@
 .config/shell/source/70_work_guard.sh
 {{- end }}
 
+{{- if not (or (eq .role "server") (eq .role "personal")) }}
+{{/*
+  lab-ssh-config builds ssh aliases from the tailnet, and the restricted
+  machines never join it, so there is nothing for it to read there.
+*/}}
+.local/bin/lab-ssh-config
+{{- end }}
+
 {{- if ne .role "personal" }}
 {{/*
   paste-image is macOS-only (it shells out to osascript to read the clipboard)

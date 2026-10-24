@@ -76,6 +76,18 @@ else expect_absent .local/bin/paste-image; fi
 if [ "$ROLE" = "server" ]; then expect_present .config/shell/source/60_browser.sh
 else expect_absent .config/shell/source/60_browser.sh; fi
 
+# lab-ssh-config reads the tailnet, which only the server and personal machines
+# join. The ssh config's Include of its output follows the same rule.
+case "$ROLE" in
+  server|personal)
+    expect_present .local/bin/lab-ssh-config
+    grep -q '^Include ~/.ssh/config.d/\*' "$HOME/.ssh/config" \
+      && echo "OK: ssh config includes config.d" \
+      || { echo "FAIL: ssh config is missing the config.d Include"; fail=1; } ;;
+  *)
+    expect_absent .local/bin/lab-ssh-config ;;
+esac
+
 # Applies to every role: the general layer, and the tier-1 env file.
 expect_present .zshenv
 expect_present .zshrc
