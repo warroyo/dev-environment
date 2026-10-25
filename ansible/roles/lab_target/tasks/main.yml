@@ -1,0 +1,3 @@
+- name: Sudo for the admin account
+  ansible.builtin.import_tasks: sudo.yml
+  tags: [sudo]

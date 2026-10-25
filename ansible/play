@@ -5,6 +5,8 @@
 #   ansible/play inference --check --diff   # preview: what would change
 #   ansible/play inference                  # apply
 #   ansible/play inference --tags models    # one part only
+#   ansible/play lab -K                     # first run on a new target: asks
+#                                           # for your sudo password once
 #
 # Why a wrapper: SSH as the admin account goes through a Tailscale check, which
 # prints a login URL and waits. Ansible would swallow that URL and appear to

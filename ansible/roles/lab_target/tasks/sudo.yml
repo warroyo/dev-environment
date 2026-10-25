@@ -1,0 +1,17 @@
+# visudo checks the file before it is moved into place, so a bad template
+# cannot lock sudo out.
+- name: Passwordless sudo for the admin account
+  ansible.builtin.template:
+    src: 10-lab-admin.j2
+    dest: /etc/sudoers.d/10-lab-admin
+    owner: root
+    group: root
+    mode: "0440"
+    validate: /usr/sbin/visudo -cf %s
+  when: lab_admin_nopasswd
+
+- name: No passwordless sudo
+  ansible.builtin.file:
+    path: /etc/sudoers.d/10-lab-admin
+    state: absent
+  when: not lab_admin_nopasswd

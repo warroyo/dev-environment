@@ -58,9 +58,10 @@ ansible/play inference -e inference_reboot=true   # apply and reboot if needed
 ```
 
 `play` touches each host once over SSH first, so a pending Tailscale check
-shows its URL rather than hanging Ansible. Then Ansible asks for your sudo
-password (`BECOME password`). Kernel parameters need a reboot; the play says
-so at the end and does not reboot unless asked.
+shows its URL rather than hanging Ansible. Sudo needs no password once
+`ansible/play lab` has run on the host ([lab-access.md](lab-access.md#privileged-changes));
+before that, add `-K`. Kernel parameters need a reboot; the play says so at
+the end and does not reboot unless asked.
 
 Hosts come from [`inventory/tailnet.py`](../ansible/inventory/tailnet.py): every
 tailnet peer tagged `tag:X` is in group `X`, reached through its
