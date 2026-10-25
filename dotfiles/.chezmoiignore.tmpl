@@ -108,6 +108,11 @@
 .local/bin/backlog-subtask
 .claude/skills
 .claude/skills/**
+{{/*
+  Permission rules merged into Claude Code's own settings (modify_settings.json).
+  Same rule: no settings to guard where Claude Code does not run.
+*/}}
+.claude/settings.json
 {{- end }}
 
 {{- if or (eq .role "server") (eq .role "personal") }}

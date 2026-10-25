@@ -99,7 +99,10 @@ Two approvals stand between an agent and root on a target:
 Sudo itself asks for nothing: your account has `NOPASSWD: ALL` from role
 `lab_target`, so Ansible runs unattended once the check has passed. The cost:
 for those 12 hours, anything running as you on the server can get root on the
-targets. The harness rules narrow that for agents. In Claude Code:
+targets. The harness rules narrow that for agents. In Claude Code, chezmoi
+merges these into `~/.claude/settings.json` on the server
+([`modify_settings.json`](../dotfiles/dot_claude/modify_settings.json)),
+keeping every other key and any rule added by hand:
 
 ```json
 "permissions": {

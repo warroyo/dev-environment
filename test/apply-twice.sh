@@ -63,6 +63,15 @@ for f in .local/bin/claude-open .local/bin/claude-telegram-bot; do
   if [ "$ROLE" = "server" ]; then expect_present "$f"; else expect_absent "$f"; fi
 done
 
+# The lab permission rules are merged into Claude Code's settings where it runs
+# (modify_settings.json): the admin-SSH deny must be there on the server, and
+# no settings file should appear anywhere else.
+if [ "$ROLE" = "server" ]; then
+  expect_present .claude/settings.json
+  grep -qF '"Bash(ssh *-admin*)"' "$HOME/.claude/settings.json" \
+    || { echo "FAIL: lab deny rules missing from .claude/settings.json"; exit 1; }
+else expect_absent .claude/settings.json; fi
+
 # The VS Code auto-install guard is the counterpart — deployed exactly where
 # Claude Code must never be installed.
 case "$ROLE" in

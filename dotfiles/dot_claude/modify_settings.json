@@ -1,0 +1,22 @@
+{{- /* chezmoi:modify-template */ -}}
+{{- /*
+  Claude Code rewrites ~/.claude/settings.json itself (model, plugins, hooks),
+  so chezmoi does not own the file. This merges in the permission rules that
+  must always be there and leaves every other key alone. Rules added by hand
+  are kept; these are only ever added back.
+
+  The lab rules (docs/lab-access.md, "Privileged changes"): every change to a
+  lab target is a playbook run you confirm. Admin SSH, ad-hoc ansible and
+  calling ansible-playbook directly are denied, so ansible/play is the only
+  privileged path. Answer its prompt once each time, never "always allow".
+*/ -}}
+{{- $ask := list "Bash(*ansible/play*)" -}}
+{{- $deny := list "Bash(ssh *-admin*)" "Bash(ansible *)" "Bash(*ansible-playbook*)" -}}
+{{- $s := dict -}}
+{{- if trim .chezmoi.stdin -}}
+{{-   $s = fromJson .chezmoi.stdin -}}
+{{- end -}}
+{{- $p := get $s "permissions" | default dict -}}
+{{- $s = setValueAtPath "permissions.ask" (concat (get $p "ask" | default list) $ask | uniq) $s -}}
+{{- $s = setValueAtPath "permissions.deny" (concat (get $p "deny" | default list) $deny | uniq) $s -}}
+{{ toPrettyJson $s }}
