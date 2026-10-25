@@ -1,0 +1,49 @@
+- name: Work out the GTT cap in 4 KiB pages
+  ansible.builtin.set_fact:
+    inference_gtt_pages: "{{ (inference_gtt_gib | int) * 262144 }}"
+
+- name: Refuse a GTT cap that starves the OS
+  ansible.builtin.assert:
+    that:
+      - (inference_gtt_gib | int) + (inference_os_floor_gib | int) <= (ansible_memtotal_mb / 1024) | int
+    fail_msg: >-
+      inference_gtt_gib={{ inference_gtt_gib }} leaves less than
+      {{ inference_os_floor_gib }} GiB of the {{ (ansible_memtotal_mb / 1024) | int }} GiB
+      Linux sees.
+
+# A grub.d drop-in rather than an edit to /etc/default/grub, so the installer's
+# file stays untouched and removing this file undoes the change.
+- name: Set the GTT kernel parameters
+  ansible.builtin.template:
+    src: 90-inference-memory.cfg.j2
+    dest: /etc/default/grub.d/90-inference-memory.cfg
+    mode: "0644"
+  notify: Update grub
+
+# Purging the package also removes its grub.d drop-in that adds crashkernel=.
+- name: Remove kdump so crashkernel= stops reserving memory
+  ansible.builtin.apt:
+    name: [kdump-tools, linux-crashdump]
+    state: absent
+    purge: true
+  when: inference_disable_kdump | bool
+  notify: Update grub
+
+- name: Apply grub changes before deciding on a reboot
+  ansible.builtin.meta: flush_handlers
+
+- name: Read the running kernel command line
+  ansible.builtin.slurp:
+    src: /proc/cmdline
+  register: inference_cmdline
+
+- name: Decide whether a reboot is pending
+  ansible.builtin.set_fact:
+    inference_reboot_pending: >-
+      {{ ('ttm.pages_limit=' ~ inference_gtt_pages) not in (inference_cmdline.content | b64decode)
+         or ((inference_disable_kdump | bool) and 'crashkernel=' in (inference_cmdline.content | b64decode)) }}
+
+- name: Reboot to load the new kernel parameters
+  ansible.builtin.reboot:
+    reboot_timeout: 600
+  when: inference_reboot_pending | bool and inference_reboot | bool

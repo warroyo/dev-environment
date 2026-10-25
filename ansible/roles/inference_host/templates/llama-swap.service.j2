@@ -1,0 +1,19 @@
+# Managed by dev-environment ansible (role inference_host). Do not edit here.
+[Unit]
+Description=llama-swap model proxy (OpenAI-compatible, swaps engines on request)
+# Binds to the tailnet address, which exists only once tailscaled is up.
+Wants=network-online.target
+After=network-online.target tailscaled.service
+
+[Service]
+# Root because the Gufo engines are rootful podman containers.
+ExecStart=/usr/local/bin/llama-swap -config /etc/llama-swap/config.yaml -listen {{ inference_tailnet_ip }}:{{ llama_swap_port }}
+Restart=on-failure
+RestartSec=10
+# Flash-Next pins its host buffers.
+LimitMEMLOCK=infinity
+# Stopping llama-swap stops the engines it started; give a large model time.
+TimeoutStopSec=120
+
+[Install]
+WantedBy=multi-user.target

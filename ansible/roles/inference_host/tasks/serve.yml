@@ -1,0 +1,90 @@
+# llama-swap is the one endpoint on :8080. It starts the engine a request names,
+# a Gufo container or llama-server, and stops what that model's group displaces.
+
+- name: Check for the pinned Gufo image
+  ansible.builtin.command: podman image exists {{ gufo_image | quote }}
+  register: gufo_image_present
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Pull the pinned Gufo image
+  ansible.builtin.command: podman pull {{ gufo_image | quote }}
+  when: gufo_image_present.rc != 0
+  changed_when: true
+
+- name: Download llama-swap {{ llama_swap_version }}
+  ansible.builtin.get_url:
+    url: "https://github.com/mostlygeek/llama-swap/releases/download/v{{ llama_swap_version }}/llama-swap_{{ llama_swap_version }}_linux_amd64.tar.gz"
+    dest: "/opt/llama-swap-{{ llama_swap_version }}.tar.gz"
+    checksum: "sha256:{{ llama_swap_sha256 }}"
+    mode: "0644"
+
+- name: Unpack llama-swap {{ llama_swap_version }}
+  ansible.builtin.unarchive:
+    src: "/opt/llama-swap-{{ llama_swap_version }}.tar.gz"
+    dest: /opt
+    remote_src: true
+    creates: "/opt/llama-swap-{{ llama_swap_version }}/llama-swap"
+    extra_opts: ["--one-top-level=llama-swap-{{ llama_swap_version }}"]
+  when: not ansible_check_mode
+
+- name: Put this llama-swap version on PATH
+  ansible.builtin.file:
+    src: "/opt/llama-swap-{{ llama_swap_version }}/llama-swap"
+    dest: /usr/local/bin/llama-swap
+    state: link
+    force: true
+  when: not ansible_check_mode
+  notify: Restart llama-swap
+
+# Neither llama-swap nor the engines authenticate, so the port binds to the
+# tailnet address only, never the LAN. The tailnet policy decides who reaches it.
+- name: Read the tailnet address
+  ansible.builtin.command: tailscale ip -4
+  register: inference_tailnet_ip_cmd
+  changed_when: false
+  check_mode: false
+
+- name: Remember the tailnet address
+  ansible.builtin.set_fact:
+    inference_tailnet_ip: "{{ inference_tailnet_ip_cmd.stdout | trim }}"
+
+- name: Create the llama-swap config directory
+  ansible.builtin.file:
+    path: /etc/llama-swap
+    state: directory
+    mode: "0755"
+
+# llama-swap watches this file and reloads it, so no restart is needed.
+- name: Write the llama-swap model config
+  ansible.builtin.template:
+    src: llama-swap.yaml.j2
+    dest: /etc/llama-swap/config.yaml
+    mode: "0644"
+
+- name: Install the llama-swap service
+  ansible.builtin.template:
+    src: llama-swap.service.j2
+    dest: /etc/systemd/system/llama-swap.service
+    mode: "0644"
+  notify:
+    - Reload systemd
+    - Restart llama-swap
+
+# Before llama-swap: a single Gufo quadlet held :8080.
+- name: Remove the old standalone Gufo quadlet
+  ansible.builtin.file:
+    path: /etc/containers/systemd/gufo.container
+    state: absent
+  notify: Reload systemd
+
+- name: Apply unit changes
+  ansible.builtin.meta: flush_handlers
+
+- name: Run llama-swap to match llama_swap_enabled
+  ansible.builtin.systemd_service:
+    name: llama-swap.service
+    state: "{{ 'started' if llama_swap_enabled | bool else 'stopped' }}"
+    enabled: "{{ llama_swap_enabled | bool }}"
+  when: not ansible_check_mode

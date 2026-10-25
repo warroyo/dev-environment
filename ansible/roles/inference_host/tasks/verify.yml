@@ -1,0 +1,28 @@
+- name: Read GTT and GPU state
+  ansible.builtin.shell: |
+    set -o pipefail
+    echo "ttm.pages_limit: $(cat /sys/module/ttm/parameters/pages_limit)"
+    for f in /sys/class/drm/card*/device/mem_info_gtt_total; do
+      echo "GTT total: $(( $(cat "$f") / 1073741824 )) GiB"
+    done
+    echo "MemTotal: $(awk '/MemTotal/ {printf "%d GiB", $2/1048576}' /proc/meminfo)"
+    command -v vulkaninfo >/dev/null && vulkaninfo --summary 2>/dev/null | awk -F= '/deviceName/ {print "Vulkan:" $2}'
+    command -v llama-server >/dev/null && echo "llama.cpp: $(readlink -f "$(command -v llama-server)")"
+    echo "llama-swap: $(systemctl is-active llama-swap.service 2>/dev/null)"
+    curl -s --max-time 3 "http://$(tailscale ip -4):{{ llama_swap_port }}/running" | sed 's/^/running: /' || true
+  register: inference_state
+  args:
+    executable: /bin/bash
+  changed_when: false
+  check_mode: false
+
+- name: Inference host state
+  ansible.builtin.debug:
+    msg: "{{ inference_state.stdout_lines }}"
+
+- name: Reboot pending
+  ansible.builtin.debug:
+    msg: >-
+      Kernel parameters changed but are not live yet. Reboot the box
+      (ssh -t <host>-admin sudo reboot) or re-run with -e inference_reboot=true.
+  when: inference_reboot_pending | default(false) | bool

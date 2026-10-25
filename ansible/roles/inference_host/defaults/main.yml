@@ -1,0 +1,90 @@
+# Defaults for one Strix Halo inference box. Per-group values, such as which
+# models to download, live in group_vars/inference.yml.
+
+# --- Memory ------------------------------------------------------------------
+# The iGPU borrows system RAM through GTT. ttm.pages_limit caps it, in 4 KiB
+# pages, so the OS always keeps the rest. 116 GiB fits Flash-Next at Q4 (about
+# 112 GiB) and leaves about 5 GiB of the ~121 GiB Linux sees.
+inference_gtt_gib: 116
+# The play refuses a cap that leaves the OS less than this.
+inference_os_floor_gib: 4
+# kdump reserves up to 2 GiB with crashkernel=. On a box this tight, the model
+# gets it instead.
+inference_disable_kdump: true
+# Kernel parameters only take effect after a reboot. false: the play says a
+# reboot is pending and stops there. true: it reboots and waits.
+inference_reboot: false
+
+# --- Packages ----------------------------------------------------------------
+inference_packages:
+  # Gufo runs in a container with ROCm inside it; the host needs only podman.
+  - podman
+  - crun
+  # llama.cpp Vulkan build: the known-good fallback engine.
+  - build-essential
+  - cmake
+  - ninja-build
+  - pkg-config
+  - git
+  - glslc
+  - libvulkan-dev
+  - spirv-headers
+  - libcurl4-openssl-dev
+  - libssl-dev
+  - mesa-vulkan-drivers
+  - vulkan-tools
+  # Model downloads (`hf`) and monitoring.
+  - python3-huggingface-hub
+  - lm-sensors
+  - radeontop
+  - nvtop
+  - htop
+
+# Accounts that use the GPU outside a container (llama-bench, nvtop).
+inference_gpu_users: []
+
+# --- llama.cpp (Vulkan) --------------------------------------------------------
+# Each version builds into its own directory and the old builds are kept, so
+# going back is a symlink change. Bump deliberately: a newer build broke
+# concurrent requests for others.
+llama_cpp_version: v0.7.0
+llama_cpp_root: /opt/llama.cpp
+
+# --- Models --------------------------------------------------------------------
+inference_models_dir: /models
+# Each entry: name (a directory under models_dir), repo, revision (a commit,
+# never a branch), include (patterns passed to `hf download --include`).
+inference_models: []
+# Hours a single download may take before the play gives up on it.
+inference_model_download_hours: 6
+
+# --- Gufo ----------------------------------------------------------------------
+# Pre-1.0 and released almost daily: pin tag and digest, never :latest.
+gufo_image: ghcr.io/gufo-org/toolboxes/gufo-runtime:0.23.0@sha256:ec8c3f0bf06100304f5105590cfe98d62bf21ff133e8c2dea95955eb4028ddb2
+
+# --- llama-swap: the one endpoint, swapping models on request ------------------
+# Each request names a model; llama-swap starts its engine (a Gufo container or
+# llama-server) and stops whatever the model's group says must make room.
+llama_swap_version: "266"
+llama_swap_sha256: 7daa0170f997c1e60ebc749e8cb13f4ae9966fd73e9d5fca334770dcce5c4ab5
+# Listens on the tailnet address only: neither llama-swap nor the engines
+# authenticate, so the tailnet policy is the access control.
+llama_swap_port: 8080
+# false: installed and configured, but not running.
+llama_swap_enabled: true
+# Seconds a model may take to become healthy. Flash-Next reads ~104 GiB.
+llama_swap_health_timeout: 900
+# Idle seconds before a model unloads; 0 keeps it loaded until swapped out.
+llama_swap_ttl: 0
+
+# Models llama-swap serves, keyed by the model name clients send. Each entry:
+#   engine: gufo | llama.cpp
+#   model:  path under inference_models_dir (the first shard of a split GGUF)
+#   group:  a key of llama_swap_groups
+#   args:   extra engine arguments, one per item
+llama_swap_models: {}
+# Groups decide what runs together. swap: false lets every member stay loaded
+# at once; exclusive: true unloads every other group when a member starts.
+llama_swap_groups: {}
+# Models to load when llama-swap starts. Empty: nothing loads until requested.
+llama_swap_preload: []

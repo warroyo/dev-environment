@@ -1,0 +1,61 @@
+# Managed by dev-environment ansible (role inference_host). Do not edit here:
+# change llama_swap_models / llama_swap_groups in group_vars and re-run
+# `ansible/play inference --tags serve`. llama-swap reloads this file on change.
+healthCheckTimeout: {{ llama_swap_health_timeout }}
+globalTTL: {{ llama_swap_ttl }}
+logToStdout: "proxy"
+startPort: 10001
+
+models:
+{% for name, m in llama_swap_models.items() %}
+  "{{ name }}":
+{% if m.engine == 'gufo' %}
+    cmd: |
+      /usr/bin/podman run --rm --name ${MODEL_ID}
+      --device /dev/kfd --device /dev/dri
+      --ulimit memlock=-1:-1
+      -p 127.0.0.1:${PORT}:8080
+      -v {{ inference_models_dir }}:/models:ro
+      {{ gufo_image }}
+      gufo serve --host 0.0.0.0 --port 8080 llm
+      --model /models/{{ m.model }}
+{% for a in m.args | default([]) %}
+      {{ a }}
+{% endfor %}
+    cmdStop: /usr/bin/podman stop ${MODEL_ID}
+{% else %}
+    cmd: |
+      /usr/local/bin/llama-server --host 127.0.0.1 --port ${PORT}
+      --model {{ inference_models_dir }}/{{ m.model }}
+      -ngl 999 -fa on
+{% for a in m.args | default([]) %}
+      {{ a }}
+{% endfor %}
+{% endif %}
+    proxy: "http://127.0.0.1:${PORT}"
+    checkEndpoint: /health
+{% endfor %}
+
+routing:
+  router:
+    use: group
+    settings:
+      groups:
+{% for gname, g in llama_swap_groups.items() %}
+        "{{ gname }}":
+          swap: {{ g.swap | bool | lower }}
+          exclusive: {{ g.exclusive | bool | lower }}
+          members:
+{% for name, m in llama_swap_models.items() if m.group == gname %}
+            - "{{ name }}"
+{% endfor %}
+{% endfor %}
+{% if llama_swap_preload %}
+
+hooks:
+  on_startup:
+    preload:
+{% for name in llama_swap_preload %}
+      - "{{ name }}"
+{% endfor %}
+{% endif %}
