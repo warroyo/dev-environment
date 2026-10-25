@@ -41,10 +41,14 @@ llama_swap_groups:
     swap: false
     exclusive: true
 
+# served_name: the id Gufo serves a model under (its /v1/models), taken from
+# the GGUF and not settable on the command line. llama-swap rewrites the
+# request's model to it (useModelName); without it Gufo answers model_not_found.
 llama_swap_models:
   qwen3.8-flash-next:
     engine: gufo
     group: big
+    served_name: Qwen3.8 Flash Next
     model: qwen3.8-flash-next/UD-Q4_K_XL/Qwen3.8-Flash-Next-UD-Q4_K_XL-00001-of-00004.gguf
     args:
       - --speculative mtp
@@ -54,6 +58,7 @@ llama_swap_models:
   qwen3.8-27b:
     engine: gufo
     group: small
+    served_name: Qwen3.8-27B
     model: qwen3.8-27b/Qwen3.8-27B-UD-Q8_K_XL.gguf
     args:
       - --speculative dflash2

@@ -1,6 +1,6 @@
 # Managed by dev-environment ansible (role inference_host). Do not edit here:
 # change llama_swap_models / llama_swap_groups in group_vars and re-run
-# `ansible/play inference --tags serve`. llama-swap reloads this file on change.
+# `ansible/play inference --tags serve`, which restarts llama-swap.
 healthCheckTimeout: {{ llama_swap_health_timeout }}
 globalTTL: {{ llama_swap_ttl }}
 logToStdout: "proxy"
@@ -13,6 +13,8 @@ models:
     cmd: |
       /usr/bin/podman run --rm --name ${MODEL_ID}
       --device /dev/kfd --device /dev/dri
+      {% for gid in inference_gpu_gids %}--group-add {{ gid }} {% endfor %}{{ gufo_podman_args | join(' ') }}
+
       --ulimit memlock=-1:-1
       -p 127.0.0.1:${PORT}:8080
       -v {{ inference_models_dir }}:/models:ro
@@ -33,6 +35,9 @@ models:
 {% endfor %}
 {% endif %}
     proxy: "http://127.0.0.1:${PORT}"
+{% if m.served_name is defined %}
+    useModelName: "{{ m.served_name }}"
+{% endif %}
     checkEndpoint: /health
 {% endfor %}
 

@@ -43,8 +43,16 @@ curl -X POST http://evo-x2:8080/api/models/unload     # free all memory
 
 Adding a model: an entry in `inference_models` (the download) and one in
 `llama_swap_models` (engine, file, group, args), then
-`ansible/play inference --tags models,serve`. llama-swap reloads its config
-without a restart.
+`ansible/play inference --tags models,serve`. A config change restarts
+llama-swap, which unloads whatever was running.
+
+If a Gufo model fails to load with `no ROCm-capable device is detected`, run
+`ansible/play inference --tags diagnose`: it runs `gufo diagnose` with the same
+podman flags the serving containers get. The image runs as a non-root user, so
+under rootful podman each container is given the host's `render` and `video`
+GIDs (`--group-add`); upstream's rootless `--group-add keep-groups` does not
+exist in rootful mode. Extra flags can be tried with
+`-e '{"gufo_podman_args": ["--flag"]}'` before committing them.
 
 ## Running it
 
