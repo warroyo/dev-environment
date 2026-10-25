@@ -74,3 +74,9 @@ llama_swap_models:
       - --parallel 2
       - --ctx-size 131072
       - --jinja
+
+# Flash-Next is the working model until the bake-off picks one (2026-10-25):
+# loaded when llama-swap starts, so the first request does not wait for it.
+# Requests for another model still swap it out.
+llama_swap_preload:
+  - qwen3.8-flash-next
