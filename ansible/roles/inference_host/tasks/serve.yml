@@ -40,6 +40,46 @@
 
 # Neither llama-swap nor the engines authenticate, so the port binds to the
 # tailnet address only, never the LAN. The tailnet policy decides who reaches it.
+# The Gufo image runs as its own non-root user. Its documented command is
+# rootless podman with --group-add keep-groups, which carries your GPU groups
+# into the container; rootful podman has no keep-groups, so without the host's
+# render and video GIDs the engine cannot open /dev/kfd and reports
+# "no ROCm-capable device is detected". The GIDs differ per host, so read them.
+- name: Read the GPU device groups
+  ansible.builtin.getent:
+    database: group
+    key: "{{ item }}"
+  loop: [render, video]
+  register: inference_gpu_group_lookup
+  tags: [diagnose]
+
+- name: Remember the GPU device group IDs
+  ansible.builtin.set_fact:
+    inference_gpu_gids: >-
+      {{ inference_gpu_group_lookup.results
+         | map(attribute='ansible_facts.getent_group') | map('dict2items') | map('first')
+         | map(attribute='value') | map(attribute=1) | list }}
+  tags: [diagnose]
+
+# What the engine itself sees: GPU, gfx target, driver, memory. Only on
+# request: ansible/play inference --tags diagnose
+- name: Run gufo diagnose in the serving container setup
+  ansible.builtin.command:
+    argv: "{{ ['/usr/bin/podman', 'run', '--rm', '--device', '/dev/kfd', '--device', '/dev/dri']
+              + (inference_gpu_gids | map('regex_replace', '^', '--group-add=') | list)
+              + ['--ulimit', 'memlock=-1:-1', '-v', inference_models_dir ~ ':/models:ro']
+              + gufo_podman_args + [gufo_image, 'gufo', 'diagnose'] }}"
+  register: gufo_diagnose
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  tags: [never, diagnose]
+
+- name: Gufo diagnose output
+  ansible.builtin.debug:
+    msg: "{{ (gufo_diagnose.stdout_lines + gufo_diagnose.stderr_lines) }}"
+  tags: [never, diagnose]
+
 - name: Read the tailnet address
   ansible.builtin.command: tailscale ip -4
   register: inference_tailnet_ip_cmd
@@ -56,12 +96,14 @@
     state: directory
     mode: "0755"
 
-# llama-swap watches this file and reloads it, so no restart is needed.
+# llama-swap reads this file once at start (it reloads on change only with
+# -watch-config), so a change restarts it. That unloads any running model.
 - name: Write the llama-swap model config
   ansible.builtin.template:
     src: llama-swap.yaml.j2
     dest: /etc/llama-swap/config.yaml
     mode: "0644"
+  notify: Restart llama-swap
 
 - name: Install the llama-swap service
   ansible.builtin.template:
@@ -78,6 +120,13 @@
     path: /etc/containers/systemd/gufo.container
     state: absent
   notify: Reload systemd
+
+- name: Restart llama-swap on request (-e llama_swap_restart=true)
+  ansible.builtin.debug:
+    msg: Restarting llama-swap as asked; running models are unloaded.
+  changed_when: true
+  notify: Restart llama-swap
+  when: llama_swap_restart | bool
 
 - name: Apply unit changes
   ansible.builtin.meta: flush_handlers

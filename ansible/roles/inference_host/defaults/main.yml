@@ -60,6 +60,9 @@ inference_model_download_hours: 6
 
 # --- Gufo ----------------------------------------------------------------------
 # Pre-1.0 and released almost daily: pin tag and digest, never :latest.
+# Extra flags for every Gufo container (serving and the diagnose check), for
+# trying a fix with -e before it is committed.
+gufo_podman_args: []
 gufo_image: ghcr.io/gufo-org/toolboxes/gufo-runtime:0.23.0@sha256:ec8c3f0bf06100304f5105590cfe98d62bf21ff133e8c2dea95955eb4028ddb2
 
 # --- llama-swap: the one endpoint, swapping models on request ------------------
@@ -88,3 +91,5 @@ llama_swap_models: {}
 llama_swap_groups: {}
 # Models to load when llama-swap starts. Empty: nothing loads until requested.
 llama_swap_preload: []
+# Set with -e to restart llama-swap even when nothing changed.
+llama_swap_restart: false
