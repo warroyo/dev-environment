@@ -1,0 +1,7 @@
+# What every lab target has, whatever else it runs. Hosts are the tailnet peers
+# tagged tag:lab. Run it with ./play lab. See docs/lab-access.md.
+- name: Lab target
+  hosts: lab
+  become: true
+  roles:
+    - lab_target

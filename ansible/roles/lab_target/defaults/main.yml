@@ -1,0 +1,8 @@
+# Your own account on the target, the one behind the <name>-admin alias. It is
+# the same name as on the server.
+lab_admin_user: "{{ lookup('env', 'USER') }}"
+
+# Passwordless sudo for lab_admin_user. The approval for privileged work is the
+# Tailscale check on that account (12 hours), not a sudo password. See
+# docs/lab-access.md, "Privileged changes".
+lab_admin_nopasswd: true
