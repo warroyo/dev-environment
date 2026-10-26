@@ -15,10 +15,13 @@ node_metrics_collectors:
   - systemd
 
 # Units whose state is exported. Group vars add a host's own services through
-# node_metrics_extra_units; the two lists are joined.
+# node_metrics_extra_units; the two lists are joined. Watch what is meant to
+# stay active: ssh.socket, not ssh.service (socket-activated on current
+# Ubuntu, so the service is inactive between logins), and a oneshot's timer,
+# not its service.
 node_metrics_units:
   - tailscaled.service
-  - ssh.service
+  - ssh.socket
   - prometheus-node-exporter.service
 node_metrics_extra_units: []
 
