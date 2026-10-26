@@ -1,8 +1,15 @@
 # The local model server: GTT memory, llama.cpp on Vulkan, model files, and
 # Gufo as a podman quadlet. Hosts are the tailnet peers tagged tag:inference.
 # Run it with ./play inference. See docs/inference-host.md.
+#
+# node_metrics is here as well as in lab.yml because the box drops tag:lab once
+# it is API-only, and its metrics must stay managed after that. It comes first:
+# the engine metrics in inference_host write into its textfile directory as
+# its prometheus user.
 - name: Inference host
   hosts: inference
   become: true
   roles:
+    - role: node_metrics
+      tags: [metrics]
     - inference_host

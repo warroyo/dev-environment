@@ -14,6 +14,7 @@ the Ansible playbook in [`ansible/`](../ansible), run from the server.
 | `llamacpp` | Builds a pinned llama.cpp with `-DGGML_VULKAN=ON` into `/opt/llama.cpp/<version>`, the fallback engine. Old builds are kept |
 | `models` | `hf download` of each entry in `inference_models` at a pinned revision into `/models/<name>`. Resumable, and skipped once complete |
 | `serve` | Installs llama-swap (pinned, checksummed) as the one endpoint on `:8080`, on the **tailnet address only**, since nothing behind it authenticates. Pulls the pinned Gufo image. Writes `/etc/llama-swap/config.yaml` from `llama_swap_models` and `llama_swap_groups` |
+| `metrics` | node_exporter on the tailnet address (role `node_metrics`), and a 30s timer that copies the loaded engines' `/metrics` into its textfile directory. Alloy on the server scrapes both; see [lab-metrics.md](lab-metrics.md) |
 
 Every run ends by printing the live GTT cap, the GPU Vulkan sees, the active
 llama.cpp build, llama-swap's state and which models are loaded.

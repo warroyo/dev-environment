@@ -1,0 +1,16 @@
+# Managed by dev-environment ansible (role inference_host). Do not edit here.
+# Copies the loaded models' engine metrics into node_exporter's textfile
+# directory. Run by llama-engine-metrics.timer. See docs/lab-metrics.md.
+[Unit]
+Description=Copy model engine metrics for node_exporter
+After=llama-swap.service
+
+[Service]
+Type=oneshot
+User=prometheus
+ExecStart=/usr/local/libexec/llama-engine-metrics http://{{ inference_tailnet_ip }}:{{ llama_swap_port }} {{ inference_metrics_textfile_dir }}/llama-engines.prom
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths={{ inference_metrics_textfile_dir }}

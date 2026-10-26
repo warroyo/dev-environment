@@ -1,0 +1,29 @@
+# The model engines' own counters (tokens in and out, tok/s, speculative
+# acceptance, KV use) for the lab dashboard. Each engine listens on 127.0.0.1
+# on a port llama-swap picks, so a timer copies them into node_exporter's
+# textfile directory and they leave the box with everything else. Needs the
+# node_metrics role, which owns that directory. See docs/lab-metrics.md.
+
+- name: Install the engine metrics copier
+  ansible.builtin.copy:
+    src: llama-engine-metrics
+    dest: /usr/local/libexec/llama-engine-metrics
+    mode: "0755"
+
+- name: Install the engine metrics service and timer
+  ansible.builtin.template:
+    src: "llama-engine-metrics.{{ item }}.j2"
+    dest: "/etc/systemd/system/llama-engine-metrics.{{ item }}"
+    mode: "0644"
+  loop: [service, timer]
+  notify: Reload systemd
+
+- name: Apply engine metrics unit changes
+  ansible.builtin.meta: flush_handlers
+
+- name: Run the engine metrics timer
+  ansible.builtin.systemd_service:
+    name: llama-engine-metrics.timer
+    state: started
+    enabled: true
+  when: not ansible_check_mode

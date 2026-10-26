@@ -1,0 +1,7 @@
+# Managed by dev-environment ansible (role node_metrics). Do not edit here:
+# change the node_metrics_* variables and re-run `ansible/play <group> --tags metrics`.
+#
+# systemd splits $ARGS on whitespace and does not interpret quotes inside it,
+# so no value below may contain a space or a quote. `[.]` stands in for `\.`
+# because EnvironmentFile processes backslashes.
+ARGS="--web.listen-address={{ node_metrics_listen_ip }}:{{ node_metrics_port }} --collector.textfile.directory={{ node_metrics_textfile_dir }}{% for c in node_metrics_collectors %} --collector.{{ c }}{% endfor %} --collector.systemd.unit-include=({{ (node_metrics_units + node_metrics_extra_units) | map('regex_replace', '\\.', '[.]') | join('|') }}) --collector.filesystem.fs-types-exclude={{ node_metrics_fs_types_exclude }}"

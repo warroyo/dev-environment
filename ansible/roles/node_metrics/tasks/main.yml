@@ -1,0 +1,73 @@
+# node_exporter from the Ubuntu archive, listening on the tailnet address.
+# Alloy on the server scrapes it; see docs/lab-metrics.md.
+
+# Without recommends: prometheus-node-exporter-collectors adds root timers
+# (smartmon, apt, ipmi) and series nobody has asked for yet.
+- name: Install node_exporter
+  ansible.builtin.apt:
+    name: prometheus-node-exporter
+    state: present
+    install_recommends: false
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Read the tailnet address for node_exporter
+  ansible.builtin.command: tailscale ip -4
+  register: node_metrics_ip_cmd
+  changed_when: false
+  check_mode: false
+
+- name: Remember the tailnet address for node_exporter
+  ansible.builtin.set_fact:
+    node_metrics_listen_ip: "{{ node_metrics_ip_cmd.stdout | trim }}"
+
+- name: Create the textfile collector directory
+  ansible.builtin.file:
+    path: "{{ node_metrics_textfile_dir }}"
+    state: directory
+    owner: prometheus
+    group: prometheus
+    mode: "0755"
+  when: not ansible_check_mode
+
+- name: Write the node_exporter arguments
+  ansible.builtin.template:
+    src: prometheus-node-exporter.default.j2
+    dest: /etc/default/prometheus-node-exporter
+    mode: "0644"
+  notify: Restart node_exporter
+
+- name: Create the node_exporter drop-in directory
+  ansible.builtin.file:
+    path: /etc/systemd/system/prometheus-node-exporter.service.d
+    state: directory
+    mode: "0755"
+
+- name: Start node_exporter after tailscaled
+  ansible.builtin.template:
+    src: 10-tailnet.conf.j2
+    dest: /etc/systemd/system/prometheus-node-exporter.service.d/10-tailnet.conf
+    mode: "0644"
+  notify:
+    - Reload systemd for node_exporter
+    - Restart node_exporter
+
+- name: Apply node_exporter changes
+  ansible.builtin.meta: flush_handlers
+
+- name: Run node_exporter
+  ansible.builtin.systemd_service:
+    name: prometheus-node-exporter.service
+    state: started
+    enabled: true
+  when: not ansible_check_mode
+
+- name: Check node_exporter answers on the tailnet address
+  ansible.builtin.uri:
+    url: "http://{{ node_metrics_listen_ip }}:{{ node_metrics_port }}/metrics"
+    return_content: false
+  register: node_metrics_probe
+  retries: 5
+  delay: 2
+  until: node_metrics_probe.status == 200
+  when: not ansible_check_mode

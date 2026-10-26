@@ -80,15 +80,18 @@
     msg: "{{ (gufo_diagnose.stdout_lines + gufo_diagnose.stderr_lines) }}"
   tags: [never, diagnose]
 
+# Tagged always: the engine metrics unit (--tags metrics) needs it too.
 - name: Read the tailnet address
   ansible.builtin.command: tailscale ip -4
   register: inference_tailnet_ip_cmd
   changed_when: false
   check_mode: false
+  tags: [always]
 
 - name: Remember the tailnet address
   ansible.builtin.set_fact:
     inference_tailnet_ip: "{{ inference_tailnet_ip_cmd.stdout | trim }}"
+  tags: [always]
 
 - name: Create the llama-swap config directory
   ansible.builtin.file:

@@ -1178,6 +1178,16 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# Lab metrics: Grafana Alloy ships this box's metrics and the lab targets'
+# (scraped over the tailnet) to Grafana Cloud. Skipped with a warning until
+# ~/.secrets/grafana-cloud exists, the same way the Telegram bot waits for its
+# token. See lib/alloy.sh and docs/lab-metrics.md.
+# shellcheck source=lib/alloy.sh
+source "${SCRIPT_DIR}/lib/alloy.sh"
+log "Installing Grafana Alloy (lab metrics)"
+install_alloy || log "  Alloy not installed; re-run ./provision/metrics-setup.sh once fixed."
+
+# ---------------------------------------------------------------------------
 # sshd bind restriction: Tailscale interface + LAN interface only, never
 # WAN. This is what lets both the Tailscale path (personal Air) and the
 # OpenVPN-to-LAN path (work laptop) reach the box, while it has zero SSH

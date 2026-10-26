@@ -93,3 +93,10 @@ llama_swap_groups: {}
 llama_swap_preload: []
 # Set with -e to restart llama-swap even when nothing changed.
 llama_swap_restart: false
+
+# --- Metrics -------------------------------------------------------------------
+# How often the loaded engines' /metrics are copied for node_exporter. Alloy
+# scrapes every 60s, so this only needs to be shorter than that.
+inference_metrics_interval: 30s
+# Must match node_metrics_textfile_dir (role node_metrics), which creates it.
+inference_metrics_textfile_dir: /var/lib/prometheus/node-exporter
