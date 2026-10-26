@@ -799,6 +799,32 @@ else
   log "  script after 'sudo tailscale up'."
 fi
 
+# Tailscale SSH: the same access model as the lab targets, so every SSH into
+# this box over the tailnet is authorized by the tailnet policy instead of by
+# authorized_keys. A new device (the phone, say) needs no key, just the
+# Tailscale app.
+#
+# The box stays UNTAGGED, unlike the targets. A tag takes a machine out of your
+# ownership and the policy gives tagged machines no grant, so a tagged server
+# could not start connections, and every agent SSH out to the lab starts here.
+# Untagged, it falls under the policy's autogroup:self rule, which is a
+# `check`: a browser re-auth per connecting device, held for 12 hours. That
+# check is the whole gate on the agent host, which is why it is not `accept`.
+#
+# Tailscale SSH only takes port 22 on the tailnet address. sshd keeps serving
+# the LAN with keys (the bind section below), as the fallback when Tailscale is
+# down and for the work laptop's VPN-to-LAN path. See docs/lab-access.md.
+if tailscale status >/dev/null 2>&1; then
+  if $SUDO tailscale set --ssh; then
+    log "  Tailscale SSH on: tailnet SSH is authorized by the tailnet policy"
+  else
+    log "  WARNING: could not enable Tailscale SSH; check 'tailscale set --ssh'"
+  fi
+else
+  log "  Tailscale is not up, so Tailscale SSH was NOT enabled. Re-run this"
+  log "  script after 'sudo tailscale up'."
+fi
+
 # ---------------------------------------------------------------------------
 # Split DNS for the lab zone, served on a port nothing intercepts.
 #

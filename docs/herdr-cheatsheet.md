@@ -21,6 +21,11 @@ instead and gives that up, in exchange for mosh's roaming and predictive echo.
 
 Neither runs inside tmux — both refuse rather than stack two multiplexers.
 
+**From the phone** (Termius, Mosh on, Tailscale app up): connect to the
+server's tailnet name and run `tput reset; herdr` — the same thing `--mosh`
+runs. No key on the phone: Tailscale SSH authorizes it, and the first
+connection in 12 hours prints a browser check URL.
+
 ## Keys
 
 Prefix is `Ctrl-b`, same as tmux. **Detach is `Ctrl-b q`, not `Ctrl-b d`** —

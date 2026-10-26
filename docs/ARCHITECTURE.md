@@ -111,6 +111,15 @@ re-provision.
 
 ## sshd binding
 
+Over the tailnet, sshd is not what answers. The server runs **Tailscale SSH**
+(`tailscale set --ssh`), which takes port 22 on the tailnet address and
+authorizes by the tailnet policy, the same model as the lab targets in
+[`docs/lab-access.md`](lab-access.md). The server stays untagged, so the
+policy's `autogroup:self` rule applies: a browser check per connecting device,
+held for 12 hours, and no `authorized_keys` for tailnet clients. A new device,
+such as the phone, needs only the Tailscale app. The sshd bindings below are the
+LAN path and the fallback when Tailscale is down; LAN logins use keys.
+
 sshd binds only to the server's mesh-VPN address and its LAN addresses, set by
 [`provision/server-bootstrap.sh`](../provision/server-bootstrap.sh) — never a
 WAN address. Both remote paths therefore work while the server has no SSH

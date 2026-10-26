@@ -29,6 +29,10 @@ server (untagged, yours)                       target (tag:lab)
   cannot start connections into the tailnet. Only the SSH rules let anyone in.
 - **The LAN stays a fallback.** sshd still serves the LAN, keys only, for when
   Tailscale is down.
+- **The server takes Tailscale SSH too**, for you rather than for agents: your
+  devices (laptop, phone) SSH into it as your account, under the policy's
+  `autogroup:self` check rule. It stays untagged, because a tagged server could
+  not start the connections agents make. Enabled by `server-bootstrap.sh`.
 
 The pieces:
 
