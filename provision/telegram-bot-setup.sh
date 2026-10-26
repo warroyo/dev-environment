@@ -71,14 +71,25 @@ TELEGRAM_BOT_TOKEN="$(printf '%s' "$TELEGRAM_BOT_TOKEN" | tr -d '[:space:]')"
 
 API="https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}"
 
+# tg <max-time> <method> [curl args...]
+# The URL carries the token, so it goes to curl as config on stdin: argv
+# shows in `ps` to every local user. printf is a builtin, so no argv there.
+tg() {
+  local max_time="$1" method="$2"; shift 2
+  printf 'url = "%s/%s"\n' "$API" "$method" | curl -sS --max-time "$max_time" -K - "$@"
+}
+
 log "Checking the token against Telegram"
 # getMe is the cheapest proof that the token is real and that this box can
 # reach api.telegram.org at all — worth separating, because a routing problem
 # and a mistyped token otherwise both surface as "the bot does nothing".
-me="$(curl -sS --max-time 20 "${API}/getMe" 2>/dev/null || true)"
+me="$(tg 20 getMe 2>/dev/null || true)"
 [ -n "$me" ] || die "no response from api.telegram.org — check this box's network path"
 if [ "$(jq -r '.ok' <<<"$me" 2>/dev/null)" != "true" ]; then
-  die "Telegram rejected the token: $(jq -r '.description // .' <<<"$me" 2>/dev/null)"
+  # Every shell sources ~/.secrets/*, so after a /revoke the old token is
+  # already in the environment and the prompt above never runs.
+  die "Telegram rejected the token: $(jq -r '.description // .' <<<"$me" 2>/dev/null)
+  rotating? your shell exports the old token from $SECRETS — rerun with: env -u TELEGRAM_BOT_TOKEN $0"
 fi
 BOT_USERNAME="$(jq -r '.result.username' <<<"$me")"
 info "authenticated as @${BOT_USERNAME}  (t.me/${BOT_USERNAME})"
@@ -108,10 +119,10 @@ if [ -z "$ALLOWED" ]; then
   # A webhook, if one is set, disables getUpdates entirely — it answers 409
   # forever and no amount of messaging the bot changes that. This bot polls,
   # so a webhook here is always leftover configuration.
-  hook="$(curl -sS --max-time 20 "${API}/getWebhookInfo" 2>/dev/null || true)"
+  hook="$(tg 20 getWebhookInfo 2>/dev/null || true)"
   if [ -n "$(jq -r '.result.url // ""' <<<"$hook" 2>/dev/null)" ]; then
     log "Deleting the webhook set on this bot (it blocks getUpdates)"
-    curl -sS --max-time 20 "${API}/deleteWebhook" >/dev/null || true
+    tg 20 deleteWebhook >/dev/null || true
   fi
 
   log "Waiting for a message so we can learn your chat id"
@@ -123,7 +134,7 @@ if [ -z "$ALLOWED" ]; then
   while [ "$(date +%s)" -lt "$deadline" ]; do
     # No `offset` parameter on purpose: acknowledging the updates here would
     # consume them, and the bot's own first poll should still see the /start.
-    updates="$(curl -sS --max-time 40 -G "${API}/getUpdates" \
+    updates="$(tg 40 getUpdates -G \
                  --data-urlencode 'timeout=25' 2>/dev/null || true)"
     [ -n "$updates" ] || continue
     if [ "$(jq -r '.ok' <<<"$updates" 2>/dev/null)" != "true" ]; then

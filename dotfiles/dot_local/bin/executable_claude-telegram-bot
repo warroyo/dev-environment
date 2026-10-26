@@ -66,7 +66,10 @@ log() { printf '%s claude-telegram-bot: %s\n' "$(date -Is)" "$1"; }
 # ---------------------------------------------------------------------------
 api() {                                   # api <method> [curl args...]
   local method="$1"; shift
-  curl -sS --max-time $((POLL_TIMEOUT + 15)) -G "${API}/${method}" "$@"
+  # The URL carries the token, so it goes to curl as config on stdin: argv
+  # shows in `ps` to every local user. printf is a builtin, so no argv there.
+  printf 'url = "%s/%s"\n' "$API" "$method" |
+    curl -sS --max-time $((POLL_TIMEOUT + 15)) -G -K - "$@"
 }
 
 send() {                                  # send <chat_id> <text>
