@@ -1,0 +1,2058 @@
+{
+  "title": "Lab architecture",
+  "uid": "lab-architecture",
+  "tags": [
+    "lab",
+    "dev-environment"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "editable": true,
+  "graphTooltip": 0,
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "type": "datasource",
+        "query": "prometheus",
+        "label": "Data source",
+        "current": {},
+        "hide": 0,
+        "refresh": 1,
+        "regex": ".*-prom$"
+      }
+    ]
+  },
+  "annotations": {
+    "list": []
+  },
+  "links": [
+    {
+      "title": "Lab overview",
+      "type": "link",
+      "url": "/d/lab-overview",
+      "icon": "dashboard"
+    }
+  ],
+  "panels": [
+    {
+      "id": 1,
+      "type": "canvas",
+      "title": "Lab architecture",
+      "description": "Live status of the lab. Green: up, red: down, grey: no data or not measured yet. Layout follows the lab-architecture note in the vault.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 28,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "max by (instance) (up{job=\"node\",instance=~\"ubuntu-home|evo-x2\"})",
+          "legendFormat": "{{instance}}",
+          "instant": true,
+          "range": false,
+          "format": "time_series"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "max(up{job=\"llama-swap\"})",
+          "legendFormat": "llama-swap",
+          "instant": true,
+          "range": false,
+          "format": "time_series"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "max by (instance, name) (node_systemd_unit_state{state=\"active\",instance=~\"ubuntu-home|evo-x2\"})",
+          "legendFormat": "{{instance}} {{name}}",
+          "instant": true,
+          "range": false,
+          "format": "time_series"
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "max(node_network_carrier{instance=\"ubuntu-home\",device=\"tun0\"})",
+          "legendFormat": "tun0",
+          "instant": true,
+          "range": false,
+          "format": "time_series"
+        },
+        {
+          "refId": "E",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "max by (model) (llama_engine_up{state=\"ready\"} == 1)",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "refId": "F",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "max(node_hwmon_temp_celsius{instance=\"evo-x2\"} * on (instance, chip) group_left (chip_name) node_hwmon_chip_names{chip_name=\"amdgpu\"})",
+          "legendFormat": "GPU temp",
+          "instant": true,
+          "range": false,
+          "format": "time_series"
+        },
+        {
+          "refId": "G",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "max(node_drm_gpu_busy_percent{instance=\"evo-x2\"})",
+          "legendFormat": "GPU busy",
+          "instant": true,
+          "range": false,
+          "format": "time_series"
+        },
+        {
+          "refId": "H",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(node_drm_memory_gtt_used_bytes{instance=\"evo-x2\"}) / sum(node_drm_memory_gtt_size_bytes{instance=\"evo-x2\"})",
+          "legendFormat": "GTT used",
+          "instant": true,
+          "range": false,
+          "format": "time_series"
+        },
+        {
+          "refId": "I",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "node_memory_MemAvailable_bytes{instance=\"evo-x2\"} / node_memory_MemTotal_bytes{instance=\"evo-x2\"}",
+          "legendFormat": "evo-x2 memory free",
+          "instant": true,
+          "range": false,
+          "format": "time_series"
+        },
+        {
+          "refId": "J",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "1 - avg(rate(node_cpu_seconds_total{mode=\"idle\",instance=\"ubuntu-home\"}[5m]))",
+          "legendFormat": "ubuntu-home CPU",
+          "instant": true,
+          "range": false,
+          "format": "time_series"
+        },
+        {
+          "refId": "K",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "node_memory_MemAvailable_bytes{instance=\"ubuntu-home\"} / node_memory_MemTotal_bytes{instance=\"ubuntu-home\"}",
+          "legendFormat": "ubuntu-home memory free",
+          "instant": true,
+          "range": false,
+          "format": "time_series"
+        },
+        {
+          "refId": "L",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(rate(llamacpp:tokens_predicted_total[5m]))",
+          "legendFormat": "generated tok/s",
+          "instant": true,
+          "range": false,
+          "format": "time_series"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#e6e6e6"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#e6e6e6",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^(ubuntu-home|evo-x2|llama-swap|tun0)$|\\.service$|\\.timer$|\\.socket$"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "#c4314b",
+                      "value": null
+                    },
+                    {
+                      "color": "#2e8b57",
+                      "value": 1
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "GPU temp"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "celsius"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "GPU busy"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "GTT used"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "evo-x2 memory free"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "ubuntu-home CPU"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "ubuntu-home memory free"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "generated tok/s"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "inlineEditing": false,
+        "showAdvancedTypes": true,
+        "panZoom": false,
+        "infinitePan": false,
+        "root": {
+          "type": "frame",
+          "name": "Element root",
+          "elements": [
+            {
+              "type": "rectangle",
+              "name": "MacBook Air",
+              "config": {
+                "text": {
+                  "mode": "fixed",
+                  "fixed": "MacBook Air \u00b7 tailnet"
+                },
+                "color": {
+                  "fixed": "#e6e6e6"
+                },
+                "size": 14,
+                "align": "center",
+                "valign": "middle"
+              },
+              "background": {
+                "color": {
+                  "fixed": "#2f5d8a"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "transparent"
+                },
+                "width": 0,
+                "radius": 6
+              },
+              "placement": {
+                "left": 3,
+                "right": 82,
+                "top": 2,
+                "bottom": 89
+              },
+              "constraint": {
+                "horizontal": "scale",
+                "vertical": "scale"
+              },
+              "connections": [
+                {
+                  "source": {
+                    "x": 0,
+                    "y": -1
+                  },
+                  "target": {
+                    "x": -0.72,
+                    "y": 1
+                  },
+                  "targetName": "ubuntu-home",
+                  "path": "straight",
+                  "color": {
+                    "fixed": "#a8adb5"
+                  },
+                  "size": {
+                    "fixed": 2,
+                    "min": 1,
+                    "max": 10
+                  }
+                }
+              ]
+            },
+            {
+              "type": "rectangle",
+              "name": "Phone",
+              "config": {
+                "text": {
+                  "mode": "fixed",
+                  "fixed": "Phone \u00b7 Telegram"
+                },
+                "color": {
+                  "fixed": "#e6e6e6"
+                },
+                "size": 14,
+                "align": "center",
+                "valign": "middle"
+              },
+              "background": {
+                "color": {
+                  "fixed": "#2f5d8a"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "transparent"
+                },
+                "width": 0,
+                "radius": 6
+              },
+              "placement": {
+                "left": 35.1,
+                "right": 50.400000000000006,
+                "top": 2,
+                "bottom": 89
+              },
+              "constraint": {
+                "horizontal": "scale",
+                "vertical": "scale"
+              },
+              "connections": [
+                {
+                  "source": {
+                    "x": 0,
+                    "y": -1
+                  },
+                  "target": {
+                    "x": 0,
+                    "y": 1
+                  },
+                  "targetName": "telegram-bot",
+                  "path": "straight",
+                  "color": {
+                    "fixed": "#a8adb5",
+                    "field": "ubuntu-home claude-telegram-bot.service"
+                  },
+                  "size": {
+                    "fixed": 2,
+                    "min": 1,
+                    "max": 10
+                  }
+                }
+              ]
+            },
+            {
+              "type": "rectangle",
+              "name": "Grafana Cloud",
+              "config": {
+                "text": {
+                  "mode": "fixed",
+                  "fixed": "Grafana Cloud"
+                },
+                "color": {
+                  "fixed": "#e6e6e6"
+                },
+                "size": 14,
+                "align": "center",
+                "valign": "middle"
+              },
+              "background": {
+                "color": {
+                  "fixed": "#7a4fb0"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "transparent"
+                },
+                "width": 0,
+                "radius": 6
+              },
+              "placement": {
+                "left": 74,
+                "right": 3,
+                "top": 2,
+                "bottom": 89
+              },
+              "constraint": {
+                "horizontal": "scale",
+                "vertical": "scale"
+              },
+              "connections": []
+            },
+            {
+              "type": "rectangle",
+              "name": "Client lab",
+              "config": {
+                "text": {
+                  "mode": "fixed",
+                  "fixed": "Client lab (tun0)"
+                },
+                "color": {
+                  "fixed": "#e6e6e6"
+                },
+                "size": 14,
+                "align": "center",
+                "valign": "middle"
+              },
+              "background": {
+                "color": {
+                  "fixed": "#5a5f66",
+                  "field": "tun0"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "transparent"
+                },
+                "width": 0,
+                "radius": 6
+              },
+              "placement": {
+                "left": 74,
+                "right": 3,
+                "top": 32,
+                "bottom": 56
+              },
+              "constraint": {
+                "horizontal": "scale",
+                "vertical": "scale"
+              },
+              "connections": []
+            },
+            {
+              "type": "rectangle",
+              "name": "homeNAS",
+              "config": {
+                "text": {
+                  "mode": "fixed",
+                  "fixed": "homeNAS \u00b7 no metrics yet"
+                },
+                "color": {
+                  "fixed": "#e6e6e6"
+                },
+                "size": 13,
+                "align": "center",
+                "valign": "middle"
+              },
+              "background": {
+                "color": {
+                  "fixed": "#5a5f66"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "transparent"
+                },
+                "width": 0,
+                "radius": 6
+              },
+              "placement": {
+                "left": 74,
+                "right": 3,
+                "top": 66,
+                "bottom": 22
+              },
+              "constraint": {
+                "horizontal": "scale",
+                "vertical": "scale"
+              },
+              "connections": []
+            },
+            {
+              "type": "rectangle",
+              "name": "ubuntu-home",
+              "config": {
+                "text": {
+                  "mode": "fixed",
+                  "fixed": ""
+                },
+                "color": {
+                  "fixed": "#e6e6e6"
+                },
+                "size": 14,
+                "align": "center",
+                "valign": "middle"
+              },
+              "background": {
+                "color": {
+                  "fixed": "#2b2f36"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "#5a5f66"
+                },
+                "width": 1,
+                "radius": 6
+              },
+              "placement": {
+                "left": 2,
+                "right": 34,
+                "top": 17,
+                "bottom": 45
+              },
+              "constraint": {
+                "horizontal": "scale",
+                "vertical": "scale"
+              },
+              "connections": []
+            },
+            {
+              "type": "rectangle",
+              "name": "ubuntu-home status",
+              "config": {
+                "text": {
+                  "mode": "fixed",
+                  "fixed": "ubuntu-home \u00b7 agent host"
+                },
+                "color": {
+                  "fixed": "#e6e6e6"
+                },
+                "size": 14,
+                "align": "center",
+                "valign": "middle"
+              },
+              "background": {
+                "color": {
+                  "fixed": "#5a5f66",
+                  "field": "ubuntu-home"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "transparent"
+                },
+                "width": 0,
+                "radius": 6
+              },
+              "placement": {
+                "left": 3.5,
+                "right": 74.5,
+                "top": 18.5,
+                "bottom": 75.5
+              },
+              "constraint": {
+                "horizontal": "scale",
+                "vertical": "scale"
+              },
+              "connections": []
+            },
+            {
+              "type": "rectangle",
+              "name": "agents",
+              "config": {
+                "text": {
+                  "mode": "fixed",
+                  "fixed": "Claude Code \u00b7 Codex"
+                },
+                "color": {
+                  "fixed": "#e6e6e6"
+                },
+                "size": 12,
+                "align": "center",
+                "valign": "middle"
+              },
+              "background": {
+                "color": {
+                  "fixed": "#6b4fa0"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "transparent"
+                },
+                "width": 0,
+                "radius": 6
+              },
+              "placement": {
+                "left": 3.5,
+                "right": 82.0,
+                "top": 27.0,
+                "bottom": 65.5
+              },
+              "constraint": {
+                "horizontal": "scale",
+                "vertical": "scale"
+              },
+              "connections": []
+            },
+            {
+              "type": "rectangle",
+              "name": "herdr",
+              "config": {
+                "text": {
+                  "mode": "fixed",
+                  "fixed": "herdr-server"
+                },
+                "color": {
+                  "fixed": "#e6e6e6"
+                },
+                "size": 12,
+                "align": "center",
+                "valign": "middle"
+              },
+              "background": {
+                "color": {
+                  "fixed": "#5a5f66",
+                  "field": "ubuntu-home herdr-server.service"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "transparent"
+                },
+                "width": 0,
+                "radius": 6
+              },
+              "placement": {
+                "left": 19.3,
+                "right": 66.2,
+                "top": 27.0,
+                "bottom": 65.5
+              },
+              "constraint": {
+                "horizontal": "scale",
+                "vertical": "scale"
+              },
+              "connections": []
+            },
+            {
+              "type": "rectangle",
+              "name": "telegram-bot",
+              "config": {
+                "text": {
+                  "mode": "fixed",
+                  "fixed": "claude-telegram-bot"
+                },
+                "color": {
+                  "fixed": "#e6e6e6"
+                },
+                "size": 12,
+                "align": "center",
+                "valign": "middle"
+              },
+              "background": {
+                "color": {
+                  "fixed": "#5a5f66",
+                  "field": "ubuntu-home claude-telegram-bot.service"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "transparent"
+                },
+                "width": 0,
+                "radius": 6
+              },
+              "placement": {
+                "left": 35.1,
+                "right": 50.400000000000006,
+                "top": 27.0,
+                "bottom": 65.5
+              },
+              "constraint": {
+                "horizontal": "scale",
+                "vertical": "scale"
+              },
+              "connections": []
+            },
+            {
+              "type": "rectangle",
+              "name": "alloy",
+              "config": {
+                "text": {
+                  "mode": "fixed",
+                  "fixed": "Alloy"
+                },
+                "color": {
+                  "fixed": "#e6e6e6"
+                },
+                "size": 12,
+                "align": "center",
+                "valign": "middle"
+              },
+              "background": {
+                "color": {
+                  "fixed": "#5a5f66",
+                  "field": "ubuntu-home alloy.service"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "transparent"
+                },
+                "width": 0,
+                "radius": 6
+              },
+              "placement": {
+                "left": 50.900000000000006,
+                "right": 34.599999999999994,
+                "top": 27.0,
+                "bottom": 65.5
+              },
+              "constraint": {
+                "horizontal": "scale",
+                "vertical": "scale"
+              },
+              "connections": [
+                {
+                  "source": {
+                    "x": 1,
+                    "y": 0
+                  },
+                  "target": {
+                    "x": -1,
+                    "y": -1
+                  },
+                  "targetName": "Grafana Cloud",
+                  "path": "straight",
+                  "color": {
+                    "fixed": "#a8adb5",
+                    "field": "ubuntu-home alloy.service"
+                  },
+                  "size": {
+                    "fixed": 2,
+                    "min": 1,
+                    "max": 10
+                  }
+                }
+              ]
+            },
+            {
+              "type": "rectangle",
+              "name": "dnsmasq",
+              "config": {
+                "text": {
+                  "mode": "fixed",
+                  "fixed": "dnsmasq split DNS"
+                },
+                "color": {
+                  "fixed": "#e6e6e6"
+                },
+                "size": 12,
+                "align": "center",
+                "valign": "middle"
+              },
+              "background": {
+                "color": {
+                  "fixed": "#5a5f66",
+                  "field": "ubuntu-home dnsmasq.service"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "transparent"
+                },
+                "width": 0,
+                "radius": 6
+              },
+              "placement": {
+                "left": 3.5,
+                "right": 82.0,
+                "top": 35.8,
+                "bottom": 56.7
+              },
+              "constraint": {
+                "horizontal": "scale",
+                "vertical": "scale"
+              },
+              "connections": []
+            },
+            {
+              "type": "rectangle",
+              "name": "docker",
+              "config": {
+                "text": {
+                  "mode": "fixed",
+                  "fixed": "docker"
+                },
+                "color": {
+                  "fixed": "#e6e6e6"
+                },
+                "size": 12,
+                "align": "center",
+                "valign": "middle"
+              },
+              "background": {
+                "color": {
+                  "fixed": "#5a5f66",
+                  "field": "ubuntu-home docker.service"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "transparent"
+                },
+                "width": 0,
+                "radius": 6
+              },
+              "placement": {
+                "left": 19.3,
+                "right": 66.2,
+                "top": 35.8,
+                "bottom": 56.7
+              },
+              "constraint": {
+                "horizontal": "scale",
+                "vertical": "scale"
+              },
+              "connections": []
+            },
+            {
+              "type": "rectangle",
+              "name": "lab-routing",
+              "config": {
+                "text": {
+                  "mode": "fixed",
+                  "fixed": "lab-routing"
+                },
+                "color": {
+                  "fixed": "#e6e6e6"
+                },
+                "size": 12,
+                "align": "center",
+                "valign": "middle"
+              },
+              "background": {
+                "color": {
+                  "fixed": "#5a5f66",
+                  "field": "ubuntu-home lab-routing.service"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "transparent"
+                },
+                "width": 0,
+                "radius": 6
+              },
+              "placement": {
+                "left": 35.1,
+                "right": 50.400000000000006,
+                "top": 35.8,
+                "bottom": 56.7
+              },
+              "constraint": {
+                "horizontal": "scale",
+                "vertical": "scale"
+              },
+              "connections": []
+            },
+            {
+              "type": "rectangle",
+              "name": "openvpn",
+              "config": {
+                "text": {
+                  "mode": "fixed",
+                  "fixed": "OpenVPN client-env"
+                },
+                "color": {
+                  "fixed": "#e6e6e6"
+                },
+                "size": 12,
+                "align": "center",
+                "valign": "middle"
+              },
+              "background": {
+                "color": {
+                  "fixed": "#5a5f66",
+                  "field": "ubuntu-home openvpn-client@client-env.service"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "transparent"
+                },
+                "width": 0,
+                "radius": 6
+              },
+              "placement": {
+                "left": 50.900000000000006,
+                "right": 34.599999999999994,
+                "top": 35.8,
+                "bottom": 56.7
+              },
+              "constraint": {
+                "horizontal": "scale",
+                "vertical": "scale"
+              },
+              "connections": [
+                {
+                  "source": {
+                    "x": 1,
+                    "y": 0
+                  },
+                  "target": {
+                    "x": -1,
+                    "y": 0
+                  },
+                  "targetName": "Client lab",
+                  "path": "straight",
+                  "color": {
+                    "fixed": "#a8adb5",
+                    "field": "ubuntu-home openvpn-client@client-env.service"
+                  },
+                  "size": {
+                    "fixed": 3,
+                    "min": 1,
+                    "max": 10
+                  }
+                }
+              ]
+            },
+            {
+              "type": "rectangle",
+              "name": "litellm",
+              "config": {
+                "text": {
+                  "mode": "fixed",
+                  "fixed": "LiteLLM :4000"
+                },
+                "color": {
+                  "fixed": "#e6e6e6"
+                },
+                "size": 12,
+                "align": "center",
+                "valign": "middle"
+              },
+              "background": {
+                "color": {
+                  "fixed": "#5a5f66",
+                  "field": "ubuntu-home litellm.service"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "transparent"
+                },
+                "width": 0,
+                "radius": 6
+              },
+              "placement": {
+                "left": 3.5,
+                "right": 82.0,
+                "top": 44.6,
+                "bottom": 47.9
+              },
+              "constraint": {
+                "horizontal": "scale",
+                "vertical": "scale"
+              },
+              "connections": [
+                {
+                  "source": {
+                    "x": 0,
+                    "y": -1
+                  },
+                  "target": {
+                    "x": -0.34,
+                    "y": 1
+                  },
+                  "targetName": "llama-swap",
+                  "path": "straight",
+                  "color": {
+                    "fixed": "#a8adb5",
+                    "field": "llama-swap"
+                  },
+                  "size": {
+                    "fixed": 3,
+                    "min": 1,
+                    "max": 10
+                  }
+                }
+              ]
+            },
+            {
+              "type": "rectangle",
+              "name": "uh-tailscaled",
+              "config": {
+                "text": {
+                  "mode": "fixed",
+                  "fixed": "tailscaled"
+                },
+                "color": {
+                  "fixed": "#e6e6e6"
+                },
+                "size": 12,
+                "align": "center",
+                "valign": "middle"
+              },
+              "background": {
+                "color": {
+                  "fixed": "#5a5f66",
+                  "field": "ubuntu-home tailscaled.service"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "transparent"
+                },
+                "width": 0,
+                "radius": 6
+              },
+              "placement": {
+                "left": 19.3,
+                "right": 66.2,
+                "top": 44.6,
+                "bottom": 47.9
+              },
+              "constraint": {
+                "horizontal": "scale",
+                "vertical": "scale"
+              },
+              "connections": [
+                {
+                  "source": {
+                    "x": 0,
+                    "y": -1
+                  },
+                  "target": {
+                    "x": -0.233,
+                    "y": 1
+                  },
+                  "targetName": "evo-x2",
+                  "path": "straight",
+                  "color": {
+                    "fixed": "#a8adb5",
+                    "field": "evo-x2 tailscaled.service"
+                  },
+                  "size": {
+                    "fixed": 3,
+                    "min": 1,
+                    "max": 10
+                  }
+                }
+              ]
+            },
+            {
+              "type": "rectangle",
+              "name": "ubuntu-home cpu label",
+              "config": {
+                "text": {
+                  "mode": "fixed",
+                  "fixed": "CPU"
+                },
+                "color": {
+                  "fixed": "#a8adb5"
+                },
+                "size": 11,
+                "align": "right",
+                "valign": "middle"
+              },
+              "background": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "transparent"
+                },
+                "width": 0,
+                "radius": 6
+              },
+              "placement": {
+                "left": 34.1,
+                "right": 58.900000000000006,
+                "top": 44.6,
+                "bottom": 47.9
+              },
+              "constraint": {
+                "horizontal": "scale",
+                "vertical": "scale"
+              },
+              "connections": []
+            },
+            {
+              "type": "metric-value",
+              "name": "ubuntu-home cpu",
+              "config": {
+                "text": {
+                  "mode": "field",
+                  "field": "ubuntu-home CPU",
+                  "fixed": ""
+                },
+                "color": {
+                  "fixed": "#e6e6e6"
+                },
+                "size": 16,
+                "align": "center",
+                "valign": "middle"
+              },
+              "background": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              },
+              "placement": {
+                "left": 41.1,
+                "right": 51.4,
+                "top": 44.6,
+                "bottom": 47.9
+              },
+              "constraint": {
+                "horizontal": "scale",
+                "vertical": "scale"
+              },
+              "connections": []
+            },
+            {
+              "type": "rectangle",
+              "name": "ubuntu-home mem label",
+              "config": {
+                "text": {
+                  "mode": "fixed",
+                  "fixed": "memory free"
+                },
+                "color": {
+                  "fixed": "#a8adb5"
+                },
+                "size": 11,
+                "align": "right",
+                "valign": "middle"
+              },
+              "background": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "transparent"
+                },
+                "width": 0,
+                "radius": 6
+              },
+              "placement": {
+                "left": 49.6,
+                "right": 42.4,
+                "top": 44.6,
+                "bottom": 47.9
+              },
+              "constraint": {
+                "horizontal": "scale",
+                "vertical": "scale"
+              },
+              "connections": []
+            },
+            {
+              "type": "metric-value",
+              "name": "ubuntu-home mem",
+              "config": {
+                "text": {
+                  "mode": "field",
+                  "field": "ubuntu-home memory free",
+                  "fixed": ""
+                },
+                "color": {
+                  "fixed": "#e6e6e6"
+                },
+                "size": 16,
+                "align": "center",
+                "valign": "middle"
+              },
+              "background": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              },
+              "placement": {
+                "left": 57.6,
+                "right": 34.9,
+                "top": 44.6,
+                "bottom": 47.9
+              },
+              "constraint": {
+                "horizontal": "scale",
+                "vertical": "scale"
+              },
+              "connections": []
+            },
+            {
+              "type": "rectangle",
+              "name": "evo-x2",
+              "config": {
+                "text": {
+                  "mode": "fixed",
+                  "fixed": ""
+                },
+                "color": {
+                  "fixed": "#e6e6e6"
+                },
+                "size": 14,
+                "align": "center",
+                "valign": "middle"
+              },
+              "background": {
+                "color": {
+                  "fixed": "#2b2f36"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "#5a5f66"
+                },
+                "width": 1,
+                "radius": 6
+              },
+              "placement": {
+                "left": 2,
+                "right": 34,
+                "top": 61,
+                "bottom": 2
+              },
+              "constraint": {
+                "horizontal": "scale",
+                "vertical": "scale"
+              },
+              "connections": []
+            },
+            {
+              "type": "rectangle",
+              "name": "llama-swap",
+              "config": {
+                "text": {
+                  "mode": "fixed",
+                  "fixed": "llama-swap :8080"
+                },
+                "color": {
+                  "fixed": "#e6e6e6"
+                },
+                "size": 13,
+                "align": "center",
+                "valign": "middle"
+              },
+              "background": {
+                "color": {
+                  "fixed": "#5a5f66",
+                  "field": "llama-swap"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "transparent"
+                },
+                "width": 0,
+                "radius": 6
+              },
+              "placement": {
+                "left": 3.5,
+                "right": 74.5,
+                "top": 63,
+                "bottom": 30
+              },
+              "constraint": {
+                "horizontal": "scale",
+                "vertical": "scale"
+              },
+              "connections": []
+            },
+            {
+              "type": "rectangle",
+              "name": "evo-x2 status",
+              "config": {
+                "text": {
+                  "mode": "fixed",
+                  "fixed": "evo-x2 \u00b7 inference"
+                },
+                "color": {
+                  "fixed": "#e6e6e6"
+                },
+                "size": 13,
+                "align": "center",
+                "valign": "middle"
+              },
+              "background": {
+                "color": {
+                  "fixed": "#5a5f66",
+                  "field": "evo-x2"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "transparent"
+                },
+                "width": 0,
+                "radius": 6
+              },
+              "placement": {
+                "left": 28,
+                "right": 54.5,
+                "top": 63,
+                "bottom": 30
+              },
+              "constraint": {
+                "horizontal": "scale",
+                "vertical": "scale"
+              },
+              "connections": []
+            },
+            {
+              "type": "rectangle",
+              "name": "node-exporter",
+              "config": {
+                "text": {
+                  "mode": "fixed",
+                  "fixed": "node_exporter"
+                },
+                "color": {
+                  "fixed": "#e6e6e6"
+                },
+                "size": 10,
+                "align": "center",
+                "valign": "middle"
+              },
+              "background": {
+                "color": {
+                  "fixed": "#5a5f66",
+                  "field": "evo-x2 prometheus-node-exporter.service"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "transparent"
+                },
+                "width": 0,
+                "radius": 6
+              },
+              "placement": {
+                "left": 47,
+                "right": 35.5,
+                "top": 63.0,
+                "bottom": 33.7
+              },
+              "constraint": {
+                "horizontal": "scale",
+                "vertical": "scale"
+              },
+              "connections": []
+            },
+            {
+              "type": "rectangle",
+              "name": "ev-tailscaled",
+              "config": {
+                "text": {
+                  "mode": "fixed",
+                  "fixed": "tailscaled"
+                },
+                "color": {
+                  "fixed": "#e6e6e6"
+                },
+                "size": 10,
+                "align": "center",
+                "valign": "middle"
+              },
+              "background": {
+                "color": {
+                  "fixed": "#5a5f66",
+                  "field": "evo-x2 tailscaled.service"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "transparent"
+                },
+                "width": 0,
+                "radius": 6
+              },
+              "placement": {
+                "left": 47,
+                "right": 35.5,
+                "top": 66.7,
+                "bottom": 29.999999999999996
+              },
+              "constraint": {
+                "horizontal": "scale",
+                "vertical": "scale"
+              },
+              "connections": []
+            },
+            {
+              "type": "rectangle",
+              "name": "model label",
+              "config": {
+                "text": {
+                  "mode": "fixed",
+                  "fixed": "loaded model"
+                },
+                "color": {
+                  "fixed": "#a8adb5"
+                },
+                "size": 11,
+                "align": "center",
+                "valign": "middle"
+              },
+              "background": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "transparent"
+                },
+                "width": 0,
+                "radius": 6
+              },
+              "placement": {
+                "left": 3.5,
+                "right": 74.5,
+                "top": 72,
+                "bottom": 24
+              },
+              "constraint": {
+                "horizontal": "scale",
+                "vertical": "scale"
+              },
+              "connections": []
+            },
+            {
+              "type": "metric-value",
+              "name": "model",
+              "config": {
+                "text": {
+                  "mode": "field",
+                  "field": "model",
+                  "fixed": ""
+                },
+                "color": {
+                  "fixed": "#e6e6e6"
+                },
+                "size": 14,
+                "align": "center",
+                "valign": "middle"
+              },
+              "background": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              },
+              "placement": {
+                "left": 3.5,
+                "right": 74.5,
+                "top": 76,
+                "bottom": 18
+              },
+              "constraint": {
+                "horizontal": "scale",
+                "vertical": "scale"
+              },
+              "connections": []
+            },
+            {
+              "type": "rectangle",
+              "name": "generated tok/s label",
+              "config": {
+                "text": {
+                  "mode": "fixed",
+                  "fixed": "generated tok/s (5m)"
+                },
+                "color": {
+                  "fixed": "#a8adb5"
+                },
+                "size": 11,
+                "align": "center",
+                "valign": "middle"
+              },
+              "background": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "transparent"
+                },
+                "width": 0,
+                "radius": 6
+              },
+              "placement": {
+                "left": 3.5,
+                "right": 74.5,
+                "top": 82.5,
+                "bottom": 13.5
+              },
+              "constraint": {
+                "horizontal": "scale",
+                "vertical": "scale"
+              },
+              "connections": []
+            },
+            {
+              "type": "metric-value",
+              "name": "generated tok/s",
+              "config": {
+                "text": {
+                  "mode": "field",
+                  "field": "generated tok/s",
+                  "fixed": ""
+                },
+                "color": {
+                  "fixed": "#e6e6e6"
+                },
+                "size": 16,
+                "align": "center",
+                "valign": "middle"
+              },
+              "background": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              },
+              "placement": {
+                "left": 3.5,
+                "right": 74.5,
+                "top": 86.5,
+                "bottom": 7.5
+              },
+              "constraint": {
+                "horizontal": "scale",
+                "vertical": "scale"
+              },
+              "connections": []
+            },
+            {
+              "type": "rectangle",
+              "name": "GPU temp label",
+              "config": {
+                "text": {
+                  "mode": "fixed",
+                  "fixed": "GPU temp"
+                },
+                "color": {
+                  "fixed": "#a8adb5"
+                },
+                "size": 11,
+                "align": "center",
+                "valign": "middle"
+              },
+              "background": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "transparent"
+                },
+                "width": 0,
+                "radius": 6
+              },
+              "placement": {
+                "left": 28,
+                "right": 54.5,
+                "top": 72,
+                "bottom": 24
+              },
+              "constraint": {
+                "horizontal": "scale",
+                "vertical": "scale"
+              },
+              "connections": []
+            },
+            {
+              "type": "metric-value",
+              "name": "GPU temp",
+              "config": {
+                "text": {
+                  "mode": "field",
+                  "field": "GPU temp",
+                  "fixed": ""
+                },
+                "color": {
+                  "fixed": "#e6e6e6"
+                },
+                "size": 18,
+                "align": "center",
+                "valign": "middle"
+              },
+              "background": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              },
+              "placement": {
+                "left": 28,
+                "right": 54.5,
+                "top": 76,
+                "bottom": 18
+              },
+              "constraint": {
+                "horizontal": "scale",
+                "vertical": "scale"
+              },
+              "connections": []
+            },
+            {
+              "type": "rectangle",
+              "name": "GPU busy label",
+              "config": {
+                "text": {
+                  "mode": "fixed",
+                  "fixed": "GPU busy"
+                },
+                "color": {
+                  "fixed": "#a8adb5"
+                },
+                "size": 11,
+                "align": "center",
+                "valign": "middle"
+              },
+              "background": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "transparent"
+                },
+                "width": 0,
+                "radius": 6
+              },
+              "placement": {
+                "left": 47,
+                "right": 35.5,
+                "top": 72,
+                "bottom": 24
+              },
+              "constraint": {
+                "horizontal": "scale",
+                "vertical": "scale"
+              },
+              "connections": []
+            },
+            {
+              "type": "metric-value",
+              "name": "GPU busy",
+              "config": {
+                "text": {
+                  "mode": "field",
+                  "field": "GPU busy",
+                  "fixed": ""
+                },
+                "color": {
+                  "fixed": "#e6e6e6"
+                },
+                "size": 18,
+                "align": "center",
+                "valign": "middle"
+              },
+              "background": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              },
+              "placement": {
+                "left": 47,
+                "right": 35.5,
+                "top": 76,
+                "bottom": 18
+              },
+              "constraint": {
+                "horizontal": "scale",
+                "vertical": "scale"
+              },
+              "connections": []
+            },
+            {
+              "type": "rectangle",
+              "name": "GTT used label",
+              "config": {
+                "text": {
+                  "mode": "fixed",
+                  "fixed": "GTT used"
+                },
+                "color": {
+                  "fixed": "#a8adb5"
+                },
+                "size": 11,
+                "align": "center",
+                "valign": "middle"
+              },
+              "background": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "transparent"
+                },
+                "width": 0,
+                "radius": 6
+              },
+              "placement": {
+                "left": 28,
+                "right": 54.5,
+                "top": 84,
+                "bottom": 12
+              },
+              "constraint": {
+                "horizontal": "scale",
+                "vertical": "scale"
+              },
+              "connections": []
+            },
+            {
+              "type": "metric-value",
+              "name": "GTT used",
+              "config": {
+                "text": {
+                  "mode": "field",
+                  "field": "GTT used",
+                  "fixed": ""
+                },
+                "color": {
+                  "fixed": "#e6e6e6"
+                },
+                "size": 18,
+                "align": "center",
+                "valign": "middle"
+              },
+              "background": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              },
+              "placement": {
+                "left": 28,
+                "right": 54.5,
+                "top": 88,
+                "bottom": 6
+              },
+              "constraint": {
+                "horizontal": "scale",
+                "vertical": "scale"
+              },
+              "connections": []
+            },
+            {
+              "type": "rectangle",
+              "name": "evo-x2 memory free label",
+              "config": {
+                "text": {
+                  "mode": "fixed",
+                  "fixed": "memory free"
+                },
+                "color": {
+                  "fixed": "#a8adb5"
+                },
+                "size": 11,
+                "align": "center",
+                "valign": "middle"
+              },
+              "background": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "transparent"
+                },
+                "width": 0,
+                "radius": 6
+              },
+              "placement": {
+                "left": 47,
+                "right": 35.5,
+                "top": 84,
+                "bottom": 12
+              },
+              "constraint": {
+                "horizontal": "scale",
+                "vertical": "scale"
+              },
+              "connections": []
+            },
+            {
+              "type": "metric-value",
+              "name": "evo-x2 memory free",
+              "config": {
+                "text": {
+                  "mode": "field",
+                  "field": "evo-x2 memory free",
+                  "fixed": ""
+                },
+                "color": {
+                  "fixed": "#e6e6e6"
+                },
+                "size": 18,
+                "align": "center",
+                "valign": "middle"
+              },
+              "background": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              },
+              "placement": {
+                "left": 47,
+                "right": 35.5,
+                "top": 88,
+                "bottom": 6
+              },
+              "constraint": {
+                "horizontal": "scale",
+                "vertical": "scale"
+              },
+              "connections": []
+            },
+            {
+              "type": "rectangle",
+              "name": "evo-x2 caption",
+              "config": {
+                "text": {
+                  "mode": "fixed",
+                  "fixed": "model API over the tailnet \u00b7 no internet"
+                },
+                "color": {
+                  "fixed": "#a8adb5"
+                },
+                "size": 10,
+                "align": "center",
+                "valign": "middle"
+              },
+              "background": {
+                "color": {
+                  "fixed": "transparent"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "transparent"
+                },
+                "width": 0,
+                "radius": 6
+              },
+              "placement": {
+                "left": 3.5,
+                "right": 74.5,
+                "top": 93,
+                "bottom": 3
+              },
+              "constraint": {
+                "horizontal": "scale",
+                "vertical": "scale"
+              },
+              "connections": []
+            }
+          ],
+          "background": {
+            "color": {
+              "fixed": "transparent"
+            }
+          },
+          "border": {
+            "color": {
+              "fixed": "dark-green"
+            }
+          },
+          "constraint": {
+            "horizontal": "left",
+            "vertical": "top"
+          },
+          "placement": {
+            "left": 0,
+            "top": 0,
+            "width": 100,
+            "height": 100
+          }
+        }
+      }
+    }
+  ]
+}
