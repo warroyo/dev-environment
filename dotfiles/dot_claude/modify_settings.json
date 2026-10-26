@@ -9,7 +9,14 @@
   lab target is a playbook run you confirm. Admin SSH, ad-hoc ansible and
   calling ansible-playbook directly are denied, so ansible/play is the only
   privileged path. Answer its prompt once each time, never "always allow".
+
+  The herdr rules (docs/local-ai.md, "Delegating to Hermes"): Claude may
+  start, prompt, watch and read Hermes workers without asking. send-keys is
+  deliberately left out of allow, so answering one of Hermes' approval
+  prompts always comes back to Will: a dangerous command then passes two
+  gates, Hermes asking and Will confirming Claude's answer.
 */ -}}
+{{- $allow := list "Bash(herdr agent list*)" "Bash(herdr agent get *)" "Bash(herdr agent read *)" "Bash(herdr agent wait *)" "Bash(herdr agent start *)" "Bash(herdr agent prompt *)" "Bash(herdr agent explain *)" "Bash(herdr workspace list*)" "Bash(herdr workspace create *)" "Bash(herdr pane list*)" "Bash(herdr pane read *)" "Bash(herdr pane split *)" -}}
 {{- $ask := list "Bash(*ansible/play*)" -}}
 {{- $deny := list "Bash(ssh *-admin*)" "Bash(ansible *)" "Bash(*ansible-playbook*)" -}}
 {{- $s := dict -}}
@@ -17,6 +24,7 @@
 {{-   $s = fromJson .chezmoi.stdin -}}
 {{- end -}}
 {{- $p := get $s "permissions" | default dict -}}
+{{- $s = setValueAtPath "permissions.allow" (concat (get $p "allow" | default list) $allow | uniq) $s -}}
 {{- $s = setValueAtPath "permissions.ask" (concat (get $p "ask" | default list) $ask | uniq) $s -}}
 {{- $s = setValueAtPath "permissions.deny" (concat (get $p "deny" | default list) $deny | uniq) $s -}}
 {{ toPrettyJson $s }}

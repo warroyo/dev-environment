@@ -1103,6 +1103,25 @@ log "Starting the Codex app-server daemon"
 install_codex_daemon_service
 
 # ---------------------------------------------------------------------------
+# The local-model side of the agent stack (docs/local-ai.md): LiteLLM as the
+# one endpoint for the EVO-X2's models, then Hermes on top of it. Neither is
+# fatal — Claude Code and Codex do not depend on them.
+#
+# After install_herdr_service, because configure_hermes installs herdr's
+# Hermes integration.
+# shellcheck source=lib/litellm.sh
+source "${SCRIPT_DIR}/lib/litellm.sh"
+# shellcheck source=lib/hermes.sh
+source "${SCRIPT_DIR}/lib/hermes.sh"
+log "Installing the LiteLLM gateway"
+install_litellm || true
+log "Installing Hermes Agent"
+if ensure_hermes; then
+  install_hermes_sandbox_net || true
+  configure_hermes || true
+fi
+
+# ---------------------------------------------------------------------------
 log "Writing claude-telegram-bot systemd service"
 # The phone entry point: a Telegram bot that runs claude-open, which starts a
 # detached tmux session with `claude --remote-control` in a directory under

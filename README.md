@@ -29,6 +29,7 @@ picture, then follow the setup doc for whichever machine you're on.
 | Work MacBook Pro | `provision/client-work-bootstrap.sh` | [`docs/client-work-setup.md`](docs/client-work-setup.md) |
 | Lab target (any box agents SSH into) | `provision/lab-target-bootstrap.sh`, copied over and run there | [`docs/lab-access.md`](docs/lab-access.md) |
 | Inference host (the model server) | lab target first, then `ansible/play inference` from the server | [`docs/inference-host.md`](docs/inference-host.md) |
+| Local AI on the server (LiteLLM, Hermes) | part of `server-bootstrap.sh`, or `provision/local-ai-setup.sh` alone | [`docs/local-ai.md`](docs/local-ai.md) |
 
 ```sh
 git clone <this-repo-url> ~/dev-environment
@@ -113,5 +114,7 @@ not source paths — verify with `chezmoi ignored`.
 - [`docs/blog-workflow.md`](docs/blog-workflow.md) — dev-log entry to published
   post, and the private/public boundary in the middle of it
 - [`docs/server-setup.md`](docs/server-setup.md)
+- [`docs/local-ai.md`](docs/local-ai.md) — LiteLLM gateway and Hermes Agent
+  on the server, and how Claude delegates to Hermes
 - [`docs/client-personal-setup.md`](docs/client-personal-setup.md)
 - [`docs/client-work-setup.md`](docs/client-work-setup.md)
