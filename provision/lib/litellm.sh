@@ -34,16 +34,22 @@
 #
 # SECRETS
 #
-# ~/.secrets/litellm.env holds the master key, the salt key and the database
-# password, generated once on the first run. The salt key encrypts provider
-# credentials stored in the database; changing it makes them unreadable, so it
-# is never regenerated. Each client's virtual key goes in
-# ~/.secrets/litellm-<client>.key.
+# ~/.secrets/litellm/litellm.env holds the master key, the salt key and the
+# database password, generated once on the first run. The salt key encrypts
+# provider credentials stored in the database; changing it makes them
+# unreadable, so it is never regenerated. Each client's virtual key goes in
+# ~/.secrets/litellm/<client>.key.
+#
+# A subdirectory, not files at the top of ~/.secrets: every interactive shell
+# sources each top-level file there (dotfiles 55_secrets.sh). A bare key file
+# then runs as a command and prints "command not found: sk-..." with the key
+# in it, and the env file would put the master key into every shell.
 
 LITELLM_IMAGE="${LITELLM_IMAGE:-ghcr.io/berriai/litellm:v1.106.4@sha256:c169fb3adc514fcf210377c203f3de406d54f10bfdacf13948a4a839db9af7de}"
 LITELLM_PG_IMAGE="${LITELLM_PG_IMAGE:-postgres:17-alpine@sha256:eee6c6e1b0894fa4fe0075eb054af9fd1cf39a35321c2d4110626cfe506411fb}"
 LITELLM_DIR="${LITELLM_DIR:-$HOME/.local/share/litellm}"
-LITELLM_SECRETS="${LITELLM_SECRETS:-$HOME/.secrets/litellm.env}"
+LITELLM_SECRETS_DIR="${LITELLM_SECRETS_DIR:-$HOME/.secrets/litellm}"
+LITELLM_SECRETS="${LITELLM_SECRETS:-$LITELLM_SECRETS_DIR/litellm.env}"
 LITELLM_PORT="${LITELLM_PORT:-4000}"
 LITELLM_PG_PORT="${LITELLM_PG_PORT:-5433}"
 LITELLM_URL="http://127.0.0.1:${LITELLM_PORT}"
@@ -67,8 +73,9 @@ install_litellm() {
     return 1
   fi
 
-  mkdir -p "$LITELLM_DIR" "$(dirname "$LITELLM_SECRETS")"
-  chmod 700 "$(dirname "$LITELLM_SECRETS")"
+  mkdir -p "$LITELLM_DIR" "$LITELLM_SECRETS_DIR"
+  chmod 700 "$HOME/.secrets" "$LITELLM_SECRETS_DIR"
+  _litellm_migrate_secrets
   _litellm_ensure_secrets
 
   local f rc
@@ -142,7 +149,7 @@ EOF
 
 # _litellm_ensure_secrets
 #
-# Creates ~/.secrets/litellm.env once. Never rewrites an existing file: the
+# Creates ~/.secrets/litellm/litellm.env once. Never rewrites an existing file: the
 # salt key must not change, and the database password is baked into the
 # Postgres volume on its first start.
 _litellm_ensure_secrets() {
@@ -319,16 +326,38 @@ _litellm_wait_ready() {
   return 1
 }
 
+# _litellm_migrate_secrets
+#
+# Moves secrets from where the first version of this lib wrote them, the top
+# of ~/.secrets, into ~/.secrets/litellm/. Moved, never regenerated: the salt
+# key must survive, and the client keys are already in the database.
+_litellm_migrate_secrets() {
+  local old new f
+  for f in "$HOME"/.secrets/litellm.env "$HOME"/.secrets/litellm-*.key; do
+    [ -f "$f" ] || continue
+    old="$(basename "$f")"
+    case "$old" in
+      litellm.env) new="$LITELLM_SECRETS" ;;
+      *) new="$LITELLM_SECRETS_DIR/${old#litellm-}" ;;
+    esac
+    if [ -e "$new" ]; then
+      log "  WARNING: both ${f} and ${new} exist — leaving ${f} for you to delete"
+    else
+      mv "$f" "$new" && log "  moved ${f} to ${new}"
+    fi
+  done
+}
+
 # _litellm_ensure_key <client>
 #
-# One virtual key per client, saved to ~/.secrets/litellm-<client>.key. Not
+# One virtual key per client, saved to ~/.secrets/litellm/<client>.key. Not
 # limited to a model list: every model in this gateway is local, and a list
 # fixed at creation would lock a key out of models added later. A key whose file exists and still validates
 # is left alone. If the file is gone but the database still has a key with that
 # alias, a new one is made anyway and the old one stays until it is deleted in
 # the admin UI (http://127.0.0.1:4000/ui).
 _litellm_ensure_key() {
-  local client="$1" file="$HOME/.secrets/litellm-$1.key" master key
+  local client="$1" file="$LITELLM_SECRETS_DIR/$1.key" master key
   master="$(sed -n 's/^LITELLM_MASTER_KEY=//p' "$LITELLM_SECRETS")"
 
   if [ -s "$file" ]; then

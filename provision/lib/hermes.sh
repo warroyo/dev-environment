@@ -9,7 +9,7 @@
 #                                 `hermes config set` at a time
 #
 # Expects the caller to have defined `log` and `$SUDO`, same as lib/codex.sh.
-# Runs after install_litellm, which writes ~/.secrets/litellm-hermes-lab.key
+# Runs after install_litellm, which writes ~/.secrets/litellm/hermes-lab.key
 # and litellm-hermes-restricted.key.
 #
 # How Claude delegates to it is in docs/local-ai.md and the `hermes` skill
@@ -209,13 +209,13 @@ configure_hermes() {
     fi
   fi
 
-  _hermes_configure_profile "" "$HOME/.secrets/litellm-hermes-lab.key" \
+  _hermes_configure_profile "" "$HOME/.secrets/litellm/hermes-lab.key" \
     "terminal.backend=local" \
     'approvals.deny=["ssh *-admin*", "ansible *", "*ansible-playbook*", "*ansible/play*"]' \
     || failed=1
 
   mkdir -p "$HERMES_INBOX_DIR"
-  _hermes_configure_profile "$HERMES_RESTRICTED_PROFILE" "$HOME/.secrets/litellm-hermes-restricted.key" \
+  _hermes_configure_profile "$HERMES_RESTRICTED_PROFILE" "$HOME/.secrets/litellm/hermes-restricted.key" \
     "terminal.backend=docker" \
     "terminal.container_persistent=false" \
     "terminal.container_memory=4096" \
@@ -227,15 +227,168 @@ configure_hermes() {
     "terminal.cwd=/inbox" \
     || failed=1
 
-  # herdr's state hooks, so `herdr agent get` reports idle/working/done/blocked.
+  # herdr's own integration: reports the session id, so herdr can resume the
+  # conversation after a restart. It does not report state.
   if command -v herdr >/dev/null 2>&1; then
     if herdr integration install hermes >/dev/null 2>&1; then
       log "  herdr integration for Hermes installed"
     else
       log "  WARNING: 'herdr integration install hermes' failed"
     fi
+    install_hermes_herdr_state "" || failed=1
+    install_hermes_herdr_state "$HERMES_RESTRICTED_PROFILE" || failed=1
   fi
   return "$failed"
+}
+
+# install_hermes_herdr_state <profile|"">
+#
+# A Hermes plugin that tells herdr whether Hermes is working, blocked or idle.
+#
+# herdr reads Hermes's state off the screen: a ⏳/⚠/✓ glyph in the terminal
+# title, or strings like "ctrl+c to interrupt" in the bottom lines. Hermes
+# 0.22's TUI sets no title and prints neither string, so herdr falls back to
+# idle the whole time (`herdr agent explain`: default_known_agent_idle_fallback)
+# and `herdr agent wait` returns at once. herdr 0.9.0 has the same manifest, so
+# upgrading herdr does not help.
+#
+# herdr also takes state pushed over its socket (pane.report_agent), which is
+# what this plugin does, from Hermes's own lifecycle hooks:
+#
+#   pre_llm_call                              working (a turn started)
+#   on_human_input_request, pre_approval_request   blocked (approval, clarify, sudo)
+#   on_human_input_resolved, post_approval_response working again
+#   on_session_end                            idle (fires once per turn, at its end)
+#
+# Only the top-level session counts; a subagent's turn ending must not mark
+# the pane idle while the parent is still working. Outside herdr (no
+# HERDR_PANE_ID) it does nothing.
+#
+# The hooks fire in the profile's shared gateway, which serves every Hermes
+# pane, so the pane id comes from the session's client env rather than the
+# gateway's own (see terminal.client_env_passthrough below).
+#
+# Its own directory, beside herdr's herdr-agent-state plugin rather than in
+# it: herdr overwrites that one on every `herdr integration install`.
+HERMES_HERDR_STATE_PLUGIN="herdr-push-state"
+
+install_hermes_herdr_state() {
+  local profile="$1" label="${1:-lab (default)}"
+  local -a hermes=("$HERMES_BIN")
+  local home="$HOME/.hermes"
+  if [ -n "$profile" ]; then
+    hermes+=(-p "$profile")
+    home="$HOME/.hermes/profiles/$profile"
+  fi
+  local dir="$home/plugins/$HERMES_HERDR_STATE_PLUGIN"
+  mkdir -p "$dir"
+
+  cat >"$dir/plugin.yaml" <<EOF
+# Managed by dev-environment/provision/lib/hermes.sh — do not edit by hand.
+name: ${HERMES_HERDR_STATE_PLUGIN}
+version: "1.0"
+description: Push Hermes's working/blocked/idle state to the herdr pane it runs in
+EOF
+
+  cat >"$dir/__init__.py" <<'EOF'
+"""Push Hermes's working/blocked/idle state to herdr (pane.report_agent).
+
+Managed by dev-environment/provision/lib/hermes.sh; do not edit by hand.
+Why it exists is in the comment above install_hermes_herdr_state there.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import socket
+import threading
+import time
+
+_SOURCE = "herdr:hermes-push-state"
+_lock = threading.Lock()
+_child_sessions: set[str] = set()  # subagents' sessions; their turns never touch the pane
+
+
+def _env(name: str) -> str:
+    # Hooks run in the profile's shared gateway, whose own environment is
+    # whichever pane started it. The pane this session belongs to is in the
+    # session's client env (terminal.client_env_passthrough lists HERDR_*).
+    try:
+        from agent.session_client_env import bound_client_env
+        bound = bound_client_env()
+    except Exception:
+        bound = None
+    if bound is not None:
+        return str(bound.get(name, "")).strip()
+    return os.environ.get(name, "").strip()
+
+
+def _send(state: str) -> None:
+    if _env("HERDR_ENV") != "1":
+        return
+    pane_id = _env("HERDR_PANE_ID")
+    socket_path = _env("HERDR_SOCKET_PATH")
+    if not pane_id or not socket_path:
+        return
+    seq = time.time_ns()
+    request = {
+        "id": f"{_SOURCE}:{seq}",
+        "method": "pane.report_agent",
+        "params": {"pane_id": pane_id, "source": _SOURCE, "agent": "hermes",
+                   "state": state, "seq": seq},
+    }
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+            client.settimeout(0.5)
+            client.connect(socket_path)
+            client.sendall((json.dumps(request) + "\n").encode("utf-8"))
+            try:
+                client.recv(4096)
+            except Exception:
+                pass
+    except Exception:
+        pass  # herdr gone or busy: never let state reporting break a turn
+
+
+def _turn_started(**kwargs) -> None:
+    if kwargs.get("parent_session_id"):
+        with _lock:
+            _child_sessions.add(kwargs.get("session_id") or "")
+        return
+    _send("working")
+
+
+def _turn_ended(**kwargs) -> None:
+    with _lock:
+        if kwargs.get("session_id") in _child_sessions:
+            return
+    _send("idle")
+
+
+def _waiting(**_kwargs) -> None:
+    _send("blocked")
+
+
+def _resumed(**_kwargs) -> None:
+    _send("working")
+
+
+def register(ctx):
+    ctx.register_hook("pre_llm_call", _turn_started)
+    ctx.register_hook("on_session_end", _turn_ended)
+    ctx.register_hook("on_human_input_request", _waiting)
+    ctx.register_hook("pre_approval_request", _waiting)
+    ctx.register_hook("on_human_input_resolved", _resumed)
+    ctx.register_hook("post_approval_response", _resumed)
+EOF
+
+  if "${hermes[@]}" plugins enable "$HERMES_HERDR_STATE_PLUGIN" >/dev/null 2>&1; then
+    log "  [${label}] herdr state plugin installed and enabled"
+  else
+    log "  WARNING: [${label}] 'hermes plugins enable ${HERMES_HERDR_STATE_PLUGIN}' failed"
+    return 1
+  fi
 }
 
 # _hermes_configure_profile <profile|""> <key file> [extra key=value ...]
@@ -271,6 +424,22 @@ _hermes_configure_profile() {
     # single-use, so sharing one logs the other out, and it would hand
     # Hermes a cloud model that nothing here meant it to have.
     "auth.adopt_external_logins=false"
+
+    # No messaging platforms. Hermes turns a platform on whenever its token
+    # is in the environment, and every interactive shell here exports
+    # TELEGRAM_BOT_TOKEN (dotfiles 55_secrets.sh sources ~/.secrets/telegram-bot).
+    # The session gateway the CLI starts then long-polls the Claude Telegram
+    # bot's token and steals its updates ("Conflict: terminated by other
+    # getUpdates request"). An explicit false beats the env token.
+    "platforms.telegram.enabled=false"
+    "platforms.discord.enabled=false"
+    "platforms.slack.enabled=false"
+
+    # Every turn runs in the profile's one shared gateway, not in the pane's
+    # own process. These names travel with each session from the pane that
+    # opened it, so the herdr-push-state plugin reports to the right pane
+    # (herdrdev/herdr#5373).
+    'terminal.client_env_passthrough=["HERDR_ENV", "HERDR_PANE_ID", "HERDR_SOCKET_PATH"]'
 
     # A human approves every dangerous command, memory write and skill
     # write until Hermes has earned "smart". In a delegated run that human

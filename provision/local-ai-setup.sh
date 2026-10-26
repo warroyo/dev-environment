@@ -35,5 +35,5 @@ install_hermes_sandbox_net
 configure_hermes
 
 log "Done. Check with:"
-log "  curl -s -H \"Authorization: Bearer \$(cat ~/.secrets/litellm-scripts.key)\" http://127.0.0.1:4000/v1/models | jq -r '.data[].id'"
+log "  curl -s -H \"Authorization: Bearer \$(cat ~/.secrets/litellm/scripts.key)\" http://127.0.0.1:4000/v1/models | jq -r '.data[].id'"
 log "  hermes chat --oneshot -q 'Say OK'"

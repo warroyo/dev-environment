@@ -61,10 +61,10 @@ loaded makes llama-swap swap, and Flash-Next takes 1-2 minutes to load.
 
 | File | What |
 |---|---|
-| `~/.secrets/litellm.env` | master key, salt key, Postgres password. Generated once. Never change the salt key: it encrypts what is stored in the database |
-| `~/.secrets/litellm-hermes-lab.key` | Hermes, `lab` profile |
-| `~/.secrets/litellm-hermes-restricted.key` | Hermes, `restricted` profile |
-| `~/.secrets/litellm-scripts.key` | for scripts and ad-hoc `curl` |
+| `~/.secrets/litellm/litellm.env` | master key, salt key, Postgres password. Generated once. Never change the salt key: it encrypts what is stored in the database |
+| `~/.secrets/litellm/hermes-lab.key` | Hermes, `lab` profile |
+| `~/.secrets/litellm/hermes-restricted.key` | Hermes, `restricted` profile |
+| `~/.secrets/litellm/scripts.key` | for scripts and ad-hoc `curl` |
 
 A client gets its own key so it can be cut off alone and its tokens counted
 alone. Add one by putting its name in `LITELLM_CLIENTS` and re-running. The
@@ -72,7 +72,7 @@ admin UI is at `http://127.0.0.1:4000/ui` (log in with the master key; from
 the laptop, `ssh -L 4000:127.0.0.1:4000 ubuntu-home`).
 
 ```sh
-curl -s -H "Authorization: Bearer $(cat ~/.secrets/litellm-scripts.key)" \
+curl -s -H "Authorization: Bearer $(cat ~/.secrets/litellm/scripts.key)" \
   http://127.0.0.1:4000/v1/chat/completions -H 'Content-Type: application/json' \
   -d '{"model":"local-qwen","messages":[{"role":"user","content":"Say OK"}]}'
 ```
@@ -147,9 +147,21 @@ Hermes never drives Claude. The home lab and the client lab are not
 sensitive, so anything Claude may work on may be delegated. The work laptop
 is outside this setup.
 
-`herdr integration install hermes` (run by the setup) gives herdr Hermes'
-states: `idle`, `working`, `done`, `blocked`. Claude may start, prompt, wait
-on and read workers without asking. `herdr agent send-keys`, which answers
+herdr reads most agents' state off the screen, but its Hermes rules no longer
+match the Hermes TUI (herdrdev/herdr#5336), so on its own herdr shows a
+Hermes pane as `idle` forever. The setup installs a small Hermes plugin,
+`herdr-push-state`, that pushes the state from Hermes' own hooks instead:
+`working` when a turn starts, `blocked` on an approval or question, `idle`
+(shown as `done` if nobody is looking) when the turn ends. That is what
+makes `herdr agent wait` usable.
+
+Hermes runs every turn in one shared gateway process per profile, not in
+the pane, so the plugin cannot use its own environment to find the pane.
+`terminal.client_env_passthrough` makes each session carry `HERDR_ENV`,
+`HERDR_PANE_ID` and `HERDR_SOCKET_PATH` from the pane that opened it
+(herdrdev/herdr#5373 describes the same problem for herdr's own plugin).
+
+Claude may start, prompt, wait on and read workers without asking. `herdr agent send-keys`, which answers
 Hermes' approval prompts, always asks Will.
 
 ## Upgrading

@@ -71,16 +71,16 @@ answer is cheap to spot, and spot-check it.
    pane afterwards (`--source visible --lines 6`): the prompt should show in
    the status line and the spinner should be running.
 
-4. **Wait in the background for the summary file.** herdr's state
-   detection does not recognize the current Hermes TUI and reports `idle`
-   throughout (`herdr agent explain` shows `fallback_reason:
-   default_known_agent_idle_fallback`), so `herdr agent wait` returns at once.
-   Poll for the file instead, as a background Bash command:
+4. **Wait in the background until it stops working.** State comes from the
+   `herdr-push-state` Hermes plugin (provisioned by `lib/hermes.sh`), so
+   `herdr agent wait` works. Run it as a background Bash command:
    ```bash
-   for i in $(seq 1 180); do [ -s ~/hermes-work/<topic>/summary.md ] && break; sleep 20; done
+   herdr agent wait hermes-<topic> --until done --until idle --until blocked --timeout 3600000
    ```
-   If it times out, read the last 40 lines of the pane: Hermes may be waiting
-   for an approval (see `blocked` below).
+   herdr's own screen detection does not know the current Hermes TUI
+   (herdrdev/herdr#5336); without the plugin the state is `idle` throughout.
+   If the state never leaves `idle` after the prompt, the plugin is not
+   reporting: fall back to polling for `summary.md`.
 
 5. **When it settles, read the summary, not the pane.** Scrollback is where
    the tokens go.
@@ -93,9 +93,8 @@ answer is cheap to spot, and spot-check it.
      `kubectl get`). Open `result.md` only when he needs the detail.
    - No summary file: read the last 40 lines only,
      `herdr agent read hermes-<topic> --source recent-unwrapped --lines 40`.
-   - Waiting on an approval (herdr would call it `blocked`, but cannot see it
-     yet): Hermes is asking for approval of a command, memory write or
-     skill write. Read the last 40 lines, quote the request to Will word for
+   - `blocked`: Hermes is asking for approval of a command, memory write or
+     skill write, or a clarifying answer. Read the last 40 lines, quote the request to Will word for
      word, say what you would answer and why, and send a push notification if
      he may be away. Answer only with his go-ahead, using
      `herdr agent send-keys`, which always prompts. Never approve on Hermes'
@@ -112,5 +111,9 @@ answer is cheap to spot, and spot-check it.
   if not.
 - The first request after a model swap takes 1-2 minutes while llama-swap
   loads the model. That is not a hang.
-- `herdr agent explain hermes-<topic>` shows why herdr reports the state it
-  does. Until herdr's Hermes manifest catches up with the TUI, it says `idle`.
+- State stuck at `idle` while Hermes visibly works: check
+  `hermes plugins list` shows `herdr-push-state` enabled and
+  `terminal.client_env_passthrough` lists the `HERDR_*` names. Each turn runs
+  in the profile's shared gateway, and those names are how it knows which
+  pane the session came from. A pane that had state pushed by hand can stay
+  stuck; start the worker in a fresh pane.
