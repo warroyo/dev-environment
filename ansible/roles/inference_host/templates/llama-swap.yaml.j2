@@ -29,7 +29,7 @@ models:
     cmd: |
       /usr/local/bin/llama-server --host 127.0.0.1 --port ${PORT}
       --model {{ inference_models_dir }}/{{ m.model }}
-      -ngl 999 -fa on
+      -ngl 999 -fa on --metrics
 {% for a in m.args | default([]) %}
       {{ a }}
 {% endfor %}

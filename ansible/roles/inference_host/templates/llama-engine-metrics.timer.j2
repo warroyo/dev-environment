@@ -1,0 +1,11 @@
+# Managed by dev-environment ansible (role inference_host). Do not edit here.
+[Unit]
+Description=Copy model engine metrics for node_exporter every {{ inference_metrics_interval }}
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec={{ inference_metrics_interval }}
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

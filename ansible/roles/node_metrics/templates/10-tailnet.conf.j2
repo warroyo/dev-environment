@@ -1,0 +1,10 @@
+# Managed by dev-environment ansible (role node_metrics). Do not edit here.
+# node_exporter binds to the tailnet address, which exists only once
+# tailscaled is up; without this it can start first and fail to bind.
+[Unit]
+Wants=network-online.target
+After=network-online.target tailscaled.service
+
+[Service]
+Restart=on-failure
+RestartSec=10

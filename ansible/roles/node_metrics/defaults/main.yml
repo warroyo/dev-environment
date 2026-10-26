@@ -1,0 +1,30 @@
+# node_exporter on a lab target, scraped by Grafana Alloy on the server over
+# the tailnet (provision/lib/alloy.sh). The target itself never talks to
+# Grafana Cloud. See docs/lab-metrics.md.
+
+# Listens on the tailnet address only, like llama-swap: node_exporter does not
+# authenticate, so the tailnet policy is the access control.
+node_metrics_port: 9100
+
+# Collectors on top of node_exporter's defaults.
+#   drm      amdgpu busy %, GTT and VRAM use (node_drm_*). Off by default
+#            upstream; does nothing on a host without amdgpu.
+#   systemd  state of the units in node_metrics_units only.
+node_metrics_collectors:
+  - drm
+  - systemd
+
+# Units whose state is exported. Group vars add a host's own services through
+# node_metrics_extra_units; the two lists are joined.
+node_metrics_units:
+  - tailscaled.service
+  - ssh.service
+  - prometheus-node-exporter.service
+node_metrics_extra_units: []
+
+# The textfile collector reads *.prom files from here. Other roles drop
+# metrics into it (inference_host: the model engines' counters).
+node_metrics_textfile_dir: /var/lib/prometheus/node-exporter
+
+# Filesystems that are never interesting and only add series.
+node_metrics_fs_types_exclude: ^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|efivarfs|fusectl|hugetlbfs|mqueue|nsfs|overlay|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|sysfs|tmpfs|tracefs)$

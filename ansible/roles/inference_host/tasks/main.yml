@@ -18,6 +18,10 @@
   ansible.builtin.import_tasks: serve.yml
   tags: [serve]
 
+- name: Engine metrics for the lab dashboard
+  ansible.builtin.import_tasks: metrics.yml
+  tags: [metrics]
+
 - name: Report
   ansible.builtin.import_tasks: verify.yml
   tags: [always]
