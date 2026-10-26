@@ -64,6 +64,37 @@ that are up.
 5. Check: `curl -s http://127.0.0.1:12345/-/ready`, Alloy's UI at
    `http://127.0.0.1:12345` (component health, targets), and in Grafana Cloud
    Explore, `up{job=~"node|llama-swap"}`, one series per host and job.
+6. The dashboard. In Grafana Cloud, under **Administration > Users and access >
+   Service accounts**, add one with the **Editor** role and a token for it.
+   On the server, write `~/.secrets/grafana/dashboards.env` (mode 600, no
+   `export`, in a subdirectory so shells do not pick it up):
+
+   ```sh
+   GRAFANA_URL=https://<stack>.grafana.net
+   GRAFANA_SA_TOKEN=glsa_...
+   ```
+
+   Then `./provision/grafana-dashboards.sh` (no sudo).
+
+## Dashboard
+
+`grafana/dashboards/lab.json` is **Lab overview** (uid `lab-overview`) in the
+**Lab** folder. `provision/grafana-dashboards.sh` pushes every file in
+`grafana/dashboards/` with overwrite on, so the JSON is the source of truth: an
+edit made in the UI is lost on the next push. To keep one, export the
+dashboard JSON over the file and commit it.
+
+| Row | Shows |
+|---|---|
+| Overview | each host reporting, llama-swap scraped, the loaded model, the client-lab tunnel and `tun0` carrier |
+| Models | tokens/s out and in (cached vs processed), engine tok/s, requests in flight and queued, KV cache, speculative acceptance, llama-swap's memory view, engine faults |
+| GPU | busy %, GTT used vs size, APU/NVMe temperatures and package power |
+| Hosts | CPU, memory available, load per core, PSI pressure, disk free and I/O, network split into physical and tailnet/tunnel |
+| Services | a state timeline of every exported systemd unit |
+
+Variables: **Data source** (any `*-prom` source; Grafana Cloud names its own
+`grafanacloud-<stack>-prom`) and **Host** (from `up{job="node"}`). The Models
+and GPU rows ignore the host filter; they are about the EVO-X2.
 
 ## The keep-list
 

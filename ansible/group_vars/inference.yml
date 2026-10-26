@@ -84,4 +84,4 @@ llama_swap_preload:
 # Units whose state node_exporter exports, on top of node_metrics_units.
 node_metrics_extra_units:
   - llama-swap.service
-  - llama-engine-metrics.service
+  - llama-engine-metrics.timer
