@@ -96,6 +96,19 @@ Variables: **Data source** (any `*-prom` source; Grafana Cloud names its own
 `grafanacloud-<stack>-prom`) and **Host** (from `up{job="node"}`). The Models
 and GPU rows ignore the host filter; they are about the EVO-X2.
 
+`grafana/dashboards/architecture.json` is **Lab architecture** (uid
+`lab-architecture`): one Canvas panel that draws the lab as boxes and arrows,
+each coloured by a live query. Green is up, red is down, grey is no data or not
+measured yet (homeNAS until it has metrics). Unit tiles follow
+`node_systemd_unit_state`, the hosts and llama-swap follow `up`, and the arrow
+to the client lab follows the OpenVPN unit. The work laptop is left out on
+purpose. This file is generated: edit `grafana/architecture.py`, then
+
+```sh
+python3 grafana/architecture.py > grafana/dashboards/architecture.json
+./provision/grafana-dashboards.sh
+```
+
 ## The keep-list
 
 `prometheus.relabel "keep"` in `lib/alloy.sh` names every metric that may
