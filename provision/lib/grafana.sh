@@ -56,22 +56,33 @@ install_grafana_dashboards() {
   chmod 600 "$hdr"
   printf 'header = "Authorization: Bearer %s"\n' "$token" >"$hdr"
 
-  if ! curl -fsS -m 20 -K "$hdr" "${url}/api/folders/${GRAFANA_FOLDER_UID}" >/dev/null 2>&1; then
+  # The folder: ours by uid, else one made in the UI with the same title, else
+  # create it. An Editor service account (Grafana 13) may write dashboards but
+  # not create folders, so if creating fails the dashboards go to the top
+  # level; make a "Lab" folder in the UI and the next push moves them into it.
+  local folder=""
+  if curl -fsS -m 20 -K "$hdr" "${url}/api/folders/${GRAFANA_FOLDER_UID}" >/dev/null 2>&1; then
+    folder="$GRAFANA_FOLDER_UID"
+  else
+    folder="$(curl -fsS -m 20 -K "$hdr" "${url}/api/folders?limit=1000" 2>/dev/null |
+              jq -r --arg t "$GRAFANA_FOLDER_TITLE" '[.[] | select(.title == $t)][0].uid // empty')"
+  fi
+  if [ -z "$folder" ]; then
     if curl -fsS -m 20 -K "$hdr" -X POST -H 'Content-Type: application/json' \
          -d "$(jq -nc --arg u "$GRAFANA_FOLDER_UID" --arg t "$GRAFANA_FOLDER_TITLE" '{uid: $u, title: $t}')" \
-         "${url}/api/folders" >/dev/null; then
+         "${url}/api/folders" >/dev/null 2>&1; then
+      folder="$GRAFANA_FOLDER_UID"
       log "  created Grafana folder ${GRAFANA_FOLDER_TITLE}"
     else
-      log "  WARNING: could not create Grafana folder ${GRAFANA_FOLDER_TITLE}"
-      rm -f "$hdr"
-      return 1
+      log "  NOTE: this token cannot create folders; pushing to the top level."
+      log "        Create a folder named \"${GRAFANA_FOLDER_TITLE}\" in the UI and re-run to move them."
     fi
   fi
 
   for f in "$dir"/*.json; do
     [ -f "$f" ] || continue
     local out
-    if out="$(jq -c --arg folder "$GRAFANA_FOLDER_UID" \
+    if out="$(jq -c --arg folder "$folder" \
                 '{dashboard: (. | del(.id) | .version = null), folderUid: $folder, overwrite: true,
                   message: "pushed by dev-environment provision/lib/grafana.sh"}' "$f" |
               curl -fsS -m 30 -K "$hdr" -X POST -H 'Content-Type: application/json' \
