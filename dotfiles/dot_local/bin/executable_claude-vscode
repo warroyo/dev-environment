@@ -29,6 +29,15 @@ fi
 # no argument is given, default to $HOME/workspace on the server (resolved
 # over ssh, since $HOME here is the client's, not the server's).
 folder="${1:-}"
+
+# Clear the Tailscale SSH check (a login URL, once every 12 hours) here, where
+# its URL is visible. Remote-SSH would otherwise sit waiting on it in a log
+# nobody reads. See claude-attach.
+ssh "$HOST" true || {
+  echo "claude-vscode: ssh to $HOST failed." >&2
+  exit 1
+}
+
 if [ -z "$folder" ]; then
   folder="$(ssh "$HOST" 'echo $HOME/workspace')"
 fi
