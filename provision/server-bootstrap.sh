@@ -1144,6 +1144,7 @@ install_litellm || true
 log "Installing Hermes Agent"
 if ensure_hermes; then
   install_hermes_sandbox_net || true
+  install_hermes_work_prune || true
   configure_hermes || true
 fi
 

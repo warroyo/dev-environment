@@ -5,7 +5,9 @@
 #   install_hermes_sandbox_net    the Docker network the restricted profile's
 #                                 commands run in, and the firewall rules that
 #                                 keep it on the internet only
-#   configure_hermes              sets up both profiles on LiteLLM, one
+#   install_hermes_work_prune     a daily timer that deletes delegated job
+#                                 folders in ~/hermes-work once they go idle
+#   configure_hermes             sets up both profiles on LiteLLM, one
 #                                 `hermes config set` at a time
 #
 # Expects the caller to have defined `log` and `$SUDO`, same as lib/codex.sh.
@@ -161,6 +163,102 @@ EOF
       { log "  WARNING: hermes-sandbox-egress.service failed — the sandbox is NOT isolated."; return 1; }
   fi
   log "  sandbox egress rules active on ${HERMES_SANDBOX_BRIDGE}"
+}
+
+# install_hermes_work_prune
+#
+# A daily timer that deletes old delegated jobs. Each job Claude hands to
+# Hermes gets ~/hermes-work/<topic>/ (brief, result, summary, scripts), and
+# nothing else ever removes them. A job folder goes once nothing in it has
+# changed for $HERMES_WORK_RETENTION_DAYS, so a job still being written to is
+# never touched. Hermes' own ~/.hermes/cache/scratch, where it drops scripts
+# when not told otherwise, is pruned file by file on the same rule.
+#
+# Runs as Will, not root: it only ever deletes his own files.
+HERMES_WORK_DIR="${HERMES_WORK_DIR:-$HOME/hermes-work}"
+HERMES_WORK_RETENTION_DAYS="${HERMES_WORK_RETENTION_DAYS:-14}"
+
+install_hermes_work_prune() {
+  local script_path=/usr/local/bin/hermes-work-prune
+  local svc_path=/etc/systemd/system/hermes-work-prune.service
+  local timer_path=/etc/systemd/system/hermes-work-prune.timer
+  local tmp changed=0
+
+  mkdir -p "$HERMES_WORK_DIR"
+
+  tmp="$(mktemp)"
+  cat >"$tmp" <<EOF
+#!/bin/sh
+# Managed by dev-environment/provision/lib/hermes.sh — do not edit by hand.
+# Deletes Hermes job folders in ${HERMES_WORK_DIR} with nothing changed in
+# ${HERMES_WORK_RETENTION_DAYS} days, and scratch files older than that.
+#   hermes-work-prune [--dry-run]
+set -eu
+WORK=${HERMES_WORK_DIR}
+SCRATCH=${HOME}/.hermes/cache/scratch
+DAYS=${HERMES_WORK_RETENTION_DAYS}
+DRY=0
+[ "\${1:-}" = "--dry-run" ] && DRY=1
+
+drop() {
+  if [ "\$DRY" -eq 1 ]; then echo "would delete \$1"; else rm -rf -- "\$1"; fi
+}
+
+for d in "\$WORK"/*/; do
+  [ -d "\$d" ] || continue
+  # Anything modified inside the retention window keeps the whole job.
+  [ -n "\$(find "\$d" -mtime -"\$DAYS" -print -quit)" ] && continue
+  drop "\$d"
+done
+
+if [ -d "\$SCRATCH" ]; then
+  find "\$SCRATCH" -type f -mtime +"\$DAYS" | while IFS= read -r f; do drop "\$f"; done
+fi
+exit 0
+EOF
+  if ! $SUDO cmp -s "$tmp" "$script_path" 2>/dev/null; then
+    $SUDO install -m 755 "$tmp" "$script_path"
+  fi
+
+  cat >"$tmp" <<EOF
+# Managed by dev-environment/provision/lib/hermes.sh — do not edit by hand.
+[Unit]
+Description=Delete Hermes job folders untouched for ${HERMES_WORK_RETENTION_DAYS} days
+
+[Service]
+Type=oneshot
+User=${USER}
+Environment=HOME=${HOME}
+ExecStart=${script_path}
+EOF
+  if ! $SUDO cmp -s "$tmp" "$svc_path" 2>/dev/null; then
+    $SUDO install -m 644 "$tmp" "$svc_path"
+    changed=1
+  fi
+
+  cat >"$tmp" <<EOF
+# Managed by dev-environment/provision/lib/hermes.sh — do not edit by hand.
+[Unit]
+Description=Daily prune of ${HERMES_WORK_DIR}
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=1h
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+  if ! $SUDO cmp -s "$tmp" "$timer_path" 2>/dev/null; then
+    $SUDO install -m 644 "$tmp" "$timer_path"
+    changed=1
+  fi
+  rm -f "$tmp"
+
+  if [ "$changed" -eq 1 ]; then $SUDO systemctl daemon-reload; fi
+  $SUDO systemctl enable --now hermes-work-prune.timer >/dev/null 2>&1 || \
+    { log "  WARNING: could not enable hermes-work-prune.timer"; return 1; }
+  log "  ${HERMES_WORK_DIR} pruned daily (jobs idle ${HERMES_WORK_RETENTION_DAYS}+ days)"
 }
 
 # configure_hermes

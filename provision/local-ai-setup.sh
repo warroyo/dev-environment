@@ -32,6 +32,7 @@ install_litellm
 log "Installing Hermes Agent"
 ensure_hermes
 install_hermes_sandbox_net
+install_hermes_work_prune
 configure_hermes
 
 log "Done. Check with:"

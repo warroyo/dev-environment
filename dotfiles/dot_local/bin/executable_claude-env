@@ -59,6 +59,14 @@ if [ "${HERDR_ENV:-}" = 1 ]; then
   exit 1
 fi
 
+# Clear the Tailscale SSH check (a login URL, once every 12 hours) with a plain
+# ssh, where its URL is visible. The BatchMode probe below and herdr's `ssh -T`
+# bridge would both hang on it silently. See claude-attach.
+ssh "$HOST" true || {
+  printf 'claude-env: ssh to %s failed.\n' "$HOST" >&2
+  exit 1
+}
+
 # Warn rather than connect: bringing the tunnel up implicitly could kick
 # another machine off the shared identity. Done as its own ssh call because
 # `herdr --remote` owns its connection and has nowhere to hang a pre-command;

@@ -164,6 +164,15 @@ the pane, so the plugin cannot use its own environment to find the pane.
 Claude may start, prompt, wait on and read workers without asking. `herdr agent send-keys`, which answers
 Hermes' approval prompts, always asks Will.
 
+Each `lab` job lives in `~/hermes-work/<topic>/`: the brief, the result, the
+summary and any scripts Hermes writes. Hermes runs Python from files there
+rather than with `python3 -c` or a heredoc, because its approval check stops
+on inline code but not on a script file. Claude closes the worker's pane once
+it has read the summary. `hermes-work-prune.timer` deletes a job folder once
+nothing in it has changed for 14 days (`HERMES_WORK_RETENTION_DAYS`), and
+prunes Hermes' own `~/.hermes/cache/scratch` the same way. Preview with
+`hermes-work-prune --dry-run`.
+
 ## Upgrading
 
 - **LiteLLM**: change `LITELLM_IMAGE` in `lib/litellm.sh` to a new tag and

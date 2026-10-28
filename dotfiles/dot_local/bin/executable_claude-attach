@@ -77,6 +77,15 @@ case "$MODE" in
     # generated config that Includes ~/.ssh/config first and only ADDS
     # ServerAliveInterval/ServerAliveCountMax as fallbacks, so the managed
     # config still wins wherever it sets something. Nothing to pre-configure.
+    #
+    # Over the tailnet the server answers with Tailscale SSH, whose check rule
+    # prints a login URL and waits once every 12 hours. herdr's `ssh -T`
+    # bridge never shows that URL, so the attach just hangs. A plain ssh first
+    # surfaces the URL here when a check is due and returns at once otherwise.
+    ssh "$HOST" true || {
+      printf 'claude-attach: ssh to %s failed; try --tmux to see why.\n' "$HOST" >&2
+      exit 1
+    }
     exec herdr --remote "$HOST"
     ;;
   mosh|tmux)
