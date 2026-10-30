@@ -148,6 +148,25 @@ and stops on its own.
 Off again: delete `~/.secrets/hermes-telegram`, run
 `./provision/local-ai-setup.sh`, then `hermes gateway uninstall`.
 
+### Skills and standing rules
+
+A session nobody briefed (Telegram, a pane started by hand) needs to know the
+lab without Claude handing it context, so the `lab` profile gets two things:
+
+- **Skills**: `homelab`, `second-brain` and `lab-creds`, linked from
+  `~/.claude/skills` into `~/.local/share/hermes-skills`, which is set as
+  `skills.external_dirs`. The rest of Claude's skills are about Claude's own
+  workflow or about coding, so they are left out. Edit the list in
+  `HERMES_SHARED_SKILLS` (`provision/lib/hermes.sh`).
+- **Rules**: a managed block at the end of `~/.hermes/SOUL.md`, the one
+  context file Hermes loads in every session wherever it starts: the homelab
+  skill first, `lab-creds` for logins, read-only on live machines, changes as
+  code, the work laptop out of scope, the vault through `second-brain` only.
+  Hermes' own persona text above the block is left alone.
+
+The `restricted` profile gets neither: it cannot reach the labs or the vault
+outside `inbox/`.
+
 ### The sandbox network
 
 The `restricted` profile's command containers run on the `hermes-sandbox` Docker network (bridge

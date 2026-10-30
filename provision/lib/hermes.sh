@@ -13,6 +13,10 @@
 #                                 an always-on gateway service (only once
 #                                 provision/hermes-telegram-setup.sh has
 #                                 written ~/.secrets/hermes-telegram)
+#   install_hermes_shared_skills  links the lab profile's share of the Claude
+#                                 Code skills where Hermes scans for them
+#   install_hermes_soul_rules     Will's standing rules in the lab profile's
+#                                 SOUL.md, loaded in every session
 #
 # Expects the caller to have defined `log` and `$SUDO`, same as lib/codex.sh.
 # Runs after install_litellm, which writes ~/.secrets/litellm/hermes-lab.key
@@ -319,7 +323,10 @@ configure_hermes() {
   _hermes_configure_profile "" "$HOME/.secrets/litellm/hermes-lab.key" \
     "terminal.backend=local" \
     'approvals.deny=["ssh *-admin*", "ansible *", "*ansible-playbook*", "*ansible/play*"]' \
+    "skills.external_dirs=[\"${HERMES_SHARED_SKILLS_DIR}\"]" \
     || failed=1
+  install_hermes_shared_skills || failed=1
+  install_hermes_soul_rules || failed=1
 
   # terminal.cwd is the host inbox, mounted into the container as its working
   # directory. The TUI sends terminal.cwd to the gateway as the session cwd,
@@ -355,6 +362,112 @@ configure_hermes() {
   fi
   configure_hermes_telegram || failed=1
   return "$failed"
+}
+
+# install_hermes_shared_skills
+#
+# The lab profile's share of the Claude Code skills, so a session nobody
+# briefed (Telegram, a pane started by hand) still knows where the lab's state
+# lives and how to log in to the client lab. Hermes scans the folder through
+# skills.external_dirs, set in configure_hermes.
+#
+# A curated folder of links rather than ~/.claude/skills itself: most of those
+# are about Claude's own workflow (handoff, log-session, hermes), or are for
+# coding and writing, which stay with Claude and Codex. lab-creds is in because
+# a Telegram session can already read ~/.lab.env (see configure_hermes_telegram);
+# the skill only teaches it to use that properly.
+#
+# Each link points at the ~/.claude/skills entry, so a skill edited or
+# re-pointed for Claude changes for Hermes too. External dirs are not
+# read-only to Hermes, but skills.write_approval=true puts every skill edit in
+# front of Will first.
+HERMES_SHARED_SKILLS_DIR="${HERMES_SHARED_SKILLS_DIR:-$HOME/.local/share/hermes-skills}"
+HERMES_SHARED_SKILLS=(homelab second-brain lab-creds)
+
+install_hermes_shared_skills() {
+  local name src link failed=0
+  mkdir -p "$HERMES_SHARED_SKILLS_DIR"
+  for name in "${HERMES_SHARED_SKILLS[@]}"; do
+    src="$HOME/.claude/skills/${name}"
+    link="${HERMES_SHARED_SKILLS_DIR}/${name}"
+    if [ ! -f "$src/SKILL.md" ]; then
+      log "  WARNING: ${src}/SKILL.md not found — Hermes will not get the ${name} skill"
+      failed=1
+      continue
+    fi
+    if [ -L "$link" ]; then
+      [ "$(readlink "$link")" = "$src" ] || ln -sfn "$src" "$link"
+    elif [ -e "$link" ]; then
+      log "  WARNING: ${link} exists and is not a symlink — leaving it alone"
+      failed=1
+    else
+      ln -s "$src" "$link"
+    fi
+  done
+  # Drop links for skills no longer on the list.
+  for link in "$HERMES_SHARED_SKILLS_DIR"/*; do
+    [ -L "$link" ] || continue
+    case " ${HERMES_SHARED_SKILLS[*]} " in
+      *" $(basename "$link") "*) ;;
+      *) rm -f "$link" ;;
+    esac
+  done
+  [ "$failed" -eq 0 ] && log "  Hermes lab profile shares skills: ${HERMES_SHARED_SKILLS[*]}"
+  return "$failed"
+}
+
+# install_hermes_soul_rules
+#
+# Will's standing rules, appended to the lab profile's SOUL.md: the one context
+# file Hermes loads in every session, wherever it starts. AGENTS.md would only
+# load in sessions whose working directory holds one, and a Telegram session
+# has no fixed one. This is Hermes' counterpart of ~/.claude/CLAUDE.md and
+# ~/.codex/AGENTS.md.
+#
+# Only the block between the markers is managed. Hermes seeds the persona text
+# above it and Will may edit that; a re-run replaces the block and nothing else.
+HERMES_SOUL_BEGIN='<!-- dev-environment: managed block, edit provision/lib/hermes.sh -->'
+HERMES_SOUL_END='<!-- dev-environment: end -->'
+
+install_hermes_soul_rules() {
+  local soul="$HOME/.hermes/SOUL.md" tmp
+  tmp="$(mktemp)"
+  if [ -f "$soul" ]; then
+    # Everything outside the old block, trailing blank lines trimmed.
+    awk -v b="$HERMES_SOUL_BEGIN" -v e="$HERMES_SOUL_END" '
+      $0 == b { skip = 1; next }
+      $0 == e { skip = 0; next }
+      !skip' "$soul" | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}' >"$tmp"
+    printf '\n\n' >>"$tmp"
+  fi
+  cat >>"$tmp" <<EOF
+${HERMES_SOUL_BEGIN}
+## Will's lab: standing rules
+
+- Before answering anything about the home lab, use the \`homelab\` skill. It
+  reads the current state from ~/second-brain/topics/homelab.md. Do not
+  answer lab questions from general knowledge alone.
+- For the client lab (*.set.lab: vCenter, the Supervisor, VCF Automation,
+  Cloud Foundry), use the \`lab-creds\` skill for logins. Never put a
+  credential in a reply, a note or a file.
+- On live machines, only query and troubleshoot, through the no-sudo \`agent\`
+  account. Do not install packages, edit config or change state by hand. A fix
+  goes into ~/workspace/dev-environment as code, and Will applies it.
+- The work laptop is out of scope. Never propose anything that involves it.
+- ~/second-brain is Will's vault. Save notes only through the \`second-brain\`
+  skill, and never edit anything in its entries/ folder.
+- Coding and code review stay with Claude and Codex. If asked for either,
+  say so.
+${HERMES_SOUL_END}
+EOF
+  if cmp -s "$tmp" "$soul" 2>/dev/null; then
+    rm -f "$tmp"
+    log "  Hermes SOUL.md rules already current"
+    return 0
+  fi
+  [ -f "$soul" ] && chmod --reference="$soul" "$tmp"
+  mv "$tmp" "$soul"
+  log "  Hermes SOUL.md rules written"
 }
 
 # configure_hermes_telegram
