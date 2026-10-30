@@ -9,6 +9,10 @@
 #                                 folders in ~/hermes-work once they go idle
 #   configure_hermes             sets up both profiles on LiteLLM, one
 #                                 `hermes config set` at a time
+#   configure_hermes_telegram     the lab profile on its own Telegram bot, as
+#                                 an always-on gateway service (only once
+#                                 provision/hermes-telegram-setup.sh has
+#                                 written ~/.secrets/hermes-telegram)
 #
 # Expects the caller to have defined `log` and `$SUDO`, same as lib/codex.sh.
 # Runs after install_litellm, which writes ~/.secrets/litellm/hermes-lab.key
@@ -307,22 +311,35 @@ configure_hermes() {
     fi
   fi
 
+  # Set in the same pass as the rest, so a re-run never flips Telegram off
+  # and back on under a running gateway.
+  local lab_telegram=false
+  [ -s "$HERMES_TELEGRAM_SECRETS" ] && lab_telegram=true
+  HERMES_PROFILE_TELEGRAM="$lab_telegram" \
   _hermes_configure_profile "" "$HOME/.secrets/litellm/hermes-lab.key" \
     "terminal.backend=local" \
     'approvals.deny=["ssh *-admin*", "ansible *", "*ansible-playbook*", "*ansible/play*"]' \
     || failed=1
 
+  # terminal.cwd is the host inbox, mounted into the container as its working
+  # directory. The TUI sends terminal.cwd to the gateway as the session cwd,
+  # and the gateway refuses one that does not exist on the host
+  # ("Error: invalid_params", field=cwd), so a container-only path such as
+  # /inbox stops the TUI starting. The docker backend in turn drops a /home/...
+  # cwd as a host path and falls back to /root, which a host-user container
+  # cannot enter. Mounting the cwd satisfies both; /inbox stays as the path
+  # briefs refer to.
   mkdir -p "$HERMES_INBOX_DIR"
   _hermes_configure_profile "$HERMES_RESTRICTED_PROFILE" "$HOME/.secrets/litellm/hermes-restricted.key" \
     "terminal.backend=docker" \
     "terminal.container_persistent=false" \
     "terminal.container_memory=4096" \
     "terminal.container_cpu=2" \
-    "terminal.docker_mount_cwd_to_workspace=false" \
+    "terminal.docker_mount_cwd_to_workspace=true" \
     "terminal.docker_extra_args=[\"--network\", \"${HERMES_SANDBOX_NET}\"]" \
     "terminal.docker_volumes=[\"${HERMES_INBOX_DIR}:/inbox\"]" \
     "terminal.docker_run_as_host_user=true" \
-    "terminal.cwd=/inbox" \
+    "terminal.cwd=${HERMES_INBOX_DIR}" \
     || failed=1
 
   # herdr's own integration: reports the session id, so herdr can resume the
@@ -336,7 +353,79 @@ configure_hermes() {
     install_hermes_herdr_state "" || failed=1
     install_hermes_herdr_state "$HERMES_RESTRICTED_PROFILE" || failed=1
   fi
+  configure_hermes_telegram || failed=1
   return "$failed"
+}
+
+# configure_hermes_telegram
+#
+# The lab profile answers on Telegram, always on: the phone's way to talk to
+# Hermes directly. Its own bot, never the Claude bot's token, because Telegram
+# allows one getUpdates consumer per token. Will chose the lab profile over
+# restricted on 2026-10-26, knowing what that hands a Telegram session:
+#
+#   - Approvals (approvals.mode=manual) cover only the commands Hermes flags
+#     as dangerous, and come to the chat as buttons. Reading ~/.lab.env is
+#     not dangerous, so whoever holds the Telegram session can read it.
+#   - The allow-list is the whole gate. TELEGRAM_ALLOWED_USERS is Will's user
+#     id only, and strangers get no reply at all (unauthorized_dm_behavior
+#     ignore, not the default pairing code), the same as claude-telegram-bot.
+#
+# The gateway is Hermes' own systemd user service (`hermes gateway install`,
+# which owns the unit), with lingering on so it starts at boot rather than at
+# login. It is also the profile's shared gateway, so lab sessions in herdr
+# panes run their turns in it too.
+#
+# Without ~/.secrets/hermes-telegram this does nothing: Telegram stays off
+# (configure_hermes sets that) and no service is installed.
+HERMES_TELEGRAM_SECRETS="${HERMES_TELEGRAM_SECRETS:-$HOME/.secrets/hermes-telegram}"
+
+configure_hermes_telegram() {
+  if [ ! -s "$HERMES_TELEGRAM_SECRETS" ]; then
+    log "  Hermes is not on Telegram (no ${HERMES_TELEGRAM_SECRETS}; provision/hermes-telegram-setup.sh writes it)"
+    return 0
+  fi
+
+  # A subshell, so the token never lands in this script's environment.
+  local token users
+  token="$(. "$HERMES_TELEGRAM_SECRETS" && printf '%s' "${HERMES_TELEGRAM_BOT_TOKEN:-}")"
+  users="$(. "$HERMES_TELEGRAM_SECRETS" && printf '%s' "${HERMES_TELEGRAM_ALLOWED_USERS:-}")"
+  if [ -z "$token" ] || [ -z "$users" ]; then
+    log "  WARNING: ${HERMES_TELEGRAM_SECRETS} lacks the token or the allow-list — re-run provision/hermes-telegram-setup.sh"
+    return 1
+  fi
+
+  local s failed=0
+  # UPPER_SNAKE names go to the profile's .env (~/.hermes/.env, mode 600).
+  for s in "TELEGRAM_BOT_TOKEN=${token}" "TELEGRAM_ALLOWED_USERS=${users}" \
+           "unauthorized_dm_behavior=ignore"; do
+    if ! "$HERMES_BIN" config set "${s%%=*}" "${s#*=}" >/dev/null 2>&1; then
+      log "  WARNING: [lab] 'hermes config set ${s%%=*}' failed"
+      failed=1
+    fi
+  done
+  [ "$failed" -eq 0 ] || return 1
+
+  if [ "$(loginctl show-user "$USER" -p Linger --value 2>/dev/null)" != "yes" ]; then
+    if $SUDO loginctl enable-linger "$USER"; then
+      log "  lingering on for ${USER}: user services start at boot"
+    else
+      log "  WARNING: 'loginctl enable-linger ${USER}' failed — the gateway will only run while you are logged in"
+    fi
+  fi
+
+  # --if-missing leaves an installed unit alone; Hermes refreshes its own unit
+  # on start and on `hermes update`. The restart picks up a new token or
+  # allow-list, and replaces a gateway a CLI session started on its own.
+  if ! "$HERMES_BIN" gateway install --if-missing --start-on-login --no-start-now >/dev/null 2>&1; then
+    log "  WARNING: 'hermes gateway install' failed"
+    return 1
+  fi
+  if ! "$HERMES_BIN" gateway restart >/dev/null 2>&1; then
+    log "  WARNING: 'hermes gateway restart' failed — check 'hermes gateway status'"
+    return 1
+  fi
+  log "  Hermes lab profile on Telegram, gateway running as a user service"
 }
 
 # install_hermes_herdr_state <profile|"">
@@ -523,13 +612,16 @@ _hermes_configure_profile() {
     # Hermes a cloud model that nothing here meant it to have.
     "auth.adopt_external_logins=false"
 
-    # No messaging platforms. Hermes turns a platform on whenever its token
-    # is in the environment, and every interactive shell here exports
-    # TELEGRAM_BOT_TOKEN (dotfiles 55_secrets.sh sources ~/.secrets/telegram-bot).
-    # The session gateway the CLI starts then long-polls the Claude Telegram
-    # bot's token and steals its updates ("Conflict: terminated by other
-    # getUpdates request"). An explicit false beats the env token.
-    "platforms.telegram.enabled=false"
+    # No messaging platforms, except Telegram on the lab profile once it has
+    # a bot of its own (configure_hermes_telegram). Hermes turns a platform
+    # on whenever its token is in the environment, and every interactive
+    # shell here exports TELEGRAM_BOT_TOKEN (dotfiles 55_secrets.sh sources
+    # ~/.secrets/telegram-bot). The session gateway the CLI starts then
+    # long-polls the Claude Telegram bot's token and steals its updates
+    # ("Conflict: terminated by other getUpdates request"). An explicit false
+    # beats the env token; with true, the profile's .env token wins over the
+    # shell's, because Hermes loads .env with override.
+    "platforms.telegram.enabled=${HERMES_PROFILE_TELEGRAM:-false}"
     "platforms.discord.enabled=false"
     "platforms.slack.enabled=false"
 

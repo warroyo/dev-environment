@@ -366,6 +366,38 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+section "Hermes on Telegram (lab profile)"
+HTG_SECRETS="$HOME/.secrets/hermes-telegram"
+if [ -r "$HTG_SECRETS" ]; then
+  perms="$(stat -c %a "$HTG_SECRETS" 2>/dev/null || echo '?')"
+  [ "$perms" = "600" ] && ok "~/.secrets/hermes-telegram is 0600" \
+    || bad "~/.secrets/hermes-telegram is 0$perms — it holds a bearer token, chmod 600 it"
+  # The lab profile has a shell on this host; an empty allow-list hands that
+  # to anyone who finds the bot.
+  if grep -qE '^[[:space:]]*export[[:space:]]+HERMES_TELEGRAM_ALLOWED_USERS=.?[0-9]' "$HTG_SECRETS"; then
+    ok "HERMES_TELEGRAM_ALLOWED_USERS is set"
+  else
+    bad "HERMES_TELEGRAM_ALLOWED_USERS is empty or missing — re-run provision/hermes-telegram-setup.sh"
+  fi
+  [ "$(hermes config get unauthorized_dm_behavior 2>/dev/null)" = "ignore" ] \
+    && ok "strangers get no reply (unauthorized_dm_behavior ignore)" \
+    || bad "unauthorized_dm_behavior is not ignore — re-run provision/local-ai-setup.sh"
+  [ "$(loginctl show-user "$USER" -p Linger --value 2>/dev/null)" = "yes" ] \
+    && ok "lingering on: the gateway starts at boot" \
+    || bad "lingering off — the gateway only runs while you are logged in (sudo loginctl enable-linger $USER)"
+  # "✗ Gateway is not running" also contains "running", so match the negative.
+  gw="$(hermes gateway status 2>/dev/null || true)"
+  if [ -n "$gw" ] && ! grep -qi 'not running' <<<"$gw"; then
+    ok "Hermes gateway running"
+  else
+    bad "Hermes gateway not running — check: hermes gateway status"
+  fi
+else
+  warn "no ~/.secrets/hermes-telegram — Hermes is not on Telegram"
+  warn "  (expected if unused; see docs/local-ai.md, On Telegram)"
+fi
+
+# ---------------------------------------------------------------------------
 section "Codex app-server daemon (ChatGPT app entry point)"
 # The daemon is what the ChatGPT app pairs with and what every `codex --remote
 # unix://` session attaches to. Nothing about a Codex session LOOKS wrong when

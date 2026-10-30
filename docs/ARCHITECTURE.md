@@ -100,6 +100,11 @@ re-provision.
   drops everything else without replying. It
   starts and stops sessions; it never relays messages. See
   [`docs/server-setup.md`](server-setup.md#9-manual-the-telegram-bot-start-sessions-from-your-phone).
+- **Phone → Hermes**: Hermes' own Telegram gateway, a second bot that chats
+  with the `lab` profile directly, always on. Unlike the Claude bot it does
+  relay messages, so the session it gives the phone has the lab profile's
+  reach. Allow-listed to Will, silent to everyone else. See
+  [`docs/local-ai.md`](local-ai.md#on-telegram).
 - **Phone → server, Codex**: the same bot under `/cx_`, but the remote-control
   shape is not the same. Claude Code enables Remote Control per session; Codex
   has one app-server daemon per machine (`codex-app-server.service`), paired
