@@ -34,6 +34,7 @@ does not support. Groups decide what is loaded together:
 |---|---|---|
 | `big` | `qwen3.8-flash-next` | Fills the box; loading it unloads everything else |
 | `small` | `qwen3.8-27b`, `qwen3.6-35b-a3b` | Both stay loaded side by side; loading either unloads `big` |
+| `embed` | `qwen3-embedding-0.6b` | Persistent: no other group unloads it, and loading it unloads nothing. Preloaded next to Flash-Next, in the ~13 GiB it leaves free |
 
 ```sh
 curl http://evo-x2:8080/v1/models                     # what is configured

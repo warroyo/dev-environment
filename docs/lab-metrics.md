@@ -122,9 +122,18 @@ overview's Models row counts what the engines did.
 | Tokens | tokens per day by client and by kind (input, cached input, output), tokens per minute, share by client and by model |
 | Requests | a per-client table (requests, tokens, output per request, failures), requests per hour |
 | Speed and errors | time to first token and request duration (p50, p95) per model, failed requests by status |
+| Embeddings | embedding tokens today and over 7 days, requests, what they would cost on an embedding API, request duration, tokens per day by client, failures |
+
+Embedding traffic (models with `mode: embedding` in `group_vars/inference.yml`,
+and their aliases such as `local-embed`) appears only in the Embeddings row.
+Its tokens are input-only and priced far below chat tokens, so counting them
+in the other rows would inflate the chat totals and the cloud-equivalent cost.
+The generator reads the model list from group_vars, so a new embedding model
+needs no dashboard edit.
 
 Variables: **Client** (`api_key_alias`) and the comparison prices in dollars
-per million tokens (**$/M input**, **$/M cached input**, **$/M output**). The
+per million tokens (**$/M input**, **$/M cached input**, **$/M output**,
+**$/M embed**). The
 defaults are placeholders: set them to the API model the local one stands in
 for. Changing them in the UI lasts until the next push; change the defaults
 in the generator to keep them. Daily bars are UTC days, and nothing looks

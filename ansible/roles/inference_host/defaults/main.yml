@@ -85,9 +85,12 @@ llama_swap_ttl: 0
 #   model:  path under inference_models_dir (the first shard of a split GGUF)
 #   group:  a key of llama_swap_groups
 #   args:   extra engine arguments, one per item
+#   alias:  optional extra LiteLLM model name (provision/lib/litellm.sh)
+#   mode:   optional; embedding marks a model LiteLLM must not use as a chat fallback
 llama_swap_models: {}
 # Groups decide what runs together. swap: false lets every member stay loaded
-# at once; exclusive: true unloads every other group when a member starts.
+# at once; exclusive: true unloads every other group when a member starts;
+# persistent: true means no other group can unload this group's members.
 llama_swap_groups: {}
 # Models to load when llama-swap starts. Empty: nothing loads until requested.
 llama_swap_preload: []

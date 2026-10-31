@@ -56,9 +56,10 @@ LITELLM_URL="http://127.0.0.1:${LITELLM_PORT}"
 # llama-swap on the EVO-X2. The short MagicDNS name, so nothing here commits a
 # tailnet address (the repo is public).
 LITELLM_UPSTREAM="${LITELLM_UPSTREAM:-http://evo-x2:8080/v1}"
-# Clients that get a virtual key: Hermes's two profiles, and scripts. Open
-# WebUI joins when it is installed.
-LITELLM_CLIENTS="${LITELLM_CLIENTS:-hermes-lab hermes-restricted scripts}"
+# Clients that get a virtual key: Hermes's two profiles, scripts, and the
+# content curator (github.com/warroyo/content-curator). Open WebUI joins when it
+# is installed.
+LITELLM_CLIENTS="${LITELLM_CLIENTS:-hermes-lab hermes-restricted scripts content-curator}"
 
 # install_litellm
 #
@@ -252,6 +253,9 @@ EOF
 #                       one-line change in group_vars, not a change in every
 #                       client.
 #   <llama-swap name>   every model llama-swap serves, by its own name.
+#   <alias>             a model's `alias` from group_vars, such as local-embed
+#                       for the embedding model, so clients name a role rather
+#                       than a model.
 #
 # local-qwen falls back to the llama.cpp model if its engine fails, so a broken
 # Gufo release still leaves a local model answering. Both fallbacks are local.
@@ -276,11 +280,13 @@ if not models:
     sys.exit(f"  ERROR: no llama_swap_models in {vars_path}")
 preload = g.get("llama_swap_preload") or []
 working = preload[0] if preload else next(iter(models))
+# The chat fallback must be a chat model, never the embedding model.
 fallback = next((n for n, m in models.items()
-                 if m.get("engine") == "llama.cpp" and n != working), None)
+                 if m.get("engine") == "llama.cpp" and n != working
+                 and m.get("mode", "chat") == "chat"), None)
 
 def entry(name, target):
-    return {
+    e = {
         "model_name": name,
         "litellm_params": {
             "model": f"openai/{target}",
@@ -291,9 +297,16 @@ def entry(name, target):
             "stream_timeout": 300,
         },
     }
+    mode = models.get(target, {}).get("mode")
+    if mode and mode != "chat":
+        e["model_info"] = {"mode": mode}
+    return e
+
+aliases = [entry(m["alias"], n) for n, m in models.items() if m.get("alias")]
 
 cfg = {
     "model_list": [entry("local-qwen", working)]
+                  + aliases
                   + [entry(n, n) for n in models],
     "router_settings": {"num_retries": 0},
     "litellm_settings": {

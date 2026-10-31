@@ -10,10 +10,18 @@ its own LiteLLM key, and api_key_alias is that key's name.
     python3 grafana/local_model_usage.py > grafana/dashboards/local-model-usage.json
     ./provision/grafana-dashboards.sh
 
+Embedding models (mode: embedding in ansible/group_vars/inference.yml, and
+their aliases such as local-embed) have their own row: their tokens are
+input-only and priced far below chat tokens, so every other panel leaves
+them out.
+
 Grafana Cloud keeps 14 days, so nothing here looks further back. LiteLLM's
 spend logs in Postgres hold the full history.
 """
 import json
+import pathlib
+
+import yaml
 
 DS = {"type": "prometheus", "uid": "${datasource}"}
 
@@ -24,7 +32,20 @@ REQS = "litellm_proxy_total_requests_metric_total"
 FAILS = "litellm_proxy_failed_requests_metric_total"
 LATENCY = "litellm_request_total_latency_metric"
 TTFT = "litellm_llm_api_time_to_first_token_metric"
-SEL = '{api_key_alias=~"$client"}'
+
+# Embedding model names as clients request them, from the file that also drives
+# llama-swap and LiteLLM.
+_vars = yaml.safe_load((pathlib.Path(__file__).resolve().parent.parent
+                        / "ansible/group_vars/inference.yml").read_text())
+EMBED_NAMES = sorted(
+    name
+    for n, m in (_vars.get("llama_swap_models") or {}).items() if m.get("mode") == "embedding"
+    for name in (n, m.get("alias")) if name
+)
+EMBED_RE = "|".join(EMBED_NAMES) or "^$"
+# Chat traffic only; every panel outside the Embeddings row uses this.
+SEL = f'{{api_key_alias=~"$client",requested_model!~"{EMBED_RE}"}}'
+SEL_EMBED = f'{{api_key_alias=~"$client",requested_model=~"{EMBED_RE}"}}'
 
 # One fixed colour per client, so a client keeps its colour when the client
 # filter hides others. Add a client here when it is added to LITELLM_CLIENTS.
@@ -32,6 +53,7 @@ CLIENT_COLORS = {
     "hermes-lab": "blue",
     "hermes-restricted": "purple",
     "scripts": "orange",
+    "content-curator": "green",
 }
 
 panels = []
@@ -52,24 +74,24 @@ def q(expr, legend="", ref="A", instant=False, fmt=None):
     return t
 
 
-def inc(metric, rng, by=""):
+def inc(metric, rng, by="", sel=None):
     # increase() that also counts a series' first value. LiteLLM creates a
     # counter on its first request, already holding that request's tokens, and
     # increase() only counts growth between samples, so a new client or model
     # would lose its first request (often the only one). A series that did not
     # exist at the start of the window gets its first value (min_over_time;
     # counters only grow) added.
-    m = f"{metric}{SEL}"
+    m = f"{metric}{sel or SEL}"
     grp = f"sum by ({by}) " if by else "sum "
     return (f"{grp}(increase({m}[{rng}])"
             f" + (min_over_time({m}[{rng}]) unless {m} offset {rng})"
             f" or increase({m}[{rng}]))")
 
 
-def tokens(metric, rng):
+def tokens(metric, rng, sel=None):
     # "or vector(0)": the cached counter only exists once a request reported
     # cached tokens, and an empty side would blank the whole expression.
-    return f"({inc(metric, rng)} or vector(0))"
+    return f"({inc(metric, rng, sel=sel)} or vector(0))"
 
 
 def client_overrides():
@@ -275,9 +297,9 @@ row("Speed and errors", y)
 y += 1
 
 
-def quantile(metric, qv):
+def quantile(metric, qv, sel=None):
     return (f"histogram_quantile({qv}, sum by (le, requested_model) "
-            f"(rate({metric}_bucket{SEL}[$__rate_interval])))")
+            f"(rate({metric}_bucket{sel or SEL}[$__rate_interval])))")
 
 
 lines("Time to first token", [
@@ -296,10 +318,44 @@ lines("Failed requests", [
     desc="Failures per scrape interval by HTTP status. Engine-side faults are on Lab overview.")
 y += 8
 
+# ---- Embeddings --------------------------------------------------------------
+
+row("Embeddings", y)
+y += 1
+E = SEL_EMBED
+stat("Embedding tokens", [
+    q(tokens(IN, "$__range", E), "Today", "A", instant=True),
+], 0, y, w=4, time_from="now/d", desc="Tokens embedded since midnight, browser time.")
+stat("Embedding tokens, 7 days", [
+    q(tokens(IN, "$__range", E), "Tokens", "A", instant=True),
+    q(tokens(REQS, "$__range", E), "Requests", "B", instant=True),
+], 4, y, w=4, time_from="7d")
+stat("Cloud-equivalent embeddings, 7 days", [
+    q(f"{tokens(IN, '$__range', E)} * $price_embed / 1e6", "At $/M embed", instant=True),
+], 8, y, w=4, unit="currencyUSD", time_from="7d", decimals=4,
+    desc="This week's embedding tokens at the $/M embed variable, an embedding API's "
+         "price. Embeddings are cheap: this is mostly for scale.")
+lines("Embedding request duration", [
+    q(quantile(LATENCY, 0.5, E), "p50 {{requested_model}}", "A"),
+    q(quantile(LATENCY, 0.95, E), "p95 {{requested_model}}", "B"),
+], 12, y, 12, 5, unit="s",
+    desc="Whole request through LiteLLM. One request can carry a batch of texts.")
+y += 5
+bars("Embedding tokens per day, by client", [
+    q(f"{inc(IN, '$__interval', 'api_key_alias', sel=E)}", "{{api_key_alias}}"),
+], 0, y, 12, 8, "1d", overrides=client_overrides(),
+    desc="Input tokens sent to embedding models per day, by LiteLLM key. Days are UTC.")
+lines("Failed embedding requests", [
+    q(f"{inc(FAILS, '$__rate_interval', 'exception_status', sel=E)}", "{{exception_status}}"),
+], 12, y, 12, 8, stack=True,
+    desc="Failures per scrape interval by HTTP status.")
+y += 8
+
 dashboard = {
     "uid": "local-model-usage",
     "title": "Local model usage",
-    "description": "Token usage on the local model through LiteLLM, per client and model. "
+    "description": "Token usage on the local models through LiteLLM, per client and model, "
+                   "chat and embeddings apart. "
                    "Generated by dev-environment grafana/local_model_usage.py; edits in the UI "
                    "are overwritten by the next push.",
     "tags": ["lab", "dev-environment", "local-ai"],
@@ -323,6 +379,8 @@ dashboard = {
          "query": "0.3", "current": {"text": "0.3", "value": "0.3"}, "hide": 0},
         {"name": "price_out", "label": "$/M output", "type": "textbox",
          "query": "15", "current": {"text": "15", "value": "15"}, "hide": 0},
+        {"name": "price_embed", "label": "$/M embed", "type": "textbox",
+         "query": "0.02", "current": {"text": "0.02", "value": "0.02"}, "hide": 0},
     ]},
     "annotations": {"list": []},
     "links": [{"title": "Lab overview", "type": "dashboards", "tags": [],

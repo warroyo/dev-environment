@@ -50,6 +50,7 @@ routing:
         "{{ gname }}":
           swap: {{ g.swap | bool | lower }}
           exclusive: {{ g.exclusive | bool | lower }}
+          persistent: {{ g.persistent | default(false) | bool | lower }}
           members:
 {% for name, m in llama_swap_models.items() if m.group == gname %}
             - "{{ name }}"

@@ -29,10 +29,18 @@ inference_models:
     revision: 5bc3e238d916f48a861bac2f8a1990a0e9b7e98d
     include:
       - "Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf"               # 21.2 GiB
+  - name: qwen3-embedding-0.6b
+    repo: Qwen/Qwen3-Embedding-0.6B-GGUF
+    revision: 370f27d7550e0def9b39c1f16d3fbaa13aa67728
+    include:
+      - "Qwen3-Embedding-0.6B-Q8_0.gguf"                # 0.6 GiB
 
 # What llama-swap serves. Clients send these names as `model`.
 # Flash-Next fills the box, so it runs alone. The two small models fit together
-# (~31 + ~21 GiB of weights) and stay loaded side by side.
+# (~31 + ~21 GiB of weights) and stay loaded side by side. The embedding model
+# is in a persistent group: no other group unloads it and loading it unloads
+# nothing, so an embedding call never evicts Flash-Next. It fits in the ~13 GiB
+# Flash-Next leaves free.
 llama_swap_groups:
   big:
     swap: true
@@ -40,6 +48,10 @@ llama_swap_groups:
   small:
     swap: false
     exclusive: true
+  embed:
+    swap: false
+    exclusive: false
+    persistent: true
 
 # served_name: the id Gufo serves a model under (its /v1/models), taken from
 # the GGUF and not settable on the command line. llama-swap rewrites the
@@ -74,12 +86,28 @@ llama_swap_models:
       - --parallel 2
       - --ctx-size 131072
       - --jinja
+  # Lab-wide embeddings (LiteLLM alias local-embed): the curator's story
+  # clustering now, RAG with Qdrant later. Qwen3-Embedding wants last-token
+  # pooling. 8192 tokens per input, two inputs at a time.
+  qwen3-embedding-0.6b:
+    engine: llama.cpp
+    group: embed
+    alias: local-embed
+    mode: embedding
+    model: qwen3-embedding-0.6b/Qwen3-Embedding-0.6B-Q8_0.gguf
+    args:
+      - --embedding
+      - --pooling last
+      - --parallel 2
+      - --ctx-size 16384
+      - --ubatch-size 8192
 
 # Flash-Next is the working model until the bake-off picks one (2026-10-25):
 # loaded when llama-swap starts, so the first request does not wait for it.
 # Requests for another model still swap it out.
 llama_swap_preload:
   - qwen3.8-flash-next
+  - qwen3-embedding-0.6b
 
 # Units whose state node_exporter exports, on top of node_metrics_units.
 node_metrics_extra_units:

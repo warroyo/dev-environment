@@ -47,6 +47,7 @@ drives llama-swap:
 | LiteLLM model | Goes to |
 |---|---|
 | `local-qwen` | the first entry of `llama_swap_preload` (the working model) |
+| `local-embed` | the embedding model (`alias: local-embed` in group_vars), for `/v1/embeddings` |
 | every `llama_swap_models` name | that model on llama-swap |
 
 Clients should ask for `local-qwen`. When the bake-off picks a model, change
@@ -65,6 +66,7 @@ loaded makes llama-swap swap, and Flash-Next takes 1-2 minutes to load.
 | `~/.secrets/litellm/hermes-lab.key` | Hermes, `lab` profile |
 | `~/.secrets/litellm/hermes-restricted.key` | Hermes, `restricted` profile |
 | `~/.secrets/litellm/scripts.key` | for scripts and ad-hoc `curl` |
+| `~/.secrets/litellm/content-curator.key` | the content curator ([warroyo/content-curator](https://github.com/warroyo/content-curator)) |
 
 A client gets its own key so it can be cut off alone and its tokens counted
 alone. Add one by putting its name in `LITELLM_CLIENTS` and re-running. The
