@@ -299,6 +299,32 @@ cfg = {
     "litellm_settings": {
         "request_timeout": 900,
         "drop_params": True,
+        # Token and request counters on /metrics, for Alloy to send to the
+        # Local model usage dashboard (docs/lab-metrics.md). Only the metrics
+        # named here are exported, each with only the labels it lists:
+        # api_key_alias is the client, requested_model what it asked for,
+        # model what actually answered (differs after a fallback).
+        "callbacks": ["prometheus"],
+        # /metrics is on 127.0.0.1 like everything else here, and carries no
+        # key material once the hash label is gone.
+        "require_auth_for_metrics_endpoint": False,
+        "prometheus_metrics_config": [
+            {"group": "tokens",
+             "metrics": ["litellm_input_tokens_metric",
+                         "litellm_output_tokens_metric",
+                         "litellm_input_cached_tokens_metric"],
+             "include_labels": ["api_key_alias", "requested_model", "model"]},
+            {"group": "requests",
+             "metrics": ["litellm_proxy_total_requests_metric"],
+             "include_labels": ["api_key_alias", "requested_model", "status_code"]},
+            {"group": "failures",
+             "metrics": ["litellm_proxy_failed_requests_metric"],
+             "include_labels": ["api_key_alias", "requested_model", "exception_status"]},
+            {"group": "latency",
+             "metrics": ["litellm_request_total_latency_metric",
+                         "litellm_llm_api_time_to_first_token_metric"],
+             "include_labels": ["api_key_alias", "requested_model"]},
+        ],
     },
     "general_settings": {
         "master_key": "os.environ/LITELLM_MASTER_KEY",
