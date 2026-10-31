@@ -1337,4 +1337,49 @@ RestartSec=5
   fi
 fi
 
+# ---------------------------------------------------------------------------
+# sshd takes keys only: no passwords, no root. The same drop-in content
+# lab-target-bootstrap.sh writes on the lab machines.
+#
+# Over the tailnet this changes nothing, since Tailscale SSH answers there and
+# authorizes by policy. It closes the LAN path, where anything on either VLAN
+# could otherwise try passwords against an account whose password is also its
+# sudo password. Before 2026-10-31 nothing set it here, so Ubuntu's default
+# (yes) applied, and the personal Air was still logging in with a password.
+#
+# The drop-in sorts before Ubuntu's 50-cloud-init.conf, and sshd keeps the
+# first value it reads, so this one wins. No reload is needed under socket
+# activation (sshd starts per connection); ssh.service gets one.
+#
+# Refuses while ~/.ssh/authorized_keys is empty, since that would leave no
+# LAN way in. It cannot tell WHICH clients have keys: run
+# client-personal-bootstrap.sh on the Air first, which installs its key.
+# SERVER_KEEP_PASSWORD=1 skips this step.
+# ---------------------------------------------------------------------------
+log "Restricting sshd to key logins"
+KEY_ONLY_DROPIN=/etc/ssh/sshd_config.d/10-key-only.conf
+KEY_ONLY_CONF="# Managed by dev-environment/provision/server-bootstrap.sh — do not edit by hand.
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PermitRootLogin no
+"
+if [ "${SERVER_KEEP_PASSWORD:-0}" = 1 ]; then
+  log "  skipped: SERVER_KEEP_PASSWORD=1"
+elif [ ! -s "$HOME/.ssh/authorized_keys" ]; then
+  log "  WARNING: skipped — ~/.ssh/authorized_keys is empty, so turning off"
+  log "           passwords would leave no LAN way in. Add a client's key first."
+elif [ "$($SUDO cat "$KEY_ONLY_DROPIN" 2>/dev/null)" = "$KEY_ONLY_CONF" ]; then
+  log "  sshd already key-only"
+else
+  printf '%s' "$KEY_ONLY_CONF" | $SUDO tee "${KEY_ONLY_DROPIN}.new" >/dev/null
+  $SUDO mv "${KEY_ONLY_DROPIN}.new" "$KEY_ONLY_DROPIN"
+  if $SUDO sshd -t; then
+    if $SUDO systemctl is-active --quiet ssh.service; then $SUDO systemctl reload ssh; fi
+    log "  sshd now takes keys only (${KEY_ONLY_DROPIN})"
+  else
+    $SUDO rm -f "$KEY_ONLY_DROPIN"
+    log "  WARNING: sshd -t rejected the config — removed ${KEY_ONLY_DROPIN}, sshd unchanged"
+  fi
+fi
+
 log "Server bootstrap complete. See docs/server-setup.md for remaining manual steps."

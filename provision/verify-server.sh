@@ -237,6 +237,13 @@ else
   fi
 fi
 printf '        (reminder: confirm the UDM SE has no WAN port-forward to :22 — not checkable from here)\n'
+# The drop-in is world-readable, so this needs no sudo. 10- sorts first and
+# sshd keeps the first value it reads, so this line is the effective setting.
+if grep -qx 'PasswordAuthentication no' /etc/ssh/sshd_config.d/10-key-only.conf 2>/dev/null; then
+  ok "sshd takes keys only (no passwords on the LAN path)"
+else
+  warn "sshd still accepts passwords — run client-personal-bootstrap.sh on the Air, then server-bootstrap.sh"
+fi
 
 # ---------------------------------------------------------------------------
 section "Persistent Claude session"

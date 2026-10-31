@@ -143,4 +143,29 @@ else
   echo "  is left alone, so it may still hold a stale address."
 fi
 
+# An SSH key on the server, because its sshd takes keys only
+# (server-bootstrap.sh). Over the tailnet Tailscale SSH needs none, but the
+# LAN path at home goes to sshd, and this Mac used a password there until
+# 2026-10-31.
+#
+# ssh-keygen asks for a passphrase. The key is appended over ssh rather than
+# with ssh-copy-id: over the tailnet, Tailscale SSH accepts ssh-copy-id's
+# key-only probe without looking at the key, so ssh-copy-id would report the
+# key as already installed and copy nothing.
+log "SSH key on ${SERVER_HOST}"
+SSH_KEY="$HOME/.ssh/id_ed25519"
+if [ ! -f "$SSH_KEY" ]; then
+  ssh-keygen -t ed25519 -C "$(scutil --get LocalHostName 2>/dev/null || hostname)" -f "$SSH_KEY"
+fi
+# The server-side command is single-quoted on purpose: it runs there.
+# shellcheck disable=SC2016
+if ssh -o ConnectTimeout=10 "$SERVER_HOST" \
+     'umask 077; mkdir -p ~/.ssh; k="$(cat)"; grep -qxF "$k" ~/.ssh/authorized_keys 2>/dev/null || printf "%s\n" "$k" >> ~/.ssh/authorized_keys' \
+     <"${SSH_KEY}.pub"; then
+  echo "  ${SSH_KEY}.pub is in ${SERVER_HOST}:~/.ssh/authorized_keys"
+else
+  echo "  WARNING: could not reach ${SERVER_HOST} to install the key. Re-run this"
+  echo "  script once it is reachable: the server's sshd no longer takes passwords."
+fi
+
 log "Done. See docs/client-personal-setup.md for the remaining manual steps (tailscale up, etc.)."
