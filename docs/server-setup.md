@@ -150,6 +150,28 @@ of provisioning this machine, not a thing you run separately — the same reason
 `lib/chezmoi-apply.sh` and `lib/lab-dns.sh` are there. `ensure_herdr`, in the
 same file, is what the two macOS bootstraps call to install the client.
 
+### Upgrading herdr
+
+Change `HERDR_VERSION` in `provision/lib/herdr.sh` and re-run the bootstrap on
+the server first, then on each Mac. Installing the new binary does not change
+the server that is already running, so `install_herdr_service` compares
+`herdr status server` with the binary on disk and restarts
+`herdr-server.service` when they differ.
+
+That restart kills every pane in the session. Run from inside herdr, the script
+skips it and prints the command instead, so run it from a plain SSH shell
+(`ssh claude-server`, not `claude-attach`), or run this once you are detached:
+
+```sh
+sudo systemctl restart herdr-server.service
+```
+
+Claude Code conversations come back through the Claude Code integration.
+Hermes workers do not, so finish delegated jobs first. Afterwards, re-run
+`./provision/local-ai-setup.sh` so `herdr integration install hermes` and the
+`herdr-push-state` plugin are put back for the new version, and check with
+`herdr status server` that the server and client agree.
+
 ### Where the session starts, and why it stays alive
 
 `claude-main` starts in `~/workspace`. Override it per-run:
