@@ -6,16 +6,18 @@
 #                          integration, and the handover from tmux.
 #
 # The version lives HERE and nowhere else on purpose. A herdr client and server
-# negotiate a protocol version (0.8.0 speaks protocol 19), and a mismatch
+# negotiate a protocol version (`herdr status server` shows it), and a mismatch
 # between the Mac and the server is the first thing that breaks and the last
-# thing you would think to check. One constant, used by every machine's
-# bootstrap, means they cannot drift apart by accident.
+# thing you would think to check. Since 0.9.0 a newer client can still attach
+# to an older compatible server, but a 0.8.x server needs the one-time upgrade
+# first. One constant, used by every machine's bootstrap, means they cannot
+# drift apart by accident.
 #
 # Not installed via Homebrew even on macOS: there is no official formula, the
 # release binaries are what herdr.dev's own installer fetches, and going
 # straight to them is what lets this pin a version and verify a checksum.
 
-HERDR_VERSION="${HERDR_VERSION:-v0.8.0}"
+HERDR_VERSION="${HERDR_VERSION:-v0.9.5}"
 
 # herdr.dev publishes a manifest with per-platform URLs AND sha256 sums. Both
 # the client and the update machinery inside herdr itself read it.
@@ -161,6 +163,18 @@ install_herdr_service() {
     log "         The server will start, but nothing will create the claude-main workspace."
   fi
 
+  # Installing a new binary does not touch the server already running from the
+  # old one, so a version bump alone would leave it on the old version. Compare
+  # the running server with the binary on disk and treat a difference like a
+  # changed unit: restart, under the same rule about not killing this session.
+  local running_ver installed_ver binary_changed=0
+  running_ver="$("$herdr_bin" status server 2>/dev/null | sed -n 's/^version: //p')"
+  installed_ver="$("$herdr_bin" --version 2>/dev/null | sed 's/^herdr //')"
+  if [ -n "$running_ver" ] && [ -n "$installed_ver" ] && [ "$running_ver" != "$installed_ver" ]; then
+    log "herdr server is running ${running_ver}, installed binary is ${installed_ver}"
+    binary_changed=1
+  fi
+
   # Rendered to a temp file and compared before installing, so that a re-run
   # that changes nothing also restarts nothing. That matters more here than it
   # looks: the usual way to re-run this script is from a shell inside the very
@@ -244,13 +258,14 @@ EOF
   if ! systemctl is-active --quiet herdr-server.service 2>/dev/null; then
     $SUDO systemctl start herdr-server.service || \
       log "WARNING: herdr-server.service failed to start — check 'journalctl -u herdr-server'."
-  elif [ "$unit_changed" -eq 1 ]; then
+  elif [ "$unit_changed" -eq 1 ] || [ "$binary_changed" -eq 1 ]; then
     if [ "${HERDR_ENV:-}" = 1 ]; then
-      log "NOTE: the unit changed, but this is running inside herdr and a restart"
-      log "      would kill this session. Apply it when you are next detached:"
+      log "NOTE: the unit or the herdr version changed, but this is running inside"
+      log "      herdr and a restart would kill this session. Apply it when you are"
+      log "      next detached:"
       log "        sudo systemctl restart herdr-server.service"
     else
-      log "Unit changed — restarting herdr-server.service"
+      log "Unit or herdr version changed — restarting herdr-server.service"
       $SUDO systemctl restart herdr-server.service || \
         log "WARNING: herdr-server.service failed to start — check 'journalctl -u herdr-server'."
     fi
