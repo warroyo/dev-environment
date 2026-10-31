@@ -86,8 +86,9 @@ through it; LiteLLM passes the Responses API straight to Gufo.
 channel, then configured key by key with `hermes config set`, so Hermes can
 still migrate its own config between releases.
 
-Not always on: no gateway, no cron. Hermes runs when someone starts it, by
-hand or through Claude.
+Always on for one thing only: the `lab` profile answers on Telegram once
+it has a bot (see [On Telegram](#on-telegram)). No cron. Otherwise Hermes
+runs when someone starts it, by hand or through Claude.
 
 ### Two profiles
 
@@ -109,6 +110,62 @@ its own LiteLLM key.
 | `approvals.mode` | `manual` | every dangerous command is asked. Move to `smart` once trusted |
 | `memory.write_approval`, `skills.write_approval` | `true` | memory on; memory and skill writes are shown and approved first |
 | `telemetry.shared_metrics.*` | `false` | |
+
+### On Telegram
+
+The phone's direct line to Hermes: a chat with the `lab` profile on a bot of
+its own, always on. Decided 2026-10-26, reversing "no gateway"; the
+`restricted` profile was the safer choice and was turned down, because the
+point is reaching the labs from the phone.
+
+```sh
+./provision/hermes-telegram-setup.sh   # after @BotFather → /newbot
+```
+
+It writes `~/.secrets/hermes-telegram` (`HERMES_TELEGRAM_*`, so the shells
+that source `~/.secrets/*` keep the Claude bot's `TELEGRAM_BOT_TOKEN`), then
+`configure_hermes` copies the token and allow-list into `~/.hermes/.env`,
+sets `platforms.telegram.enabled=true` on `lab` only, and installs the
+gateway as a systemd user service (`hermes gateway install`, Hermes owns the
+unit) with lingering on, so it starts at boot.
+
+What a Telegram session can do, and what stops a stranger:
+
+- The allow-list (`TELEGRAM_ALLOWED_USERS`, Will's user id) is the whole gate.
+  `unauthorized_dm_behavior: ignore` means strangers get no reply, not
+  Hermes' default pairing code; the same rule as `claude-telegram-bot`.
+- Approvals come to the chat as buttons, but `approvals.mode=manual` only
+  asks for commands Hermes flags as dangerous. Reading `~/.lab.env` is not
+  one, so whoever holds the Telegram session can read the lab credentials.
+  A lost phone means revoking the bot's token (@BotFather → /revoke).
+- Never the Claude bot's token: Telegram allows one `getUpdates` consumer per
+  token. The setup script refuses it.
+
+The service is also the profile's shared gateway, so `lab` sessions started
+in herdr panes run their turns in it too, rather than in one the CLI starts
+and stops on its own.
+
+Off again: delete `~/.secrets/hermes-telegram`, run
+`./provision/local-ai-setup.sh`, then `hermes gateway uninstall`.
+
+### Skills and standing rules
+
+A session nobody briefed (Telegram, a pane started by hand) needs to know the
+lab without Claude handing it context, so the `lab` profile gets two things:
+
+- **Skills**: `homelab`, `second-brain` and `lab-creds`, linked from
+  `~/.claude/skills` into `~/.local/share/hermes-skills`, which is set as
+  `skills.external_dirs`. The rest of Claude's skills are about Claude's own
+  workflow or about coding, so they are left out. Edit the list in
+  `HERMES_SHARED_SKILLS` (`provision/lib/hermes.sh`).
+- **Rules**: a managed block at the end of `~/.hermes/SOUL.md`, the one
+  context file Hermes loads in every session wherever it starts: the homelab
+  skill first, `lab-creds` for logins, read-only on live machines, changes as
+  code, the work laptop out of scope, the vault through `second-brain` only.
+  Hermes' own persona text above the block is left alone.
+
+The `restricted` profile gets neither: it cannot reach the labs or the vault
+outside `inbox/`.
 
 ### The sandbox network
 
