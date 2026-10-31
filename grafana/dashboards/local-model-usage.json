@@ -448,7 +448,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (api_key_alias) (increase(litellm_input_tokens_metric_total{api_key_alias=~\"$client\",requested_model!~\"local-embed|qwen3-embedding-0.6b\"}[$__interval]) + (min_over_time(litellm_input_tokens_metric_total{api_key_alias=~\"$client\",requested_model!~\"local-embed|qwen3-embedding-0.6b\"}[$__interval]) unless litellm_input_tokens_metric_total{api_key_alias=~\"$client\",requested_model!~\"local-embed|qwen3-embedding-0.6b\"} offset $__interval) or increase(litellm_input_tokens_metric_total{api_key_alias=~\"$client\",requested_model!~\"local-embed|qwen3-embedding-0.6b\"}[$__interval])) + sum by (api_key_alias) (increase(litellm_output_tokens_metric_total{api_key_alias=~\"$client\",requested_model!~\"local-embed|qwen3-embedding-0.6b\"}[$__interval]) + (min_over_time(litellm_output_tokens_metric_total{api_key_alias=~\"$client\",requested_model!~\"local-embed|qwen3-embedding-0.6b\"}[$__interval]) unless litellm_output_tokens_metric_total{api_key_alias=~\"$client\",requested_model!~\"local-embed|qwen3-embedding-0.6b\"} offset $__interval) or increase(litellm_output_tokens_metric_total{api_key_alias=~\"$client\",requested_model!~\"local-embed|qwen3-embedding-0.6b\"}[$__interval]))",
+          "expr": "sum by (api_key_alias) (increase(litellm_input_tokens_metric_total{api_key_alias=~\"$client\",requested_model!~\"local-embed|qwen3-embedding-0.6b\"}[$__interval] offset -$__interval) + (min_over_time(litellm_input_tokens_metric_total{api_key_alias=~\"$client\",requested_model!~\"local-embed|qwen3-embedding-0.6b\"}[$__interval] offset -$__interval) unless litellm_input_tokens_metric_total{api_key_alias=~\"$client\",requested_model!~\"local-embed|qwen3-embedding-0.6b\"}) or increase(litellm_input_tokens_metric_total{api_key_alias=~\"$client\",requested_model!~\"local-embed|qwen3-embedding-0.6b\"}[$__interval] offset -$__interval)) + sum by (api_key_alias) (increase(litellm_output_tokens_metric_total{api_key_alias=~\"$client\",requested_model!~\"local-embed|qwen3-embedding-0.6b\"}[$__interval] offset -$__interval) + (min_over_time(litellm_output_tokens_metric_total{api_key_alias=~\"$client\",requested_model!~\"local-embed|qwen3-embedding-0.6b\"}[$__interval] offset -$__interval) unless litellm_output_tokens_metric_total{api_key_alias=~\"$client\",requested_model!~\"local-embed|qwen3-embedding-0.6b\"}) or increase(litellm_output_tokens_metric_total{api_key_alias=~\"$client\",requested_model!~\"local-embed|qwen3-embedding-0.6b\"}[$__interval] offset -$__interval))",
           "legendFormat": "{{api_key_alias}}",
           "refId": "A"
         }
@@ -459,7 +459,7 @@
           "min": 0,
           "custom": {
             "drawStyle": "bars",
-            "barAlignment": -1,
+            "barAlignment": 1,
             "lineWidth": 1,
             "fillOpacity": 80,
             "showPoints": "never",
@@ -542,7 +542,9 @@
           "sort": "desc"
         }
       },
-      "description": "Input plus output tokens per day, stacked by LiteLLM key. Days are UTC."
+      "description": "Input plus output tokens per day, stacked by LiteLLM key. Days are UTC.",
+      "timeFrom": "7d",
+      "hideTimeOverride": false
     },
     {
       "type": "timeseries",
@@ -565,7 +567,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(sum (increase(litellm_input_tokens_metric_total{api_key_alias=~\"$client\",requested_model!~\"local-embed|qwen3-embedding-0.6b\"}[$__interval]) + (min_over_time(litellm_input_tokens_metric_total{api_key_alias=~\"$client\",requested_model!~\"local-embed|qwen3-embedding-0.6b\"}[$__interval]) unless litellm_input_tokens_metric_total{api_key_alias=~\"$client\",requested_model!~\"local-embed|qwen3-embedding-0.6b\"} offset $__interval) or increase(litellm_input_tokens_metric_total{api_key_alias=~\"$client\",requested_model!~\"local-embed|qwen3-embedding-0.6b\"}[$__interval])) or vector(0)) - (sum (increase(litellm_input_cached_tokens_metric_total{api_key_alias=~\"$client\",requested_model!~\"local-embed|qwen3-embedding-0.6b\"}[$__interval]) + (min_over_time(litellm_input_cached_tokens_metric_total{api_key_alias=~\"$client\",requested_model!~\"local-embed|qwen3-embedding-0.6b\"}[$__interval]) unless litellm_input_cached_tokens_metric_total{api_key_alias=~\"$client\",requested_model!~\"local-embed|qwen3-embedding-0.6b\"} offset $__interval) or increase(litellm_input_cached_tokens_metric_total{api_key_alias=~\"$client\",requested_model!~\"local-embed|qwen3-embedding-0.6b\"}[$__interval])) or vector(0))",
+          "expr": "(sum (increase(litellm_input_tokens_metric_total{api_key_alias=~\"$client\",requested_model!~\"local-embed|qwen3-embedding-0.6b\"}[$__interval] offset -$__interval) + (min_over_time(litellm_input_tokens_metric_total{api_key_alias=~\"$client\",requested_model!~\"local-embed|qwen3-embedding-0.6b\"}[$__interval] offset -$__interval) unless litellm_input_tokens_metric_total{api_key_alias=~\"$client\",requested_model!~\"local-embed|qwen3-embedding-0.6b\"}) or increase(litellm_input_tokens_metric_total{api_key_alias=~\"$client\",requested_model!~\"local-embed|qwen3-embedding-0.6b\"}[$__interval] offset -$__interval)) or vector(0)) - (sum (increase(litellm_input_cached_tokens_metric_total{api_key_alias=~\"$client\",requested_model!~\"local-embed|qwen3-embedding-0.6b\"}[$__interval] offset -$__interval) + (min_over_time(litellm_input_cached_tokens_metric_total{api_key_alias=~\"$client\",requested_model!~\"local-embed|qwen3-embedding-0.6b\"}[$__interval] offset -$__interval) unless litellm_input_cached_tokens_metric_total{api_key_alias=~\"$client\",requested_model!~\"local-embed|qwen3-embedding-0.6b\"}) or increase(litellm_input_cached_tokens_metric_total{api_key_alias=~\"$client\",requested_model!~\"local-embed|qwen3-embedding-0.6b\"}[$__interval] offset -$__interval)) or vector(0))",
           "legendFormat": "Input",
           "refId": "A"
         },
@@ -574,7 +576,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(sum (increase(litellm_input_cached_tokens_metric_total{api_key_alias=~\"$client\",requested_model!~\"local-embed|qwen3-embedding-0.6b\"}[$__interval]) + (min_over_time(litellm_input_cached_tokens_metric_total{api_key_alias=~\"$client\",requested_model!~\"local-embed|qwen3-embedding-0.6b\"}[$__interval]) unless litellm_input_cached_tokens_metric_total{api_key_alias=~\"$client\",requested_model!~\"local-embed|qwen3-embedding-0.6b\"} offset $__interval) or increase(litellm_input_cached_tokens_metric_total{api_key_alias=~\"$client\",requested_model!~\"local-embed|qwen3-embedding-0.6b\"}[$__interval])) or vector(0))",
+          "expr": "(sum (increase(litellm_input_cached_tokens_metric_total{api_key_alias=~\"$client\",requested_model!~\"local-embed|qwen3-embedding-0.6b\"}[$__interval] offset -$__interval) + (min_over_time(litellm_input_cached_tokens_metric_total{api_key_alias=~\"$client\",requested_model!~\"local-embed|qwen3-embedding-0.6b\"}[$__interval] offset -$__interval) unless litellm_input_cached_tokens_metric_total{api_key_alias=~\"$client\",requested_model!~\"local-embed|qwen3-embedding-0.6b\"}) or increase(litellm_input_cached_tokens_metric_total{api_key_alias=~\"$client\",requested_model!~\"local-embed|qwen3-embedding-0.6b\"}[$__interval] offset -$__interval)) or vector(0))",
           "legendFormat": "Cached input",
           "refId": "B"
         },
@@ -583,7 +585,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(sum (increase(litellm_output_tokens_metric_total{api_key_alias=~\"$client\",requested_model!~\"local-embed|qwen3-embedding-0.6b\"}[$__interval]) + (min_over_time(litellm_output_tokens_metric_total{api_key_alias=~\"$client\",requested_model!~\"local-embed|qwen3-embedding-0.6b\"}[$__interval]) unless litellm_output_tokens_metric_total{api_key_alias=~\"$client\",requested_model!~\"local-embed|qwen3-embedding-0.6b\"} offset $__interval) or increase(litellm_output_tokens_metric_total{api_key_alias=~\"$client\",requested_model!~\"local-embed|qwen3-embedding-0.6b\"}[$__interval])) or vector(0))",
+          "expr": "(sum (increase(litellm_output_tokens_metric_total{api_key_alias=~\"$client\",requested_model!~\"local-embed|qwen3-embedding-0.6b\"}[$__interval] offset -$__interval) + (min_over_time(litellm_output_tokens_metric_total{api_key_alias=~\"$client\",requested_model!~\"local-embed|qwen3-embedding-0.6b\"}[$__interval] offset -$__interval) unless litellm_output_tokens_metric_total{api_key_alias=~\"$client\",requested_model!~\"local-embed|qwen3-embedding-0.6b\"}) or increase(litellm_output_tokens_metric_total{api_key_alias=~\"$client\",requested_model!~\"local-embed|qwen3-embedding-0.6b\"}[$__interval] offset -$__interval)) or vector(0))",
           "legendFormat": "Output",
           "refId": "C"
         }
@@ -594,7 +596,7 @@
           "min": 0,
           "custom": {
             "drawStyle": "bars",
-            "barAlignment": -1,
+            "barAlignment": 1,
             "lineWidth": 1,
             "fillOpacity": 80,
             "showPoints": "never",
@@ -616,7 +618,9 @@
           "sort": "desc"
         }
       },
-      "description": "Input the model had to process, input served from the prompt cache, and output. Days are UTC."
+      "description": "Input the model had to process, input served from the prompt cache, and output. Days are UTC.",
+      "timeFrom": "7d",
+      "hideTimeOverride": false
     },
     {
       "type": "timeseries",
@@ -1014,7 +1018,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (api_key_alias) (increase(litellm_proxy_total_requests_metric_total{api_key_alias=~\"$client\",requested_model!~\"local-embed|qwen3-embedding-0.6b\"}[$__interval]) + (min_over_time(litellm_proxy_total_requests_metric_total{api_key_alias=~\"$client\",requested_model!~\"local-embed|qwen3-embedding-0.6b\"}[$__interval]) unless litellm_proxy_total_requests_metric_total{api_key_alias=~\"$client\",requested_model!~\"local-embed|qwen3-embedding-0.6b\"} offset $__interval) or increase(litellm_proxy_total_requests_metric_total{api_key_alias=~\"$client\",requested_model!~\"local-embed|qwen3-embedding-0.6b\"}[$__interval]))",
+          "expr": "sum by (api_key_alias) (increase(litellm_proxy_total_requests_metric_total{api_key_alias=~\"$client\",requested_model!~\"local-embed|qwen3-embedding-0.6b\"}[$__interval] offset -$__interval) + (min_over_time(litellm_proxy_total_requests_metric_total{api_key_alias=~\"$client\",requested_model!~\"local-embed|qwen3-embedding-0.6b\"}[$__interval] offset -$__interval) unless litellm_proxy_total_requests_metric_total{api_key_alias=~\"$client\",requested_model!~\"local-embed|qwen3-embedding-0.6b\"}) or increase(litellm_proxy_total_requests_metric_total{api_key_alias=~\"$client\",requested_model!~\"local-embed|qwen3-embedding-0.6b\"}[$__interval] offset -$__interval))",
           "legendFormat": "{{api_key_alias}}",
           "refId": "A"
         }
@@ -1025,7 +1029,7 @@
           "min": 0,
           "custom": {
             "drawStyle": "bars",
-            "barAlignment": -1,
+            "barAlignment": 1,
             "lineWidth": 1,
             "fillOpacity": 80,
             "showPoints": "never",
@@ -1573,7 +1577,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "sum by (api_key_alias) (increase(litellm_input_tokens_metric_total{api_key_alias=~\"$client\",requested_model=~\"local-embed|qwen3-embedding-0.6b\"}[$__interval]) + (min_over_time(litellm_input_tokens_metric_total{api_key_alias=~\"$client\",requested_model=~\"local-embed|qwen3-embedding-0.6b\"}[$__interval]) unless litellm_input_tokens_metric_total{api_key_alias=~\"$client\",requested_model=~\"local-embed|qwen3-embedding-0.6b\"} offset $__interval) or increase(litellm_input_tokens_metric_total{api_key_alias=~\"$client\",requested_model=~\"local-embed|qwen3-embedding-0.6b\"}[$__interval]))",
+          "expr": "sum by (api_key_alias) (increase(litellm_input_tokens_metric_total{api_key_alias=~\"$client\",requested_model=~\"local-embed|qwen3-embedding-0.6b\"}[$__interval] offset -$__interval) + (min_over_time(litellm_input_tokens_metric_total{api_key_alias=~\"$client\",requested_model=~\"local-embed|qwen3-embedding-0.6b\"}[$__interval] offset -$__interval) unless litellm_input_tokens_metric_total{api_key_alias=~\"$client\",requested_model=~\"local-embed|qwen3-embedding-0.6b\"}) or increase(litellm_input_tokens_metric_total{api_key_alias=~\"$client\",requested_model=~\"local-embed|qwen3-embedding-0.6b\"}[$__interval] offset -$__interval))",
           "legendFormat": "{{api_key_alias}}",
           "refId": "A"
         }
@@ -1584,7 +1588,7 @@
           "min": 0,
           "custom": {
             "drawStyle": "bars",
-            "barAlignment": -1,
+            "barAlignment": 1,
             "lineWidth": 1,
             "fillOpacity": 80,
             "showPoints": "never",
@@ -1667,7 +1671,9 @@
           "sort": "desc"
         }
       },
-      "description": "Input tokens sent to embedding models per day, by LiteLLM key. Days are UTC."
+      "description": "Input tokens sent to embedding models per day, by LiteLLM key. Days are UTC.",
+      "timeFrom": "7d",
+      "hideTimeOverride": false
     },
     {
       "type": "timeseries",
