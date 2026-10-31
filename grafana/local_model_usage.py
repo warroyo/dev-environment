@@ -52,10 +52,24 @@ def q(expr, legend="", ref="A", instant=False, fmt=None):
     return t
 
 
+def inc(metric, rng, by=""):
+    # increase() that also counts a series' first value. LiteLLM creates a
+    # counter on its first request, already holding that request's tokens, and
+    # increase() only counts growth between samples, so a new client or model
+    # would lose its first request (often the only one). A series that did not
+    # exist at the start of the window gets its first value (min_over_time;
+    # counters only grow) added.
+    m = f"{metric}{SEL}"
+    grp = f"sum by ({by}) " if by else "sum "
+    return (f"{grp}(increase({m}[{rng}])"
+            f" + (min_over_time({m}[{rng}]) unless {m} offset {rng})"
+            f" or increase({m}[{rng}]))")
+
+
 def tokens(metric, rng):
     # "or vector(0)": the cached counter only exists once a request reported
     # cached tokens, and an empty side would blank the whole expression.
-    return f"(sum(increase({metric}{SEL}[{rng}])) or vector(0))"
+    return f"({inc(metric, rng)} or vector(0))"
 
 
 def client_overrides():
@@ -160,7 +174,7 @@ def window_tiles(title, rng_from, x, desc):
     stat(title, [
         q(tokens(IN, "$__range"), "Input", "A", instant=True),
         q(tokens(OUT, "$__range"), "Output", "B", instant=True),
-        q(f"(sum(increase({REQS}{SEL}[$__range])) or vector(0))", "Requests", "C", instant=True),
+        q(f"{tokens(REQS, '$__range')}", "Requests", "C", instant=True),
     ], x, y, time_from=rng_from, desc=desc)
 
 
@@ -184,8 +198,8 @@ y += 5
 row("Tokens", y)
 y += 1
 bars("Tokens per day, by client", [
-    q(f"sum by (api_key_alias) (increase({IN}{SEL}[$__interval]))"
-      f" + sum by (api_key_alias) (increase({OUT}{SEL}[$__interval]))",
+    q(f"{inc(IN, '$__interval', 'api_key_alias')}"
+      f" + {inc(OUT, '$__interval', 'api_key_alias')}",
       "{{api_key_alias}}"),
 ], 0, y, 12, 9, "1d", overrides=client_overrides(),
     desc="Input plus output tokens per day, stacked by LiteLLM key. Days are UTC.")
@@ -204,12 +218,12 @@ lines("Activity, tokens per minute", [
       "{{api_key_alias}} out", "B"),
 ], 0, y, 12, 8,
     desc="Input and output tokens per minute by client, to see when the model was busy.")
-share("By client", f"sum by (api_key_alias) (increase({IN}{SEL}[$__range]))"
-      f" + sum by (api_key_alias) (increase({OUT}{SEL}[$__range]))",
+share("By client", f"{inc(IN, '$__range', 'api_key_alias')}"
+      f" + {inc(OUT, '$__range', 'api_key_alias')}",
       "{{api_key_alias}}", 12, y, 6, 8, overrides=client_overrides(),
       desc="Input plus output tokens over the dashboard's time range.")
-share("By model", f"sum by (model) (increase({IN}{SEL}[$__range]))"
-      f" + sum by (model) (increase({OUT}{SEL}[$__range]))",
+share("By model", f"{inc(IN, '$__range', 'model')}"
+      f" + {inc(OUT, '$__range', 'model')}",
       "{{model}}", 18, y, 6, 8,
       desc="The model that answered (after any fallback), over the dashboard's time range.")
 y += 8
@@ -228,13 +242,13 @@ panels.append({
     "type": "table", "title": "Per client", "id": pid(), "datasource": DS,
     "gridPos": {"h": 8, "w": 12, "x": 0, "y": y},
     "targets": [
-        tq(f"sum by (api_key_alias) (increase({REQS}{SEL}[$__range]))", "A"),
-        tq(f"sum by (api_key_alias) (increase({IN}{SEL}[$__range]))", "B"),
-        tq(f"sum by (api_key_alias) (increase({CACHED}{SEL}[$__range]))", "C"),
-        tq(f"sum by (api_key_alias) (increase({OUT}{SEL}[$__range]))", "D"),
-        tq(f"sum by (api_key_alias) (increase({OUT}{SEL}[$__range]))"
-           f" / sum by (api_key_alias) (increase({REQS}{SEL}[$__range]))", "E"),
-        tq(f"sum by (api_key_alias) (increase({FAILS}{SEL}[$__range]))", "F"),
+        tq(f"{inc(REQS, '$__range', 'api_key_alias')}", "A"),
+        tq(f"{inc(IN, '$__range', 'api_key_alias')}", "B"),
+        tq(f"{inc(CACHED, '$__range', 'api_key_alias')}", "C"),
+        tq(f"{inc(OUT, '$__range', 'api_key_alias')}", "D"),
+        tq(f"{inc(OUT, '$__range', 'api_key_alias')}"
+           f" / {inc(REQS, '$__range', 'api_key_alias')}", "E"),
+        tq(f"{inc(FAILS, '$__range', 'api_key_alias')}", "F"),
     ],
     "transformations": [
         {"id": "merge", "options": {}},
@@ -251,7 +265,7 @@ panels.append({
     "description": "Over the dashboard's time range.",
 })
 bars("Requests per hour, by client", [
-    q(f"sum by (api_key_alias) (increase({REQS}{SEL}[$__interval]))", "{{api_key_alias}}"),
+    q(f"{inc(REQS, '$__interval', 'api_key_alias')}", "{{api_key_alias}}"),
 ], 12, y, 12, 8, "1h", overrides=client_overrides())
 y += 8
 
@@ -276,7 +290,7 @@ lines("Request duration", [
     q(quantile(LATENCY, 0.95), "p95 {{requested_model}}", "B"),
 ], 8, y, 8, 8, unit="s", desc="Whole request through LiteLLM, as the client sees it.")
 lines("Failed requests", [
-    q(f"sum by (exception_status) (increase({FAILS}{SEL}[$__rate_interval]))",
+    q(f"{inc(FAILS, '$__rate_interval', 'exception_status')}",
       "{{exception_status}}"),
 ], 16, y, 8, 8, stack=True,
     desc="Failures per scrape interval by HTTP status. Engine-side faults are on Lab overview.")
