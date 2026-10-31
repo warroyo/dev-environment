@@ -123,7 +123,10 @@ authorizes by the tailnet policy, the same model as the lab targets in
 policy's `autogroup:self` rule applies: a browser check per connecting device,
 held for 12 hours, and no `authorized_keys` for tailnet clients. A new device,
 such as the phone, needs only the Tailscale app. The sshd bindings below are the
-LAN path and the fallback when Tailscale is down; LAN logins use keys.
+LAN path and the fallback when Tailscale is down; LAN logins use keys only.
+`server-bootstrap.sh` writes `/etc/ssh/sshd_config.d/10-key-only.conf`
+(`PasswordAuthentication no`, no root), and `client-personal-bootstrap.sh`
+installs the Air's key, so run that on the Air first.
 
 sshd binds only to the server's mesh-VPN address and its LAN addresses, set by
 [`provision/server-bootstrap.sh`](../provision/server-bootstrap.sh) — never a
