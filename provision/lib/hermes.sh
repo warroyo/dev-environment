@@ -528,14 +528,26 @@ configure_hermes_telegram() {
   fi
 
   # --if-missing leaves an installed unit alone; Hermes refreshes its own unit
-  # on start and on `hermes update`. The restart picks up a new token or
-  # allow-list, and replaces a gateway a CLI session started on its own.
+  # on start and on `hermes update`.
   if ! "$HERMES_BIN" gateway install --if-missing --start-on-login --no-start-now >/dev/null 2>&1; then
     log "  WARNING: 'hermes gateway install' failed"
     return 1
   fi
-  if ! "$HERMES_BIN" gateway restart >/dev/null 2>&1; then
-    log "  WARNING: 'hermes gateway restart' failed — check 'hermes gateway status'"
+
+  # Stop everything, then start the service, so it picks up a new token or
+  # allow-list. Not `gateway restart`: with the unit installed but inactive and
+  # a gateway that a CLI session started on its own still running, restart
+  # sends that gateway a graceful-restart signal and waits for a supervisor to
+  # relaunch it. Nothing supervises it, so the wait runs to Hermes' drain
+  # timeout (about 3 minutes, silently, since output goes to /dev/null) before
+  # the unit comes up. Plain `stop` would not help either: with a unit
+  # installed it stops only the unit and leaves the stray gateway running.
+  # --all stops the unit AND kills every gateway process; one host gateway
+  # serves both profiles, so nothing else is lost. A session running in a
+  # herdr pane drops its turn and reconnects to the new gateway.
+  "$HERMES_BIN" gateway stop --all >/dev/null 2>&1 || true
+  if ! timeout 120 "$HERMES_BIN" gateway start >/dev/null 2>&1; then
+    log "  WARNING: 'hermes gateway start' failed or timed out — check 'hermes gateway status'"
     return 1
   fi
   log "  Hermes lab profile on Telegram, gateway running as a user service"
