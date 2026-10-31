@@ -23,6 +23,7 @@ history stays local, in LiteLLM's spend logs.
 | Where | What | Code |
 |---|---|---|
 | Server | Grafana Alloy, pinned and held, from Grafana's apt repo. Scrapes itself and the targets every 60s, filters, remote_writes | `provision/lib/alloy.sh`, `provision/metrics-setup.sh` |
+| Server | LiteLLM's Prometheus callback on `127.0.0.1:4000/metrics`: tokens and requests per client key and model, no auth on loopback | `provision/lib/litellm.sh` |
 | Every lab target | node_exporter from the Ubuntu archive, on the tailnet address only, with the `drm` (amdgpu) and `systemd` collectors | role `node_metrics` |
 | Inference host | `llama-engine-metrics.timer` (30s) copies each loaded model's engine `/metrics` into node_exporter's textfile directory, labelled `model=` | role `inference_host`, `--tags metrics` |
 | Inference host | `--metrics` on the llama.cpp fallback, so it exports the same `llamacpp:*` counters as Gufo | `llama-swap.yaml.j2` |
@@ -109,6 +110,36 @@ python3 grafana/architecture.py > grafana/dashboards/architecture.json
 ./provision/grafana-dashboards.sh
 ```
 
+`grafana/dashboards/local-model-usage.json` is **Local model usage** (uid
+`local-model-usage`): a usage page for the local model in the style of
+Claude's and Codex's. It reads LiteLLM's own `/metrics` (`job="litellm"`),
+so it counts what each client asked for, by its LiteLLM key, where the Lab
+overview's Models row counts what the engines did.
+
+| Row | Shows |
+|---|---|
+| At a glance | input, output and requests for the last 5 hours, today and the last 7 days; what the week would have cost on a paid API |
+| Tokens | tokens per day by client and by kind (input, cached input, output), tokens per minute, share by client and by model |
+| Requests | a per-client table (requests, tokens, output per request, failures), requests per hour |
+| Speed and errors | time to first token and request duration (p50, p95) per model, failed requests by status |
+
+Variables: **Client** (`api_key_alias`) and the comparison prices in dollars
+per million tokens (**$/M input**, **$/M cached input**, **$/M output**). The
+defaults are placeholders: set them to the API model the local one stands in
+for. Changing them in the UI lasts until the next push; change the defaults
+in the generator to keep them. Daily bars are UTC days, and nothing looks
+back past Grafana Cloud's 14 days.
+
+What LiteLLM exports is set in `prometheus_metrics_config` in
+`lib/litellm.sh`: seven metrics, each with only the client, model and status
+labels the dashboard uses. The key hash, user and IP labels are left off.
+The dashboard is generated too:
+
+```sh
+python3 grafana/local_model_usage.py > grafana/dashboards/local-model-usage.json
+./provision/grafana-dashboards.sh
+```
+
 ## The keep-list
 
 `prometheus.relabel "keep"` in `lib/alloy.sh` names every metric that may
@@ -131,7 +162,9 @@ operstate is `unknown`.
 Every host is `job="node"`, `instance="<short host name>"` (the server's own
 target is relabelled to match), so one dashboard variable and one `absent()`
 alert cover all of them. llama-swap is `job="llama-swap"`. Engine counters
-carry `model="<llama-swap model name>"`.
+carry `model="<llama-swap model name>"`. LiteLLM is `job="litellm"`,
+`instance="ubuntu-home"`; its counters carry `api_key_alias` (the client),
+`requested_model` and `model` (what answered, after any fallback).
 
 ## Useful queries
 
@@ -152,12 +185,15 @@ node_hwmon_temp_celsius{instance="evo-x2"} * on (chip, sensor) group_left(label)
 # speculative decoding acceptance
 rate(llamacpp:spec_decode_num_accepted_tokens_total[15m]) / rate(llamacpp:spec_decode_num_draft_tokens_total[15m])
 
+# local-model tokens per client over the last day
+sum by (api_key_alias) (increase(litellm_output_tokens_metric_total[1d]))
+
 # tunnel to the client lab
 node_systemd_unit_state{instance="ubuntu-home", name="openvpn-client@client-env.service", state="active"}
 ```
 
 ## Not yet
 
-homeNAS over SNMP, tailnet peer status, herdr agent states, LiteLLM
-per-client usage, and the alert rules themselves (set in the Grafana Cloud UI
+homeNAS over SNMP, tailnet peer status, herdr agent states, and the alert
+rules themselves (set in the Grafana Cloud UI
 for now). Tracked on the backlog under the Grafana dashboard item.
