@@ -74,24 +74,34 @@ def q(expr, legend="", ref="A", instant=False, fmt=None):
     return t
 
 
-def inc(metric, rng, by="", sel=None):
+def inc(metric, rng, by="", sel=None, ahead=False):
     # increase() that also counts a series' first value. LiteLLM creates a
     # counter on its first request, already holding that request's tokens, and
     # increase() only counts growth between samples, so a new client or model
     # would lose its first request (often the only one). A series that did not
     # exist at the start of the window gets its first value (min_over_time;
     # counters only grow) added.
+    #
+    # ahead=True looks forward from the evaluation time instead of back, for
+    # bar panels. Grafana aligns a step to multiples of itself, so a 1d step
+    # evaluates at UTC midnight: looking back, each bar holds the day before
+    # its timestamp and the current day has no point until it is over.
     m = f"{metric}{sel or SEL}"
     grp = f"sum by ({by}) " if by else "sum "
+    if ahead:
+        w = f"[{rng}] offset -{rng}"
+        return (f"{grp}(increase({m}{w})"
+                f" + (min_over_time({m}{w}) unless {m})"
+                f" or increase({m}{w}))")
     return (f"{grp}(increase({m}[{rng}])"
             f" + (min_over_time({m}[{rng}]) unless {m} offset {rng})"
             f" or increase({m}[{rng}]))")
 
 
-def tokens(metric, rng, sel=None):
+def tokens(metric, rng, sel=None, ahead=False):
     # "or vector(0)": the cached counter only exists once a request reported
     # cached tokens, and an empty side would blank the whole expression.
-    return f"({inc(metric, rng, sel=sel)} or vector(0))"
+    return f"({inc(metric, rng, sel=sel, ahead=ahead)} or vector(0))"
 
 
 def client_overrides():
@@ -130,8 +140,11 @@ def stat(title, targets, x, y, w=6, h=5, unit="short", time_from=None, desc="",
     panels.append(p)
 
 
-def bars(title, targets, x, y, w, h, interval, desc="", unit="short", overrides=None):
-    panels.append({
+def bars(title, targets, x, y, w, h, interval, desc="", unit="short", overrides=None,
+         time_from=None):
+    # Queries here use inc(..., ahead=True): a point holds the bucket that
+    # starts at its timestamp, so the bar is drawn after it.
+    p = {
         "type": "timeseries", "title": title, "id": pid(), "datasource": DS,
         "gridPos": {"h": h, "w": w, "x": x, "y": y},
         "interval": interval,
@@ -139,7 +152,7 @@ def bars(title, targets, x, y, w, h, interval, desc="", unit="short", overrides=
         "fieldConfig": {
             "defaults": {
                 "unit": unit, "min": 0,
-                "custom": {"drawStyle": "bars", "barAlignment": -1, "lineWidth": 1,
+                "custom": {"drawStyle": "bars", "barAlignment": 1, "lineWidth": 1,
                            "fillOpacity": 80, "showPoints": "never",
                            "stacking": {"mode": "normal", "group": "A"}},
             },
@@ -148,7 +161,12 @@ def bars(title, targets, x, y, w, h, interval, desc="", unit="short", overrides=
         "options": {"legend": {"displayMode": "list", "placement": "bottom"},
                     "tooltip": {"mode": "multi", "sort": "desc"}},
         "description": desc,
-    })
+    }
+    if time_from:
+        # A range shorter than a bucket would hold no bucket start.
+        p["timeFrom"] = time_from
+        p["hideTimeOverride"] = False
+    panels.append(p)
 
 
 def lines(title, targets, x, y, w, h, unit="short", desc="", overrides=None, stack=False):
@@ -220,16 +238,17 @@ y += 5
 row("Tokens", y)
 y += 1
 bars("Tokens per day, by client", [
-    q(f"{inc(IN, '$__interval', 'api_key_alias')}"
-      f" + {inc(OUT, '$__interval', 'api_key_alias')}",
+    q(f"{inc(IN, '$__interval', 'api_key_alias', ahead=True)}"
+      f" + {inc(OUT, '$__interval', 'api_key_alias', ahead=True)}",
       "{{api_key_alias}}"),
-], 0, y, 12, 9, "1d", overrides=client_overrides(),
+], 0, y, 12, 9, "1d", overrides=client_overrides(), time_from="7d",
     desc="Input plus output tokens per day, stacked by LiteLLM key. Days are UTC.")
 bars("Tokens per day, by kind", [
-    q(f"{tokens(IN, '$__interval')} - {tokens(CACHED, '$__interval')}", "Input", "A"),
-    q(tokens(CACHED, "$__interval"), "Cached input", "B"),
-    q(tokens(OUT, "$__interval"), "Output", "C"),
-], 12, y, 12, 9, "1d",
+    q(f"{tokens(IN, '$__interval', ahead=True)} - {tokens(CACHED, '$__interval', ahead=True)}",
+      "Input", "A"),
+    q(tokens(CACHED, "$__interval", ahead=True), "Cached input", "B"),
+    q(tokens(OUT, "$__interval", ahead=True), "Output", "C"),
+], 12, y, 12, 9, "1d", time_from="7d",
     desc="Input the model had to process, input served from the prompt cache, and "
          "output. Days are UTC.")
 y += 9
@@ -287,7 +306,7 @@ panels.append({
     "description": "Over the dashboard's time range.",
 })
 bars("Requests per hour, by client", [
-    q(f"{inc(REQS, '$__interval', 'api_key_alias')}", "{{api_key_alias}}"),
+    q(f"{inc(REQS, '$__interval', 'api_key_alias', ahead=True)}", "{{api_key_alias}}"),
 ], 12, y, 12, 8, "1h", overrides=client_overrides())
 y += 8
 
@@ -342,8 +361,8 @@ lines("Embedding request duration", [
     desc="Whole request through LiteLLM. One request can carry a batch of texts.")
 y += 5
 bars("Embedding tokens per day, by client", [
-    q(f"{inc(IN, '$__interval', 'api_key_alias', sel=E)}", "{{api_key_alias}}"),
-], 0, y, 12, 8, "1d", overrides=client_overrides(),
+    q(f"{inc(IN, '$__interval', 'api_key_alias', sel=E, ahead=True)}", "{{api_key_alias}}"),
+], 0, y, 12, 8, "1d", overrides=client_overrides(), time_from="7d",
     desc="Input tokens sent to embedding models per day, by LiteLLM key. Days are UTC.")
 lines("Failed embedding requests", [
     q(f"{inc(FAILS, '$__rate_interval', 'exception_status', sel=E)}", "{{exception_status}}"),
