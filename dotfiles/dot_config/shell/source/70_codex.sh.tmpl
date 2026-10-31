@@ -16,7 +16,14 @@
 # shell's, so it does not inherit the directory you are standing in. $PWD is
 # single-quoted on purpose: it has to expand when the alias runs, not when it
 # is defined.
-alias cx='codex --remote unix:// --cd "$PWD"'
+#
+# The -c turns on network for sandboxed commands. Codex's default
+# workspace-write sandbox has none, so kubectl, ssh and curl against the home
+# lab and the client lab all fail with "Could not resolve host". It is a flag,
+# not a line in ~/.codex/config.toml, because the static setting is ignored
+# (openai/codex #40339; checked on 0.165.0 with `codex sandbox -p`) and because
+# Codex rewrites that file itself. codex-open passes the same flag.
+alias cx='codex --remote unix:// --cd "$PWD" -c sandbox_workspace_write.network_access=true'
 
 # The other shape: a new herdr workspace with Codex in it, rather than Codex in
 # this pane. Same thing the Telegram bot's /cx_open runs, so a session started

@@ -222,8 +222,12 @@ print(d["result"]["root_pane"]["pane_id"])
 # --cd pins the directory the daemon opens new tasks in. The pane's own cwd is
 # already $TARGET, but with --remote the session lives in the daemon's process,
 # not the pane's, so the pane's cwd is not what it would otherwise inherit.
+#
+# The -c gives sandboxed commands network, so the session can reach the labs.
+# Same flag, and the same reason it is a flag, as the cx alias in 70_codex.sh.
 "$HERDR" agent start "$AGENT" --kind codex --pane "$PANE" --timeout 60000 \
-  -- --remote unix:// --cd "$TARGET" >/dev/null
+  -- --remote unix:// --cd "$TARGET" \
+     -c sandbox_workspace_write.network_access=true >/dev/null
 
 printf '%s\n' "$SESSION"
 
