@@ -133,8 +133,8 @@ and skip the SSH entry, or add a local DNS record on the UDM SE so
 That environment's identity only allows **one live connection at a time**
 (`docs/server-setup.md`, §6). If this laptop opened its own client for it,
 that would kick whichever connection is already live. So the server keeps the
-one connection and **routes** `10.47.0.0/16` and the lab resolver
-`172.21.0.90` for LAN clients — including anything arriving over the UDM SE's
+one connection and **routes** `10.20.0.0/16` and the lab resolver
+`172.30.0.53` for LAN clients — including anything arriving over the UDM SE's
 Teleport tunnel. No proxy, no browser extension: the laptop just has a route.
 
 Everything in this section is **the work laptop's path**, which needs a static
@@ -155,7 +155,7 @@ laptop's routing table.
    `lab-routing.service` running — `./provision/verify-server.sh` reports the
    "Lab subnet routing" section clean. Run `server-bootstrap.sh` if it doesn't.
 2. On the UDM SE (Settings → Routing → **Static Routes**), one route with the
-   server's LAN IP as the next hop: `10.47.0.0/16`. The lab resolver needs no
+   server's LAN IP as the next hop: `10.20.0.0/16`. The lab resolver needs no
    route of its own any more — see the split-DNS section below.
 3. Whatever carries you home — Teleport on a UniFi travel router, or the
    split-tunnel OpenVPN profile from §2 — has to actually pass that route on.
@@ -168,39 +168,39 @@ laptop's routing table.
      which makes the specific route moot at the cost of sending general
      browsing over the tunnel.
 
-### Split DNS for `set.lab` — automated
+### Split DNS for `corp.example` — automated
 
 `client-work-bootstrap.sh` installs this; there is nothing to do by hand. It
-writes `/etc/resolver/set.lab` (via `provision/lib/lab-dns.sh`) pointing
-`*.set.lab` at the **server's LAN address on port 5300**, and flushes the DNS
+writes `/etc/resolver/corp.example` (via `provision/lib/lab-dns.sh`) pointing
+`*.corp.example` at the **server's LAN address on port 5300**, and flushes the DNS
 cache. Only that zone is affected — everything else keeps using the machine's
 normal resolver, so general DNS never depends on the tunnel being up.
 
 The file carries `timeout 3` deliberately. It applies unconditionally, so off
-this network every `*.set.lab` lookup goes to an unreachable resolver; the
+this network every `*.corp.example` lookup goes to an unreachable resolver; the
 short timeout keeps that a brief pause rather than a multi-second hang.
 
 #### Why port 5300 and not the lab resolver on 53
 
-This used to point straight at `172.21.0.90:53` and let the server route the
+This used to point straight at `172.30.0.53:53` and let the server route the
 packets. It worked on the home LAN and broke the first time it was used from a
 travel router, in a way worth recognising again:
 
-- `10.47.x.x` was reachable, so the tunnel was obviously fine.
-- `traceroute 172.21.0.90` walked the whole path and into the tunnel, so the
+- `10.20.x.x` was reachable, so the tunnel was obviously fine.
+- `traceroute 172.30.0.53` walked the whole path and into the tunnel, so the
   route was obviously fine.
-- Every `*.set.lab` lookup still failed.
+- Every `*.corp.example` lookup still failed.
 
 The UDM was DNAT'ing **anything on port 53** to itself for clients arriving
 over Teleport — regardless of the address they were sent to. The reply came
-back with `172.21.0.90` as its source, `NXDOMAIN`, and a root-server SOA.
+back with `172.30.0.53` as its source, `NXDOMAIN`, and a root-server SOA.
 
 The tell is latency, not the answer. The interceptor sits nearer than the real
 resolver, so it replies *faster* than the path allows:
 
 ```
-Mac    → "172.21.0.90"  NXDOMAIN, authority = a.root-servers.net   25 ms
-server → 172.21.0.90    auto.gpu.set.lab A 10.47.0.224, aa flag    47 ms
+Mac    → "172.30.0.53"  NXDOMAIN, authority = a.root-servers.net   25 ms
+server → 172.30.0.53    vcfa.corp.example A 10.20.0.10, aa flag    47 ms
 ```
 
 Hop 4 of the traceroute alone is 70 ms and the lab is past it, so nothing
@@ -212,7 +212,7 @@ sends one on 53. So the address used solely for DNS looked dead while every
 other address on the same route worked.
 
 The fix is to stop putting port 53 on the wire. `server-bootstrap.sh` runs
-dnsmasq on the server listening on **5300**, forwarding only `set.lab` into
+dnsmasq on the server listening on **5300**, forwarding only `corp.example` into
 the tunnel (`no-resolv`, so it is not an open resolver for anything else), and
 the client asks that instead. Nothing on a borrowed network redirects 5300,
 so this survives hotel and conference wifi, which do the same thing the UDM
@@ -223,8 +223,8 @@ they talk to a nameserver directly. They will report failure while Safari,
 Chrome, `curl` and `ping` all work fine. Use the system resolver instead:
 
 ```sh
-dscacheutil -q host -a name <host>.set.lab
-dig -p 5300 @<server-LAN-IP> <host>.set.lab   # the same query by hand
+dscacheutil -q host -a name <host>.corp.example
+dig -p 5300 @<server-LAN-IP> <host>.corp.example   # the same query by hand
 ```
 
 If MDM overrides `/etc/resolver`, the fallback is to point the travel router's
@@ -237,13 +237,13 @@ With Teleport up and **no proxy configured anywhere**:
 
 ```sh
 netstat -rn | grep 10.47                 # route present, via the tunnel
-traceroute 10.47.<host>                  # first hop is the tunnel, not the local gw
-dig -p 5300 @<server-LAN-IP> auto.gpu.set.lab   # expect the aa flag
-dscacheutil -q host -a name <name>.set.lab
+traceroute 10.20.<host>                  # first hop is the tunnel, not the local gw
+dig -p 5300 @<server-LAN-IP> vcfa.corp.example   # expect the aa flag
+dscacheutil -q host -a name <name>.corp.example
 ```
 
 If the `dig` answers but `dscacheutil` doesn't, the problem is
-`/etc/resolver/set.lab`, not the network — re-run `client-work-bootstrap.sh`
+`/etc/resolver/corp.example`, not the network — re-run `client-work-bootstrap.sh`
 and `sudo killall -HUP mDNSResponder`.
 
 ### Removed: the SOCKS proxy

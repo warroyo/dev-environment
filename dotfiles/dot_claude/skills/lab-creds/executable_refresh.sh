@@ -3,8 +3,8 @@
 # check that kubectl works. Prints no secret.
 #
 #   refresh.sh                 both contexts, each only when its session has expired
-#   refresh.sh sup-gpu         the Supervisor only
-#   refresh.sh vcfa            VCF Automation only
+#   refresh.sh <supervisor>    the Supervisor only ($SUPERVISOR_CONTEXT)
+#   refresh.sh <vcfa>          VCF Automation only ($VCFA_CONTEXT)
 #   refresh.sh --force [name]  refresh even when the session still works
 set -uo pipefail
 

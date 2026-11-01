@@ -10,7 +10,7 @@
 # one.
 
 # browser-vpn: an `ssh -D` SOCKS5 proxy to claude-server, replaced by the
-# routed path (10.47.0.0/16 via the server) plus split DNS on port 5300.
+# routed path (the lab subnet via the server) plus split DNS on port 5300.
 # Removed 2026-08-17. See docs/client-work-setup.md.
 .local/bin/browser-vpn
 

@@ -15,11 +15,14 @@
 # untouched whether or not the lab is reachable.
 #
 # This is the client half of the routing set up by server-bootstrap.sh: the
-# server forwards 10.47.0.0/16 out its OpenVPN tunnel and answers set.lab
+# server forwards the lab subnet out its OpenVPN tunnel and answers lab-zone
 # queries on port 5300, and this is what makes a browser able to type a
 # hostname instead of an address. See docs/client-work-setup.md.
 
-LAB_DNS_DOMAIN="set.lab"
+# The zone itself comes from the local ~/.config/client-lab.env (LAB_ZONE),
+# never from this public repo. See lib/client-lab.sh.
+# shellcheck source=client-lab.sh
+source "$(dirname "${BASH_SOURCE[0]}")/client-lab.sh"
 
 # Not the lab's own resolver, and not port 53.
 #
@@ -93,11 +96,16 @@ lab_dns_server_over_tailscale() {
 
 install_lab_resolver() {
   [ "$(uname -s)" = "Darwin" ] || return 0
+  if ! load_client_lab; then
+    log "Skipping lab split DNS: no ${CLIENT_LAB_ENV} (see provision/client-lab.env.example)"
+    return 0
+  fi
+  local LAB_DNS_DOMAIN="$LAB_ZONE"
 
   local resolver_file="/etc/resolver/${LAB_DNS_DOMAIN}"
 
   # `timeout` matters more than it looks. This file applies unconditionally, so
-  # off-network — no Teleport, not on the home LAN — every *.set.lab lookup goes
+  # off-network — no Teleport, not on the home LAN — every lab-zone lookup goes
   # to an unreachable resolver and blocks until it gives up. The macOS default
   # makes that a multi-second hang on a typo'd hostname. Three seconds is long
   # enough for a 46ms round trip over the tunnel and short enough not to feel

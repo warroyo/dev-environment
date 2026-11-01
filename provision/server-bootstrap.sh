@@ -602,6 +602,20 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# The client lab's subnet, resolver and zone come from a local file, never from
+# this public repo (lib/client-lab.sh). Without it the routing and split-DNS
+# sections below are skipped.
+# shellcheck source=lib/client-lab.sh
+source "${SCRIPT_DIR}/lib/client-lab.sh"
+CLIENT_LAB=0
+if load_client_lab; then
+  CLIENT_LAB=1
+else
+  log "No ${CLIENT_LAB_ENV}: skipping client-lab routing and split DNS."
+  log "  Copy provision/client-lab.env.example there to set them up."
+fi
+
+# ---------------------------------------------------------------------------
 # Route the lab subnet for LAN and Teleport clients.
 #
 # The work laptop used to reach that environment through `browser-vpn` — an
@@ -611,7 +625,7 @@ fi
 # box a router for the one subnet that is actually needed instead, so the
 # laptop gets a real network path and no proxy at all.
 #
-# Only 10.47.0.0/16 and the lab resolver are forwarded, deliberately. The
+# Only the lab subnet and the lab resolver are forwarded, deliberately. The
 # tunnel also pushes 10.0.0.0/10, which contains this LAN, and 172.17.0.0/24,
 # which is Docker's usual bridge — see docs/ARCHITECTURE.md. Neither is
 # something to hand a laptop that has to keep working on someone else's
@@ -631,8 +645,7 @@ fi
 # SSH/Tailscale/mosh, which is a much larger decision than routing one subnet.
 # So the rules are installed directly instead, by a unit that owns them.
 # ---------------------------------------------------------------------------
-LAB_SUBNET="10.47.0.0/16"
-LAB_DNS="172.21.0.90"
+if [ "$CLIENT_LAB" = 1 ]; then
 LAB_RULES_BIN="/usr/local/sbin/lab-routing-rules"
 LAB_UNIT="lab-routing.service"
 
@@ -652,6 +665,15 @@ $SUDO sysctl -q -w net.ipv4.ip_forward=1
 # number of times and will not stack duplicates. That also means it stays
 # correct if ufw is ever enabled and installs an identical MASQUERADE from
 # before.rules: -C matches it and the add is skipped.
+# The addresses go in a file of their own, written from the local config, so
+# the rules script itself carries none.
+$SUDO tee /etc/default/lab-routing >/dev/null <<EOF
+# Managed by dev-environment/provision/server-bootstrap.sh from
+# ~/.config/client-lab.env — edit that file and re-run, not this one.
+LAB_SUBNET="${LAB_SUBNET}"
+LAB_DNS="${LAB_DNS}"
+EOF
+
 $SUDO tee "$LAB_RULES_BIN" >/dev/null <<'LABRULES'
 #!/bin/sh
 # Managed by dev-environment/provision/server-bootstrap.sh — do not edit by hand.
@@ -660,8 +682,7 @@ $SUDO tee "$LAB_RULES_BIN" >/dev/null <<'LABRULES'
 # client-env OpenVPN tunnel, and NATs them so the lab can answer.
 set -eu
 
-LAB_SUBNET="10.47.0.0/16"
-LAB_DNS="172.21.0.90"
+. /etc/default/lab-routing
 
 CHAIN="LAB-ROUTING"
 
@@ -798,6 +819,7 @@ else
   log "  Tailscale is not up, so ${LAB_SUBNET} was NOT advertised. Re-run this"
   log "  script after 'sudo tailscale up'."
 fi
+fi  # CLIENT_LAB: routing
 
 # Tailscale SSH: the same access model as the lab targets, so every SSH into
 # this box over the tailnet is authorized by the tailnet policy instead of by
@@ -828,7 +850,7 @@ fi
 # ---------------------------------------------------------------------------
 # Split DNS for the lab zone, served on a port nothing intercepts.
 #
-# Clients used to point /etc/resolver/set.lab straight at the lab's own
+# Clients used to point /etc/resolver/<lab zone> straight at the lab's own
 # resolver and let this box route the packets. That works only while every
 # device between the laptop and here leaves port 53 alone, and plenty do not:
 # a UniFi gateway, a hotel AP or a captive-portal router will happily DNAT
@@ -842,14 +864,14 @@ fi
 # DNS looks unreachable while every other address on the same route works.
 #
 # So this stops putting port 53 on the wire at all. dnsmasq listens here on
-# 5300, forwards only *.set.lab into the tunnel, and clients ask it instead of
+# 5300, forwards only the lab zone into the tunnel, and clients ask it instead of
 # asking the lab directly. 5300 rather than 5353, which belongs to mDNS.
 #
-# It also retires the 172.21.0.90/32 static route the gateway needed: the lab
+# It also retires the resolver's /32 static route the gateway needed: the lab
 # resolver is now reached only by this box, which already has it via tun0.
 # ---------------------------------------------------------------------------
+if [ "$CLIENT_LAB" = 1 ]; then
 LAB_DNS_PORT="5300"
-LAB_ZONE="set.lab"
 DNSMASQ_CONF="/etc/dnsmasq.d/lab-split-dns.conf"
 
 log "Serving split DNS for *.${LAB_ZONE} on port ${LAB_DNS_PORT}"
@@ -877,7 +899,7 @@ done
 # the lab a resolver it never asked for.
 #
 # Easy to get wrong: bind-dynamic binds the LISTED addresses only. Without this
-# the route works, dnsmasq is running, and every *.set.lab lookup from the
+# the route works, dnsmasq is running, and every lab-zone lookup from the
 # laptop still fails, because nothing is listening on the address it asked.
 TS_DNS_IP="$(tailscale ip -4 2>/dev/null | head -n1 || true)"
 if [ -n "$TS_DNS_IP" ]; then
@@ -888,15 +910,16 @@ else
   log "  script after 'sudo tailscale up'."
 fi
 
-# Local records from provision/lab-hosts, for names the lab resolver does not
-# have. dnsmasq answers these itself and forwards every other set.lab name.
+# Local records from ~/.config/client-lab.hosts, for names the lab resolver
+# does not have. dnsmasq answers these itself and forwards every other name in
+# the lab zone.
 #
 # host-record rather than dropping no-hosts or adding addn-hosts: this box's
 # own /etc/hosts stays out of DNS, and the records live in the one generated
 # file, so a removed line is gone on the next run instead of lingering in a
 # second file nothing cleans up. A name outside the zone is skipped, because
-# clients only send set.lab here and the record would never be asked for.
-LAB_HOSTS_FILE="${SCRIPT_DIR}/lab-hosts"
+# clients only send the lab zone here and the record would never be asked for.
+LAB_HOSTS_FILE="$CLIENT_LAB_HOSTS"
 LAB_HOST_RECORDS=""
 if [ -f "$LAB_HOSTS_FILE" ]; then
   while read -r addr names; do
@@ -904,7 +927,7 @@ if [ -f "$LAB_HOSTS_FILE" ]; then
     for name in ${names%%#*}; do
       case "$name" in
         *."${LAB_ZONE}") LAB_HOST_RECORDS+="host-record=${name},${addr}"$'\n' ;;
-        *) log "  WARNING: ${name} in lab-hosts is outside ${LAB_ZONE}, skipping" ;;
+        *) log "  WARNING: ${name} in client-lab.hosts is outside ${LAB_ZONE}, skipping" ;;
       esac
     done
   done < "$LAB_HOSTS_FILE"
@@ -939,7 +962,7 @@ no-resolv
 no-hosts
 server=/${LAB_ZONE}/${LAB_DNS}
 
-# Local records, generated from provision/lab-hosts — edit that file, not these.
+# Local records, generated from ~/.config/client-lab.hosts — edit that file, not these.
 ${LAB_HOST_RECORDS}
 cache-size=1000
 EOF
@@ -954,6 +977,7 @@ if $SUDO systemctl is-active --quiet dnsmasq; then
   log "  dnsmasq listening on ${DNS_LISTEN} port ${LAB_DNS_PORT}"
   log "  clients point /etc/resolver/${LAB_ZONE} here — see provision/lib/lab-dns.sh"
 fi
+fi  # CLIENT_LAB: split DNS
 
 # ---------------------------------------------------------------------------
 # Apply dotfiles, same as the two client bootstrap scripts do. This must come

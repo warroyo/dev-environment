@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Print a Cloud Foundry access token for goad-deployer, for use in $(...).
+"""Print a Cloud Foundry access token for the deployer account, for use in $(...).
 
 Signs a private_key_jwt client assertion with the key in the Hub OAuth app's
 client assertion secret, and trades it at the foundation UAA for a

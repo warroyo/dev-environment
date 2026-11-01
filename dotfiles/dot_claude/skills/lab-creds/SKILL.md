@@ -1,10 +1,12 @@
 ---
 name: lab-creds
-description: Refresh or read Will's lab credentials (the gpu.set.lab lab: vCenter vc01, the sup-gpu Supervisor, VCF Automation at auto.gpu.set.lab, and the GOAD Tanzu Platform / Cloud Foundry foundation at api.sys.goad.gpu.set.lab with Tanzu Hub at hub.goad.gpu.set.lab). Use when a Cloud Foundry API call, cf CLI or the Terraform cloudfoundry provider needs a token for goad-deployer, and use as soon as kubectl against a sup-gpu or vcfa context answers "You must be logged in to the server" or "the server has asked for the client to provide credentials", when `vcf context use` or `vcf context refresh` asks for a password, when a vCenter or VCF Automation API call needs a login, or when asked to "refresh the lab creds", "log back in to the supervisor", or "where is the vCenter password". Use it before asking Will to log in by hand. Not for GitHub auth, and not for a repo's own secrets such as Terraform state tokens or deploy keys.
+description: Refresh or read Will's client lab credentials (vCenter, the vSphere Supervisor, VCF Automation, and the Tanzu Platform / Cloud Foundry foundation with Tanzu Hub; hostnames and context names are in ~/.lab.env). Use when a Cloud Foundry API call, cf CLI or the Terraform cloudfoundry provider needs a token for the foundation's deployer account, and use as soon as kubectl against the Supervisor or VCF Automation context answers "You must be logged in to the server" or "the server has asked for the client to provide credentials", when `vcf context use` or `vcf context refresh` asks for a password, when a vCenter or VCF Automation API call needs a login, or when asked to "refresh the lab creds", "log back in to the supervisor", or "where is the vCenter password". Use it before asking Will to log in by hand. Not for GitHub auth, and not for a repo's own secrets such as Terraform state tokens or deploy keys.
 ---
 
 The lab logins are in `~/.lab.env`, mode 600, outside every repo. One file,
-so no repo has to be found first.
+so no repo has to be found first. It also holds the hostnames and context
+names, which this public repo leaves out: below, `$SUPERVISOR_CONTEXT`,
+`$VCFA_CONTEXT` and the other variables stand for the real values.
 
 ## Rules
 
@@ -24,15 +26,15 @@ so no repo has to be found first.
 | Variable | What it is |
 |---|---|
 | `VC_HOST`, `VC_USER`, `VC_PASSWORD` | vCenter. The same login works for the Supervisor and most of the lab. |
-| `SUPERVISOR_CONTEXT`, `SUPERVISOR_ENDPOINT` | The vcf CLI and kubectl context `sup-gpu`, and its address. |
+| `SUPERVISOR_CONTEXT`, `SUPERVISOR_ENDPOINT` | The vcf CLI and kubectl context for the Supervisor, and its address. |
 | `VCFA_URL`, `VCFA_USER`, `VCFA_ORG`, `VCFA_PASSWORD` | VCF Automation, the provider administrator in the `System` org. |
-| `VCFA_CONTEXT`, `VCFA_TENANT_ORG`, `VCFA_TENANT_API_TOKEN` | VCF Automation, the tenant org `acme`: the vcf CLI and kubectl context `vcfa`, and the API token it logs in with. |
-| `TANZU_HUB_URL`, `CF_API_URL`, `CF_UAA_TOKEN_URL`, `CF_CLIENT_ASSERTION_FILE` | GOAD's Tanzu Platform: Tanzu Hub, the foundation's CF API and UAA token URL, and the path of `goad-deployer`'s client assertion secret (`~/.lab/goad-deployer-client-assertion`, mode 600). |
+| `VCFA_CONTEXT`, `VCFA_TENANT_ORG`, `VCFA_TENANT_API_TOKEN` | VCF Automation, the tenant org: the vcf CLI and kubectl context for it, and the API token it logs in with. |
+| `TANZU_HUB_URL`, `CF_API_URL`, `CF_UAA_TOKEN_URL`, `CF_CLIENT_ASSERTION_FILE` | The Tanzu Platform: Tanzu Hub, the foundation's CF API and UAA token URL, and the path of the deployer account's client assertion secret (under `~/.lab/`, mode 600). |
 
 ## Tanzu Platform (Cloud Foundry)
 
-GOAD's foundation is `goad`, Elastic Application Runtime 11, attached to
-Tanzu Hub. The account is `goad-deployer`, a Hub OAuth app with admin roles.
+The foundation runs Elastic Application Runtime 11, attached to Tanzu Hub.
+The account is a Hub OAuth app with admin roles, the deployer account.
 
 ```sh
 CF_ACCESS_TOKEN=$(~/.claude/skills/lab-creds/cf-token.py)   # never run it bare: it prints the token
@@ -46,7 +48,8 @@ does the same login itself: `TANZUCF_CLIENT_ID` is the client ID, and
 `TANZUCF_CLIENT_SECRET` is the assertion secret. Then run
 `cf api $CF_API_URL --skip-ssl-validation` and `cf auth --client-credentials`.
 The foundation serves the CLI with no login at
-`https://cli-updates.sys.goad.gpu.set.lab/tanzu_cf_cli/cf10-cli-linux-amd64.tar.gz`.
+`https://cli-updates.<system domain>/tanzu_cf_cli/cf10-cli-linux-amd64.tar.gz`,
+where the system domain is `$CF_API_URL` without its `api.` prefix.
 The CF API root lists the base URL as `links.tanzu_cf_cli`.
 
 How the login works, because it isn't documented in one place:
@@ -89,7 +92,7 @@ pod, not on stdout.
 ~/.claude/skills/lab-creds/refresh.sh
 ```
 
-It checks `sup-gpu` and `vcfa`, and logs in again only to the one that has
+It checks `$SUPERVISOR_CONTEXT` and `$VCFA_CONTEXT`, and logs in again only to the one that has
 expired. Name a context to do one only; `--force` refreshes a session that
 still works. Then run the command that failed again.
 
@@ -98,17 +101,18 @@ reads in place of its prompt:
 
 | Context | Variable the vcf CLI reads | Value |
 |---|---|---|
-| `sup-gpu` | `VCF_CLI_VSPHERE_PASSWORD` | `VC_PASSWORD` |
-| `vcfa` | `VCF_CLI_VCFA_API_TOKEN` | `VCFA_TENANT_API_TOKEN` |
+| `$SUPERVISOR_CONTEXT` | `VCF_CLI_VSPHERE_PASSWORD` | `VC_PASSWORD` |
+| `$VCFA_CONTEXT` | `VCF_CLI_VCFA_API_TOKEN` | `VCFA_TENANT_API_TOKEN` |
 
-Every `sup-gpu:<namespace>` context shares the `sup-gpu` login, and every
-`vcfa:<namespace>:<project>` context shares the `vcfa` login, so one refresh
-covers them all. The `vcfa` refresh also creates the contexts of namespaces
-made since the last login. For the Supervisor, `vcf context use sup-gpu` with
-the same variable set does that.
+Every `<supervisor context>:<namespace>` context shares the Supervisor login,
+and every `<vcfa context>:<namespace>:<project>` context shares the VCF
+Automation login, so one refresh covers them all. The VCF Automation refresh
+also creates the contexts of namespaces made since the last login. For the
+Supervisor, `vcf context use "$SUPERVISOR_CONTEXT"` with the same variable set
+does that.
 
-To test a session, use `kubectl --context <name> get --raw /apis`. In `vcfa`
-the user cannot list namespaces, so `get ns` answers Forbidden with a session
+To test a session, use `kubectl --context <name> get --raw /apis`. In the VCF
+Automation context the user cannot list namespaces, so `get ns` answers Forbidden with a session
 that works.
 
 ## vCenter API
@@ -144,16 +148,8 @@ access=$(curl -sk -X POST "$VCFA_URL/tm/oauth/tenant/$VCFA_TENANT_ORG/token" \
 
 ## When a login is refused
 
-The file is a copy. The sources are:
-
-- `VC_*`: `~/workspace/ansible-supervisor-service/.env`
-- `VCFA_PASSWORD`: `vcfa_password` in
-  `~/workspace/goad/the-goad/terraform/cloud-admin/terraform.tfvars`
-- `VCFA_TENANT_API_TOKEN`: `TF_VAR_vcfa_refresh_token` in
-  `~/workspace/argocd-scaffolding/.env`
-- `CF_CLIENT_ASSERTION_FILE`: a copy of
-  `~/workspace/goad/the-goad/terraform/platform-engineer/.secrets/goad-deployer-client-assertion`.
-  GitHub has the same value as the secret `TANZU_HUB_CLIENT_ASSERTION`.
+The file is a copy. Where each value comes from is listed in the comment at
+the top of `~/.lab.env` (local paths, kept out of this repo).
 
 If the source has a newer value, tell Will, then copy it into `~/.lab.env`
 with a script that reads the one file and writes the other, so that the

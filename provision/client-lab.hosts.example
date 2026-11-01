@@ -1,0 +1,12 @@
+# Lab names the lab's own resolver does not serve, answered by the server's
+# dnsmasq instead. Same layout as /etc/hosts: an address, then one or more
+# names. server-bootstrap.sh turns each line into a host-record in
+# /etc/dnsmasq.d/lab-split-dns.conf, so a change takes effect on its next run.
+#
+# Copy to ~/.config/client-lab.hosts. Never commit the real file.
+#
+# Every name must sit inside LAB_ZONE: only that zone is pointed at the server,
+# so a record for any other name is never asked for. The address must be
+# reachable from the clients, which in practice means inside LAB_SUBNET.
+
+10.20.7.47   git.corp.example
