@@ -1147,6 +1147,11 @@ if ensure_hermes; then
   install_hermes_work_prune || true
   configure_hermes || true
 fi
+# After LiteLLM, which makes the curator's key.
+# shellcheck source=lib/content-curator.sh
+source "${SCRIPT_DIR}/lib/content-curator.sh"
+log "Installing the content curator"
+install_content_curator || true
 
 # ---------------------------------------------------------------------------
 log "Writing claude-telegram-bot systemd service"

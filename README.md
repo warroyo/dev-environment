@@ -30,6 +30,7 @@ picture, then follow the setup doc for whichever machine you're on.
 | Lab target (any box agents SSH into) | `provision/lab-target-bootstrap.sh`, copied over and run there | [`docs/lab-access.md`](docs/lab-access.md) |
 | Inference host (the model server) | lab target first, then `ansible/play inference` from the server | [`docs/inference-host.md`](docs/inference-host.md) |
 | Local AI on the server (LiteLLM, Hermes) | part of `server-bootstrap.sh`, or `provision/local-ai-setup.sh` alone | [`docs/local-ai.md`](docs/local-ai.md) |
+| Content curator on the server | part of `server-bootstrap.sh`, or `provision/content-curator-setup.sh` alone | [`docs/content-curator.md`](docs/content-curator.md) |
 | Lab metrics (Grafana Cloud) | `provision/metrics-setup.sh` on the server, `ansible/play inference --tags metrics` for targets | [`docs/lab-metrics.md`](docs/lab-metrics.md) |
 
 ```sh
