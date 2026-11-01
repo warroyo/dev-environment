@@ -13,7 +13,8 @@
 # this box with its built-in node exporter, and the lab targets over the
 # tailnet: node_exporter on :9100 and llama-swap's /metrics on :8080 (both
 # from the Ansible roles node_metrics and inference_host), plus LiteLLM's
-# /metrics on this box (lib/litellm.sh). The EVO-X2 keeps its
+# /metrics on this box (lib/litellm.sh), and the content curator's on
+# :8090 (lib/content-curator.sh). The EVO-X2 keeps its
 # no-internet rule; if this box stops sending, Grafana Cloud's absent alert is
 # the outside signal.
 #
@@ -55,9 +56,11 @@ ALLOY_NODE_TARGETS="${ALLOY_NODE_TARGETS:-evo-x2}"
 ALLOY_LLAMA_SWAP_TARGETS="${ALLOY_LLAMA_SWAP_TARGETS:-evo-x2}"
 # LiteLLM's /metrics on this box (lib/litellm.sh): tokens per client and model.
 ALLOY_LITELLM_ADDR="${ALLOY_LITELLM_ADDR:-127.0.0.1:4000}"
+# The content curator's /metrics on this box (lib/content-curator.sh).
+ALLOY_CURATOR_ADDR="${ALLOY_CURATOR_ADDR:-127.0.0.1:8090}"
 # This box's services whose state is exported. Units that are not installed
 # are simply absent.
-ALLOY_UNITS="${ALLOY_UNITS:-tailscaled docker dnsmasq lab-routing openvpn-client@client-env litellm herdr-server claude-telegram-bot alloy}"
+ALLOY_UNITS="${ALLOY_UNITS:-tailscaled docker dnsmasq lab-routing openvpn-client@client-env litellm content-curator herdr-server claude-telegram-bot alloy}"
 
 # install_alloy
 #
@@ -246,6 +249,15 @@ prometheus.scrape "litellm" {
   forward_to      = [prometheus.relabel.keep.receiver]
 }
 
+// Content curator: job runs, last success, items, picks and publishing. Its
+// own `job` label (which curator job) arrives as `exported_job`.
+prometheus.scrape "content_curator" {
+  targets         = [{"__address__" = "${ALLOY_CURATOR_ADDR}", "instance" = "$(hostname -s)"}]
+  job_name        = "content-curator"
+  scrape_interval = "60s"
+  forward_to      = [prometheus.relabel.keep.receiver]
+}
+
 // ---- Lab targets, over the tailnet ---------------------------------------
 
 // node_exporter from the Ansible role node_metrics. Includes the model
@@ -276,7 +288,7 @@ prometheus.relabel "keep" {
   rule {
     source_labels = ["__name__"]
     action        = "keep"
-    regex         = "up|scrape_duration_seconds|scrape_samples_scraped|node_(boot_time_seconds|time_seconds|uname_info|os_info|load1|load5|load15|cpu_seconds_total|pressure_.*|memory_(MemTotal|MemFree|MemAvailable|Buffers|Cached|Shmem|SwapTotal|SwapFree|Dirty|Writeback)_bytes|filesystem_(size|avail|free)_bytes|filesystem_readonly|disk_(read|written)_bytes_total|disk_io_time_seconds_total|disk_(reads|writes)_completed_total|network_(receive|transmit)_(bytes|errs|drop)_total|network_up|network_carrier|network_speed_bytes|hwmon_temp_celsius|hwmon_power_average_watt|hwmon_chip_names|hwmon_sensor_label|drm_.*|systemd_unit_state|textfile_scrape_error)|llama_swap_reachable|llama_engine_up|llamacpp:.*|gufo_.*|llamaswap_(memory|swap)_.*|llamaswap_load_average|litellm_(input|output|input_cached)_tokens_metric_total|litellm_proxy_(total|failed)_requests_metric_total|litellm_(request_total_latency|llm_api_time_to_first_token)_metric_(bucket|sum|count)"
+    regex         = "up|scrape_duration_seconds|scrape_samples_scraped|node_(boot_time_seconds|time_seconds|uname_info|os_info|load1|load5|load15|cpu_seconds_total|pressure_.*|memory_(MemTotal|MemFree|MemAvailable|Buffers|Cached|Shmem|SwapTotal|SwapFree|Dirty|Writeback)_bytes|filesystem_(size|avail|free)_bytes|filesystem_readonly|disk_(read|written)_bytes_total|disk_io_time_seconds_total|disk_(reads|writes)_completed_total|network_(receive|transmit)_(bytes|errs|drop)_total|network_up|network_carrier|network_speed_bytes|hwmon_temp_celsius|hwmon_power_average_watt|hwmon_chip_names|hwmon_sensor_label|drm_.*|systemd_unit_state|textfile_scrape_error)|llama_swap_reachable|llama_engine_up|llamacpp:.*|gufo_.*|llamaswap_(memory|swap)_.*|llamaswap_load_average|litellm_(input|output|input_cached)_tokens_metric_total|litellm_proxy_(total|failed)_requests_metric_total|litellm_(request_total_latency|llm_api_time_to_first_token)_metric_(bucket|sum|count)|curator_.*"
   }
 
   // Container plumbing interfaces on any host.

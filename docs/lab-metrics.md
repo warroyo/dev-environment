@@ -24,6 +24,7 @@ history stays local, in LiteLLM's spend logs.
 |---|---|---|
 | Server | Grafana Alloy, pinned and held, from Grafana's apt repo. Scrapes itself and the targets every 60s, filters, remote_writes | `provision/lib/alloy.sh`, `provision/metrics-setup.sh` |
 | Server | LiteLLM's Prometheus callback on `127.0.0.1:4000/metrics`: tokens and requests per client key and model, no auth on loopback | `provision/lib/litellm.sh` |
+| Server | The content curator's `127.0.0.1:8090/metrics`: job runs and last success, items fetched and scored, picks, publishes | `provision/lib/content-curator.sh` |
 | Every lab target | node_exporter from the Ubuntu archive, on the tailnet address only, with the `drm` (amdgpu) and `systemd` collectors | role `node_metrics` |
 | Inference host | `llama-engine-metrics.timer` (30s) copies each loaded model's engine `/metrics` into node_exporter's textfile directory, labelled `model=` | role `inference_host`, `--tags metrics` |
 | Inference host | `--metrics` on the llama.cpp fallback, so it exports the same `llamacpp:*` counters as Gufo | `llama-swap.yaml.j2` |
@@ -92,6 +93,7 @@ dashboard JSON over the file and commit it.
 | GPU | busy %, GTT used vs size, APU/NVMe temperatures and package power |
 | Hosts | CPU, memory available, load per core, PSI pressure, disk free and I/O, network split into physical and tailnet/tunnel |
 | Services | a state timeline of every exported systemd unit |
+| Content curator | scraped or not, time since the last good nightly run (red after 26 h), picks published in 7 days, failed jobs and model outages in 24 h, items fetched, scored, picked and published per day |
 
 Variables: **Data source** (any `*-prom` source; Grafana Cloud names its own
 `grafanacloud-<stack>-prom`) and **Host** (from `up{job="node"}`). The Models
@@ -173,7 +175,9 @@ target is relabelled to match), so one dashboard variable and one `absent()`
 alert cover all of them. llama-swap is `job="llama-swap"`. Engine counters
 carry `model="<llama-swap model name>"`. LiteLLM is `job="litellm"`,
 `instance="ubuntu-home"`; its counters carry `api_key_alias` (the client),
-`requested_model` and `model` (what answered, after any fallback).
+`requested_model` and `model` (what answered, after any fallback). The content
+curator is `job="content-curator"`; its own `job` label (which curator job:
+`run`, `collect`, `curate`, ...) is renamed `exported_job` on scrape.
 
 ## Useful queries
 
@@ -196,6 +200,14 @@ rate(llamacpp:spec_decode_num_accepted_tokens_total[15m]) / rate(llamacpp:spec_d
 
 # local-model tokens per client over the last day
 sum by (api_key_alias) (increase(litellm_output_tokens_metric_total[1d]))
+
+# content curator: alert when the nightly run has not succeeded for 26 h
+# (the gauge is in memory, so also alert on absent after a restart that never ran)
+time() - max(curator_job_last_success_timestamp_seconds{exported_job="run"}) > 93600
+absent_over_time(curator_job_last_success_timestamp_seconds{exported_job="run"}[26h])
+
+# content curator: a publish to Raindrop failed
+increase(curator_publish_failures_total[1d]) > 0
 
 # tunnel to the client lab
 node_systemd_unit_state{instance="ubuntu-home", name="openvpn-client@client-env.service", state="active"}
