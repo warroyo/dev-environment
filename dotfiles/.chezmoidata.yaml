@@ -5,6 +5,8 @@
 #   ~/.zsh.local                     shell overrides
 #   ~/.gitconfig.local               git identity
 #   ~/.secrets/*                     tokens and credentials
+#   ~/.lab.env                       client lab logins, hostnames, contexts
+#   ~/.config/client-lab.{env,hosts} client lab subnet, resolver, zone, names
 #
 # This replaced hostname matching. Hostnames were both identifying (they had to
 # be committed) and fragile — chezmoi's .chezmoi.hostname strips the domain and

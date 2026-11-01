@@ -65,7 +65,7 @@ ensure_hermes() {
 # nothing else:
 #
 #   - not tun0, the client-lab VPN. Without a rule, Docker's NAT sends a
-#     container's 10.47.7.x traffic straight down the tunnel, because routing
+#     container's client-lab traffic straight down the tunnel, because routing
 #     happens in the host's table.
 #   - not the tailnet. This box is untagged and owned by Will, so a container
 #     NATed out of it would reach every lab machine, including llama-swap on
@@ -78,7 +78,7 @@ ensure_hermes() {
 # EVO-X2: tailscaled puts its ts-forward chain at the top of FORWARD, and it
 # ACCEPTs everything leaving through tailscale0 before DOCKER-USER is reached.
 # Matching on destination before routing does not depend on chain order, and
-# it covers tun0 (10.47.7.0/24 and 172.21.0.90 are private) and the host's own
+# it covers tun0 (the client lab's ranges are private) and the host's own
 # addresses too. The INPUT rule stays as a second line for traffic to the host.
 # A container's DNS still works: Docker's embedded resolver answers inside the
 # container's namespace and forwards from the host, not through these chains.
@@ -447,8 +447,8 @@ ${HERMES_SOUL_BEGIN}
 - Before answering anything about the home lab, use the \`homelab\` skill. It
   reads the current state from ~/second-brain/topics/homelab.md. Do not
   answer lab questions from general knowledge alone.
-- For the client lab (*.set.lab: vCenter, the Supervisor, VCF Automation,
-  Cloud Foundry), use the \`lab-creds\` skill for logins. Never put a
+- For the client lab (vCenter, the Supervisor, VCF Automation, Cloud
+  Foundry; hostnames in ~/.lab.env), use the \`lab-creds\` skill for logins. Never put a
   credential in a reply, a note or a file.
 - On live machines, only query and troubleshoot, through the no-sudo \`agent\`
   account. Do not install packages, edit config or change state by hand. A fix

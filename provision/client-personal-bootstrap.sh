@@ -115,7 +115,7 @@ GIT_TERMINAL_PROMPT=0 ensure_vault_repo
 #
 # This used to be useful on the home LAN only: the server routed the lab for
 # LAN clients, the tailnet carried no such route, and off the LAN the resolver
-# entry was dead but harmless. The server now advertises 10.47.0.0/16 as a
+# entry was dead but harmless. The server now advertises the lab subnet as a
 # tailnet subnet route, so both halves — the route and the names — work from
 # anywhere the tailnet reaches.
 #
@@ -139,7 +139,7 @@ if tailnet_ip="$(lab_dns_server_over_tailscale "$SERVER_HOST")"; then
 else
   log "Skipping lab split DNS: ${SERVER_HOST} does not resolve on the tailnet"
   echo "  Sign in first ('tailscale up' — see docs/client-personal-setup.md §2),"
-  echo "  then re-run this script. Any /etc/resolver/set.lab from an earlier run"
+  echo "  then re-run this script. Any /etc/resolver/ entry from an earlier run"
   echo "  is left alone, so it may still hold a stale address."
 fi
 

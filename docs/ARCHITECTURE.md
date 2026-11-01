@@ -198,7 +198,7 @@ reason.
 ### The server routes that environment for other machines
 
 Because only one connection to it may exist, the server holds it and forwards
-for everyone else: `10.47.0.0/16` and the lab resolver `172.21.0.90` are routed
+for everyone else: `10.20.0.0/16` and the lab resolver `172.30.0.53` are routed
 out `tun0`, masqueraded so the lab — which has no route back to this LAN, let
 alone to the gateway's Teleport pool — can answer. The forward rules are scoped
 by destination rather than by inbound interface on purpose: this box has LAN
@@ -213,10 +213,10 @@ Clients reach those rules two different ways, because the two laptops are on
 different networks:
 
 - **`work`** — over the gateway, which needs a static route for
-  `10.47.0.0/16` pointing at this box, and whatever carries the laptop home
+  `10.20.0.0/16` pointing at this box, and whatever carries the laptop home
   (the split-tunnel OpenVPN profile, or Teleport on a travel router) has to
   pass that route on.
-- **`personal`** — the server advertises `10.47.0.0/16` as a Tailscale subnet
+- **`personal`** — the server advertises `10.20.0.0/16` as a Tailscale subnet
   route (`tailscale set --advertise-routes`, not `tailscale up`, which resets
   every preference it isn't given). The route then follows the laptop onto any
   network, with no gateway configuration anywhere and no travel router.
@@ -225,8 +225,8 @@ different networks:
   as separate things.
 
 Names are a separate mechanism, because routing alone was not enough. dnsmasq
-runs here on **port 5300** forwarding `set.lab` into the tunnel, and clients
-point `/etc/resolver/set.lab` at this box rather than at the lab resolver — the
+runs here on **port 5300** forwarding `corp.example` into the tunnel, and clients
+point `/etc/resolver/corp.example` at this box rather than at the lab resolver — the
 work laptop at its LAN address, the personal laptop at its tailnet address,
 which `client-personal-bootstrap.sh` resolves with `tailscale ip -4` at
 provision time rather than hardcoding. Port 5300 is kept for both even though
@@ -234,13 +234,21 @@ the tailnet needs no defence against port-53 interception (those queries ride
 inside WireGuard): one dnsmasq holds one port, and a second instance on 53
 would buy nothing.
 
-Names the lab resolver does not have go in
-[`provision/lab-hosts`](../provision/lab-hosts), in `/etc/hosts` layout.
+Names the lab resolver does not have go in `~/.config/client-lab.hosts`, in
+`/etc/hosts` layout (see
+[`provision/client-lab.hosts.example`](../provision/client-lab.hosts.example)).
+
+The client lab's real zone, subnet, resolver and names are not in this repo.
+They live in two local files on the server, `~/.config/client-lab.env` and
+`~/.config/client-lab.hosts`, loaded by `provision/lib/client-lab.sh`; the
+`.example` files beside them show the shape. Every name and address for the
+client lab in these docs (`corp.example`, `10.20.0.0/16`, `172.30.0.53`) is a
+stand-in. Without the files, the routing and split-DNS steps are skipped.
 `server-bootstrap.sh` renders each line as a dnsmasq `host-record`, so every
 client gets the name with no change on the client side. This box's own
 `/etc/hosts` stays out of it (`no-hosts`): an entry there resolves only here.
 
-Pointing at `172.21.0.90:53` directly is what it did first, and it failed the
+Pointing at `172.30.0.53:53` directly is what it did first, and it failed the
 moment the laptop sat behind a gateway that DNAT's all port-53 traffic to
 itself — the route was intact and traceroute proved it, but traceroute never
 sends anything on 53. See [`docs/client-work-setup.md`](client-work-setup.md)

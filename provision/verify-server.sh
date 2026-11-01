@@ -674,9 +674,17 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# The client lab's subnet, resolver and zone come from a local file, never from
+# this public repo (lib/client-lab.sh). Without it the two sections below are
+# skipped, the same way server-bootstrap.sh skips them.
+# shellcheck source=lib/client-lab.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/client-lab.sh"
+if ! load_client_lab; then
+  section "Client lab routing and split DNS"
+  warn "no ${CLIENT_LAB_ENV} — skipping (expected if this box has no client lab)"
+else
+
 section "Lab subnet routing (LAN/Teleport/tailnet clients -> tun0)"
-LAB_SUBNET="10.47.0.0/16"
-LAB_DNS="172.21.0.90"
 
 # ip_forward being 1 right now proves nothing on its own: dockerd sets it at
 # start-up, so the box can read as "forwarding" while no config asks for it and
@@ -773,7 +781,7 @@ fi
 # Only meaningful while the tunnel is up: the prefixes are covered by routes
 # OpenVPN installs itself, so with tun0 down there is nothing to look at.
 if ip link show tun0 >/dev/null 2>&1; then
-  for dest in "10.47.0.224" "$LAB_DNS"; do
+  for dest in ${LAB_PROBE_ADDR:-} "$LAB_DNS"; do
     if ip route get "$dest" 2>/dev/null | grep -q 'dev tun0'; then
       ok "$dest routes via tun0"
     else
@@ -814,8 +822,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-section "Split DNS for set.lab (dnsmasq on :5300)"
-LAB_ZONE="set.lab"
+section "Split DNS for ${LAB_ZONE} (dnsmasq on :5300)"
 LAB_DNS_PORT="5300"
 DNSMASQ_CONF="/etc/dnsmasq.d/lab-split-dns.conf"
 
@@ -872,7 +879,7 @@ if [ -n "$dns_listeners" ]; then
       ok "  tailnet address ${TS_IP} is bound"
     else
       bad "  tailnet address ${TS_IP} is NOT bound, so the personal laptop's"
-      bad "  *.set.lab lookups fail while its route to the lab looks perfect."
+      bad "  lab-zone lookups fail while its route to the lab looks perfect."
       bad "  Re-run server-bootstrap.sh with Tailscale up."
     fi
   fi
@@ -880,7 +887,7 @@ else
   bad "nothing is listening on UDP ${LAB_DNS_PORT}"
 fi
 
-# Local records from provision/lab-hosts. These need no tunnel, so a failure
+# Local records from ~/.config/client-lab.hosts. These need no tunnel, so a failure
 # here is dnsmasq or a stale config, never the lab resolver.
 if [ -f "$DNSMASQ_CONF" ] && command -v dig >/dev/null 2>&1; then
   while IFS=, read -r name addr; do
@@ -895,15 +902,17 @@ fi
 
 # The end-to-end question, and the only one that catches a tunnel that is up
 # but no longer carrying the lab resolver.
-if ip link show tun0 >/dev/null 2>&1; then
+if [ -z "${LAB_PROBE_NAME:-}" ]; then
+  warn "no LAB_PROBE_NAME in ${CLIENT_LAB_ENV} — skipping the live resolution check"
+elif ip link show tun0 >/dev/null 2>&1; then
   if command -v dig >/dev/null 2>&1; then
-    if dig +short +time=3 +tries=1 -p "$LAB_DNS_PORT" @127.0.0.1 \
-         "auto.gpu.${LAB_ZONE}" 2>/dev/null | grep -qE '^10\.47\.'; then
-      ok "auto.gpu.${LAB_ZONE} resolves through dnsmasq into the tunnel"
+    if [ -n "$(dig +short +time=3 +tries=1 -p "$LAB_DNS_PORT" @127.0.0.1 \
+         "$LAB_PROBE_NAME" 2>/dev/null)" ]; then
+      ok "${LAB_PROBE_NAME} resolves through dnsmasq into the tunnel"
     else
-      bad "auto.gpu.${LAB_ZONE} did not resolve via 127.0.0.1:${LAB_DNS_PORT} —"
+      bad "${LAB_PROBE_NAME} did not resolve via 127.0.0.1:${LAB_DNS_PORT} —"
       bad "  check the tunnel reaches the lab resolver:"
-      bad "    dig @${LAB_DNS} auto.gpu.${LAB_ZONE}"
+      bad "    dig @${LAB_DNS} ${LAB_PROBE_NAME}"
     fi
   else
     warn "no dig — skipping the live resolution check"
@@ -911,6 +920,7 @@ if ip link show tun0 >/dev/null 2>&1; then
 else
   ok "tun0 absent — skipping the live resolution check ('client-vpn up' first)"
 fi
+fi  # load_client_lab
 
 # ---------------------------------------------------------------------------
 printf '\n\033[1mSummary:\033[0m %d passed, %d failed, %d warnings\n' "$PASS" "$FAIL" "$WARN"

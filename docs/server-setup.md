@@ -291,12 +291,17 @@ completely healthy — routes fine, `dig @<pushed-resolver> <name>` answers — 
 every internal name fails. `client-vpn status` shows the resolver in use, and
 `resolvectl status tun0` reporting `Current Scopes: none` is the tell.
 
+The client lab's subnet, resolver and zone come from `~/.config/client-lab.env`
+on the server, which is never committed (copy
+`provision/client-lab.env.example`, `chmod 600`). Without it this step and the
+split DNS below are skipped. The addresses used in this doc are stand-ins.
+
 Other devices reach this network **through** the server rather than opening
 their own connection (that identity only allows one live connection at a
 time). `server-bootstrap.sh` sets that up: IP forwarding via
 `/etc/sysctl.d/99-lab-routing.conf`, plus `lab-routing.service`, a oneshot that
 runs `/usr/local/sbin/lab-routing-rules` to install a MASQUERADE on `tun0`,
-`FORWARD` rules for `10.47.0.0/16` and the lab resolver `172.21.0.90`, and a
+`FORWARD` rules for `10.20.0.0/16` and the lab resolver `172.30.0.53`, and a
 TCP MSS clamp on traffic entering the tunnel.
 
 The MSS clamp is not optional decoration. `tun0`'s MTU is 1500 — the same as
@@ -328,9 +333,9 @@ and it now refuses to start as root. The checks that need root escalate on
 their own and will ask for a password.
 
 Names come from dnsmasq, which `server-bootstrap.sh` installs here listening on
-**port 5300** with `server=/set.lab/172.21.0.90` and `no-resolv`, so it
+**port 5300** with `server=/corp.example/172.30.0.53` and `no-resolv`, so it
 forwards that one zone into the tunnel and is not an open resolver for
-anything else. Clients point `/etc/resolver/set.lab` at this box instead of at
+anything else. Clients point `/etc/resolver/corp.example` at this box instead of at
 the lab resolver: on port 53 the queries were being DNAT'd by the gateway for
 Teleport clients and answered by it, which reads as a broken route until you
 notice the reply arrives faster than the real resolver could send it. Full
@@ -341,21 +346,22 @@ write-up in `docs/client-work-setup.md` §6.
 Don't put it in `/etc/hosts`. dnsmasq runs with `no-hosts`, so an entry there
 resolves on this box and nowhere else. Instead:
 
-1. Add a line to `provision/lab-hosts`, in `/etc/hosts` layout
-   (`10.47.7.47   git.gpu.set.lab`). The name must be inside `set.lab`, and the
-   address should be inside `10.47.0.0/16` so clients have a route to it.
+1. Add a line to `~/.config/client-lab.hosts` (local, never committed; see
+   `provision/client-lab.hosts.example`), in `/etc/hosts` layout
+   (`10.20.7.47   git.corp.example`). The name must be inside `corp.example`, and the
+   address should be inside `10.20.0.0/16` so clients have a route to it.
 2. Re-run `server-bootstrap.sh`. It renders each line as a `host-record=` in
    `/etc/dnsmasq.d/lab-split-dns.conf` and restarts dnsmasq.
 3. Run `verify-server.sh`. It checks every record under "Split DNS for
-   set.lab".
+   corp.example".
 
-The clients need no change, since they already send all of `set.lab` here. To
+The clients need no change, since they already send all of `corp.example` here. To
 remove a name, delete its line and re-run. The conf is regenerated, so nothing
 stale is left behind.
 
 The client side is manual and lives in `docs/client-work-setup.md` §6: a static
-route for `10.47.0.0/16` on the UDM SE pointing at this box, and a
-`/etc/resolver/set.lab` entry on the laptop.
+route for `10.20.0.0/16` on the UDM SE pointing at this box, and a
+`/etc/resolver/corp.example` entry on the laptop.
 
 ## 7. Manual: confirm the UDM SE has no port 22 forward to WAN
 
@@ -883,7 +889,7 @@ Three chezmoi-managed files, in
   is the template. The hosts and usernames are filled in, the secrets are
   blank.
 - [`refresh.sh`](../dotfiles/dot_claude/skills/lab-creds/executable_refresh.sh)
-  checks the `sup-gpu` and `vcfa` contexts and logs back in to the one that
+  checks the `sup` and `vcfa` contexts and logs back in to the one that
   has expired. It hands the secret to `vcf context refresh` in
   `VCF_CLI_VSPHERE_PASSWORD` or `VCF_CLI_VCFA_API_TOKEN`, which the CLI reads
   in place of its prompt.

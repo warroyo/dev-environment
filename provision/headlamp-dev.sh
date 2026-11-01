@@ -7,7 +7,7 @@ set -euo pipefail
 HEADLAMP_IMAGE="${HEADLAMP_IMAGE:-ghcr.io/headlamp-k8s/headlamp:v0.46.0}"
 HEADLAMP_CONTAINER="headlamp-tanzu-dev"
 HEADLAMP_PLUGIN_REPO="${HEADLAMP_PLUGIN_REPO:-$HOME/workspace/headlamp-tanzu-apps}"
-HEADLAMP_KUBECONFIG="${HEADLAMP_KUBECONFIG:-$HOME/.kube/goad-tanzu.kubeconfig}"
+HEADLAMP_KUBECONFIG="${HEADLAMP_KUBECONFIG:-$HOME/.kube/headlamp-dev.kubeconfig}"
 HEADLAMP_PORT="${HEADLAMP_PORT:-4466}"
 HEADLAMP_LISTEN_ADDR="${HEADLAMP_LISTEN_ADDR:-0.0.0.0}"
 

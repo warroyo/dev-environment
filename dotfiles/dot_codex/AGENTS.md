@@ -19,8 +19,8 @@ equivalent, or ask in plain text.
 - Before answering anything about the lab, use the `homelab` skill. It reads
   the current state from `~/second-brain/topics/homelab.md` and the notes it
   links. Do not answer lab questions from general knowledge alone.
-- For the client lab (`*.set.lab`: vCenter, the Supervisor, VCF Automation,
-  Cloud Foundry), use the `lab-creds` skill to get or refresh credentials
+- For the client lab (vCenter, the Supervisor, VCF Automation, Cloud
+  Foundry; hostnames in `~/.lab.env`), use the `lab-creds` skill to get or refresh credentials
   before asking Will to log in by hand.
 - The home lab and the client lab are not sensitive. Work in both directly.
   The work laptop is out of scope: never propose installs, agents or data

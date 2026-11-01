@@ -175,7 +175,7 @@ The `restricted` profile's command containers run on the `hermes-sandbox` Docker
 `br-hermes`). `hermes-sandbox-egress.service` puts iptables rules in place
 that let it reach the internet and nothing else:
 
-- no `tun0`: without a rule Docker's NAT would send `10.47.7.x` traffic down
+- no `tun0`: without a rule Docker's NAT would send `10.20.7.x` traffic down
   the client-lab VPN
 - no `tailscale0`: this box is untagged, so a container NATed out of it would
   reach every lab machine, llama-swap included

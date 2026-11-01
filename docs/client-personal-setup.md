@@ -23,12 +23,12 @@ official formula, and the pin matters: client and server negotiate a protocol
 version, so both ends have to agree. The version lives in
 `provision/lib/herdr.sh` and nowhere else.
 
-It also writes `/etc/resolver/set.lab` so the lab's internal zone — and only
+It also writes `/etc/resolver/corp.example` so the lab's internal zone — and only
 that zone — resolves through the server's dnsmasq, pointed at the server's
 **tailnet** address first and its **LAN** address (`10.10.2.116`) second, so
 the zone still resolves at home with Tailscale off. That needs `sudo`, so the
 run will prompt. The server
-advertises `10.47.0.0/16` as a subnet route, so the lab works from any network
+advertises `10.20.0.0/16` as a subnet route, so the lab works from any network
 the tailnet reaches, not just the home LAN. Delete the file if you'd rather not
 have it. See [`docs/client-work-setup.md`](client-work-setup.md) §6.
 
@@ -48,12 +48,12 @@ To check it, with `client-vpn up` run on the server:
 ```sh
 tailscale status | grep ubuntu-home             # the peer is up
 netstat -rn | grep 10.47                        # subnet route present, via utun
-dscacheutil -q host -a name auto.gpu.set.lab    # a name resolves
+dscacheutil -q host -a name vcfa.corp.example    # a name resolves
 ```
 
 `dig` and `nslookup` **ignore** `/etc/resolver` entirely — they query a server
 directly and will report failure while Chrome, `curl` and `ping` all work. The
-equivalent by hand is `dig -p 5300 @<server-tailnet-ip> auto.gpu.set.lab`.
+equivalent by hand is `dig -p 5300 @<server-tailnet-ip> vcfa.corp.example`.
 
 ### If you already had apps installed
 
