@@ -250,7 +250,7 @@ prometheus.scrape "litellm" {
 }
 
 // Content curator: job runs, last success, items, picks and publishing. Its
-// own `job` label (which curator job) arrives as `exported_job`.
+// own "job" label (which curator job) arrives as "exported_job".
 prometheus.scrape "content_curator" {
   targets         = [{"__address__" = "${ALLOY_CURATOR_ADDR}", "instance" = "$(hostname -s)"}]
   job_name        = "content-curator"
