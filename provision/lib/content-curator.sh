@@ -72,7 +72,7 @@
 
 # Bump to deploy a new curator build: the tag and digest are in the summary of
 # the curator's "image" workflow run.
-CURATOR_IMAGE="${CURATOR_IMAGE:-ghcr.io/warroyo/content-curator:sha-3b8e362@sha256:f793be6f57dea7aa4b139382654ff4dd41df7f1939640887959434fe90d6380b}"
+CURATOR_IMAGE="${CURATOR_IMAGE:-ghcr.io/warroyo/content-curator:sha-b197089@sha256:708655683cdc10418347f651ec2a1150a82a65fad88fde489f21a6f6cbaa5a5f}"
 CURATOR_DIR="${CURATOR_DIR:-$HOME/.local/share/content-curator}"
 CURATOR_DATA="${CURATOR_DIR}/data"
 CURATOR_SECRETS_DIR="${CURATOR_SECRETS_DIR:-$HOME/.secrets/content-curator}"
