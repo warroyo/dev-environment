@@ -326,7 +326,7 @@ configure_hermes() {
     "skills.external_dirs=[\"${HERMES_SHARED_SKILLS_DIR}\"]" \
     || failed=1
   install_hermes_shared_skills || failed=1
-  install_hermes_soul_rules || failed=1
+  install_hermes_soul_rules "" || failed=1
 
   # terminal.cwd is the host inbox, mounted into the container as its working
   # directory. The TUI sends terminal.cwd to the gateway as the session cwd,
@@ -348,6 +348,7 @@ configure_hermes() {
     "terminal.docker_run_as_host_user=true" \
     "terminal.cwd=${HERMES_INBOX_DIR}" \
     || failed=1
+  install_hermes_soul_rules "$HERMES_RESTRICTED_PROFILE" || failed=1
 
   # herdr's own integration: reports the session id, so herdr can resume the
   # conversation after a restart. It does not report state.
@@ -416,13 +417,18 @@ install_hermes_shared_skills() {
   return "$failed"
 }
 
-# install_hermes_soul_rules
+# install_hermes_soul_rules <profile>
 #
-# Will's standing rules, appended to the lab profile's SOUL.md: the one context
-# file Hermes loads in every session, wherever it starts. AGENTS.md would only
-# load in sessions whose working directory holds one, and a Telegram session
-# has no fixed one. This is Hermes' counterpart of ~/.claude/CLAUDE.md and
-# ~/.codex/AGENTS.md.
+# Will's standing rules, appended to a profile's SOUL.md: the one context file
+# Hermes loads in every session, wherever it starts. AGENTS.md would only load
+# in sessions whose working directory holds one, and a Telegram session has no
+# fixed one. This is Hermes' counterpart of ~/.claude/CLAUDE.md and
+# ~/.codex/AGENTS.md. An empty profile is the lab (default) profile, which gets
+# the lab rules; every profile gets the rule on running code.
+#
+# The code rule is there because approvals.mode=manual stops on inline code
+# (`python3 -c`, a heredoc: "script execution via -e/-c flag") but not on a
+# script file, and briefs alone did not keep Hermes off inline code.
 #
 # Only the block between the markers is managed. Hermes seeds the persona text
 # above it and Will may edit that; a re-run replaces the block and nothing else.
@@ -430,20 +436,19 @@ HERMES_SOUL_BEGIN='<!-- dev-environment: managed block, edit provision/lib/herme
 HERMES_SOUL_END='<!-- dev-environment: end -->'
 
 install_hermes_soul_rules() {
-  local soul="$HOME/.hermes/SOUL.md" tmp
-  tmp="$(mktemp)"
-  if [ -f "$soul" ]; then
-    # Everything outside the old block, trailing blank lines trimmed.
-    awk -v b="$HERMES_SOUL_BEGIN" -v e="$HERMES_SOUL_END" '
-      $0 == b { skip = 1; next }
-      $0 == e { skip = 0; next }
-      !skip' "$soul" | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}' >"$tmp"
-    printf '\n\n' >>"$tmp"
+  local profile="$1" label="${1:-lab (default)}"
+  local soul="$HOME/.hermes/SOUL.md" scratch="~/hermes-work/<topic>/" tmp
+  if [ -n "$profile" ]; then
+    soul="$HOME/.hermes/profiles/$profile/SOUL.md"
+    scratch="/tmp/"
   fi
-  cat >>"$tmp" <<EOF
-${HERMES_SOUL_BEGIN}
-## Will's lab: standing rules
-
+  local code_rule="- To run Python or any other script, write it to a file under ${scratch} and
+  run it (\`python3 <file>\`). Never use \`python3 -c\`, \`bash -c\`, \`node -e\` or a
+  heredoc (\`python3 - <<EOF\`): the approval check stops on inline code and
+  stalls the job until Will answers. Shell one-liners without inline code
+  (curl, ls, grep) are fine."
+  local lab_rules=""
+  [ -z "$profile" ] && lab_rules="
 - Before answering anything about the home lab, use the \`homelab\` skill. It
   reads the current state from ~/second-brain/topics/homelab.md. Do not
   answer lab questions from general knowledge alone.
@@ -457,17 +462,32 @@ ${HERMES_SOUL_BEGIN}
 - ~/second-brain is Will's vault. Save notes only through the \`second-brain\`
   skill, and never edit anything in its entries/ folder.
 - Coding and code review stay with Claude and Codex. If asked for either,
-  say so.
+  say so."
+  mkdir -p "$(dirname "$soul")"
+  tmp="$(mktemp)"
+  if [ -f "$soul" ]; then
+    # Everything outside the old block, trailing blank lines trimmed.
+    awk -v b="$HERMES_SOUL_BEGIN" -v e="$HERMES_SOUL_END" '
+      $0 == b { skip = 1; next }
+      $0 == e { skip = 0; next }
+      !skip' "$soul" | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}' >"$tmp"
+    printf '\n\n' >>"$tmp"
+  fi
+  cat >>"$tmp" <<EOF
+${HERMES_SOUL_BEGIN}
+## Will's lab: standing rules
+${lab_rules}
+${code_rule}
 ${HERMES_SOUL_END}
 EOF
   if cmp -s "$tmp" "$soul" 2>/dev/null; then
     rm -f "$tmp"
-    log "  Hermes SOUL.md rules already current"
+    log "  Hermes SOUL.md rules already current (${label})"
     return 0
   fi
   [ -f "$soul" ] && chmod --reference="$soul" "$tmp"
   mv "$tmp" "$soul"
-  log "  Hermes SOUL.md rules written"
+  log "  Hermes SOUL.md rules written (${label})"
 }
 
 # configure_hermes_telegram

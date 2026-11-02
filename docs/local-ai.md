@@ -164,10 +164,14 @@ lab without Claude handing it context, so the `lab` profile gets two things:
   context file Hermes loads in every session wherever it starts: the homelab
   skill first, `lab-creds` for logins, read-only on live machines, changes as
   code, the work laptop out of scope, the vault through `second-brain` only.
-  Hermes' own persona text above the block is left alone.
+  Both profiles' SOUL.md (`~/.hermes/profiles/restricted/SOUL.md` for
+  `restricted`) also get the rule on running code: scripts go in a file and
+  run with `python3 <file>`, never `python3 -c` or a heredoc, which
+  `approvals.mode=manual` stops on. Hermes' own persona text above the block
+  is left alone.
 
-The `restricted` profile gets neither: it cannot reach the labs or the vault
-outside `inbox/`.
+The `restricted` profile gets neither the skills nor the lab rules, only the
+code rule: it cannot reach the labs or the vault outside `inbox/`.
 
 ### The sandbox network
 

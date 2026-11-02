@@ -51,8 +51,10 @@ answer is cheap to spot, and spot-check it.
    > `~/hermes-work/<topic>/summary.md`: at most 15 lines with the answer,
    > anything you could not do, and what you are unsure of.
 
-   For `restricted`, use `/inbox/hermes-<topic>.md` for the result and put the
-   summary at the top of that file.
+   For `restricted`, include the same rule with `/tmp/` in place of
+   `~/hermes-work/<topic>/` (the container cannot see `~/hermes-work`). Use
+   `/inbox/hermes-<topic>.md` for the result and put the summary at the top of
+   that file.
    ```bash
    mkdir -p ~/hermes-work/<topic>   # lab jobs
    ```
