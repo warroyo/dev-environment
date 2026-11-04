@@ -181,9 +181,14 @@ if [ -n "$mutations" ]; then
     area_args=(-f area="$area")
     area_decl=', $area: String'
   fi
+  # The item already exists by now, so a failure here leaves it on the board
+  # without its fields. Say which one, so it can be fixed or deleted.
   # shellcheck disable=SC2016
-  gh api graphql --silent -f project="$project_id" -f item="$item_id" "${area_args[@]}" \
-    -f query='mutation($project: ID!, $item: ID!'"$area_decl"') {'"$mutations"'}'
+  if ! gh api graphql --silent -f project="$project_id" -f item="$item_id" "${area_args[@]}" \
+       -f query='mutation($project: ID!, $item: ID!'"$area_decl"') {'"$mutations"'}'; then
+    echo "backlog-add: created ${item_id} but could not set its fields; fix or delete it on the board" >&2
+    exit 1
+  fi
 fi
 
 summary="Status=${status}"
