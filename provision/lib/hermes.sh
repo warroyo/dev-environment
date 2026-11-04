@@ -456,6 +456,19 @@ install_hermes_soul_rules() {
   heredoc (\`python3 - <<EOF\`): the approval check stops on inline code and
   stalls the job until Will answers. Shell one-liners without inline code
   (curl, ls, grep) are fine."
+  # Prompted by a Telegram turn on 2026-11-04 that ran 13 commands with no
+  # text between them: Will saw only approval buttons, with no idea what the
+  # job was, and it ended in a package install he had not asked for.
+  local plan_rule="- Before the first command of any job that is more than one quick lookup,
+  send Will a short message first: what you are trying to do, the steps, and
+  anything that will be installed, downloaded, written or sent off this
+  machine. If the plan changes, say so before running the new step. An
+  approval request must never be the first Will hears of a step.
+- If you cannot read something Will sent (a voice note, a file type you have
+  no tool for), tell him and ask what he wants. Do not work out a way around
+  it on your own.
+- If Will denies a command, stop that line of work and ask. Never reach the
+  same result through a different command."
   local lab_rules=""
   [ -z "$profile" ] && lab_rules="
 - Before answering anything about the home lab, use the \`homelab\` skill. It
@@ -467,6 +480,8 @@ install_hermes_soul_rules() {
 - On live machines, only query and troubleshoot, through the no-sudo \`agent\`
   account. Do not install packages, edit config or change state by hand. A fix
   goes into ~/workspace/dev-environment as code, and Will applies it.
+- That includes this host: no \`pip install\`, \`uv tool run\`/\`uvx\`, \`npm -g\`
+  or model downloads here either, not even into Hermes' own tools.
 - The work laptop is out of scope. Never propose anything that involves it.
 - ~/second-brain is Will's vault. Save notes only through the \`second-brain\`
   skill, and never edit anything in its entries/ folder.
@@ -485,7 +500,7 @@ install_hermes_soul_rules() {
   cat >>"$tmp" <<EOF
 ${HERMES_SOUL_BEGIN}
 ## Will's lab: standing rules
-${lab_rules}
+${plan_rule}${lab_rules}
 ${code_rule}
 ${HERMES_SOUL_END}
 EOF
