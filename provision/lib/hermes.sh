@@ -291,6 +291,13 @@ EOF
 # Both: manual approval of every dangerous command, memory and skill writes
 # approved first.
 #
+# Both: voice transcription (stt) off. With no provider set, Hermes picks one
+# on every voice message: faster-whisper if it is importable, else the first
+# cloud key it finds. OPENAI_API_KEY in .env is the LiteLLM key, so a Telegram
+# voice note went to api.openai.com with it (401). There is no Whisper in the
+# lab yet; the plan is Lemonade on the EVO-X2's NPU behind LiteLLM, and stt
+# points there once it exists.
+#
 # Each setting goes through `hermes config set` rather than a templated
 # config.yaml: Hermes migrates and rewrites its own config file across
 # releases, and owning the whole file would fight that. Keys set here are put
@@ -322,6 +329,7 @@ configure_hermes() {
   HERMES_PROFILE_TELEGRAM="$lab_telegram" \
   _hermes_configure_profile "" "$HOME/.secrets/litellm/hermes-lab.key" \
     "terminal.backend=local" \
+    "stt.enabled=false" \
     'approvals.deny=["ssh *-admin*", "ansible *", "*ansible-playbook*", "*ansible/play*"]' \
     "skills.external_dirs=[\"${HERMES_SHARED_SKILLS_DIR}\"]" \
     || failed=1
@@ -339,6 +347,7 @@ configure_hermes() {
   mkdir -p "$HERMES_INBOX_DIR"
   _hermes_configure_profile "$HERMES_RESTRICTED_PROFILE" "$HOME/.secrets/litellm/hermes-restricted.key" \
     "terminal.backend=docker" \
+    "stt.enabled=false" \
     "terminal.container_persistent=false" \
     "terminal.container_memory=4096" \
     "terminal.container_cpu=2" \
