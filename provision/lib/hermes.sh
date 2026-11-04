@@ -291,6 +291,13 @@ EOF
 # Both: manual approval of every dangerous command, memory and skill writes
 # approved first.
 #
+# Both: voice transcription (stt) off. With no provider set, Hermes picks one
+# on every voice message: faster-whisper if it is importable, else the first
+# cloud key it finds. OPENAI_API_KEY in .env is the LiteLLM key, so a Telegram
+# voice note went to api.openai.com with it (401). There is no Whisper in the
+# lab yet; the plan is Lemonade on the EVO-X2's NPU behind LiteLLM, and stt
+# points there once it exists.
+#
 # Each setting goes through `hermes config set` rather than a templated
 # config.yaml: Hermes migrates and rewrites its own config file across
 # releases, and owning the whole file would fight that. Keys set here are put
@@ -322,6 +329,7 @@ configure_hermes() {
   HERMES_PROFILE_TELEGRAM="$lab_telegram" \
   _hermes_configure_profile "" "$HOME/.secrets/litellm/hermes-lab.key" \
     "terminal.backend=local" \
+    "stt.enabled=false" \
     'approvals.deny=["ssh *-admin*", "ansible *", "*ansible-playbook*", "*ansible/play*"]' \
     "skills.external_dirs=[\"${HERMES_SHARED_SKILLS_DIR}\"]" \
     || failed=1
@@ -339,6 +347,7 @@ configure_hermes() {
   mkdir -p "$HERMES_INBOX_DIR"
   _hermes_configure_profile "$HERMES_RESTRICTED_PROFILE" "$HOME/.secrets/litellm/hermes-restricted.key" \
     "terminal.backend=docker" \
+    "stt.enabled=false" \
     "terminal.container_persistent=false" \
     "terminal.container_memory=4096" \
     "terminal.container_cpu=2" \
@@ -376,14 +385,15 @@ configure_hermes() {
 # are about Claude's own workflow (handoff, log-session, hermes), or are for
 # coding and writing, which stay with Claude and Codex. lab-creds is in because
 # a Telegram session can already read ~/.lab.env (see configure_hermes_telegram);
-# the skill only teaches it to use that properly.
+# the skill only teaches it to use that properly. backlog is in because a lab
+# change Hermes finds is filed there for Claude to build (SOUL.md rules).
 #
 # Each link points at the ~/.claude/skills entry, so a skill edited or
 # re-pointed for Claude changes for Hermes too. External dirs are not
 # read-only to Hermes, but skills.write_approval=true puts every skill edit in
 # front of Will first.
 HERMES_SHARED_SKILLS_DIR="${HERMES_SHARED_SKILLS_DIR:-$HOME/.local/share/hermes-skills}"
-HERMES_SHARED_SKILLS=(homelab second-brain lab-creds)
+HERMES_SHARED_SKILLS=(homelab second-brain lab-creds backlog)
 
 install_hermes_shared_skills() {
   local name src link failed=0
@@ -447,17 +457,44 @@ install_hermes_soul_rules() {
   heredoc (\`python3 - <<EOF\`): the approval check stops on inline code and
   stalls the job until Will answers. Shell one-liners without inline code
   (curl, ls, grep) are fine."
+  # Prompted by a Telegram turn on 2026-11-04 that ran 13 commands with no
+  # text between them: Will saw only approval buttons, with no idea what the
+  # job was, and it ended in a package install he had not asked for.
+  local plan_rule="- Before the first command of any job that is more than one quick lookup,
+  send Will a short message first: what you are trying to do, the steps, and
+  anything that will be installed, downloaded, written or sent off this
+  machine. If the plan changes, say so before running the new step. An
+  approval request must never be the first Will hears of a step.
+- If you cannot read something Will sent (a voice note, a file type you have
+  no tool for), tell him and ask what he wants. Do not work out a way around
+  it on your own.
+- If Will denies a command, stop that line of work and ask. Never reach the
+  same result through a different command."
   local lab_rules=""
   [ -z "$profile" ] && lab_rules="
-- Before answering anything about the home lab, use the \`homelab\` skill. It
-  reads the current state from ~/second-brain/topics/homelab.md. Do not
+- Use the \`homelab\` skill before answering anything about the home lab, and
+  before installing, downloading or changing anything on any lab machine,
+  this host included: a package, a pip/uv/npm tool, a model, a service, a
+  container, config, a cron job. That counts even when the change is only a
+  means to another job (transcribing a voice note, converting a file). The
+  skill reads the current state from ~/second-brain/topics/homelab.md. Do not
   answer lab questions from general knowledge alone.
+- Lab changes are code in ~/workspace/dev-environment, never done by hand,
+  and you do not write that code. When a job needs a change, stop and:
+  1. use the \`homelab\` skill to check what is already decided or built;
+  2. find where the change belongs in dev-environment (provision/ script and
+     function, ansible/ role, dotfiles/ path, docs/ page) by reading the repo;
+  3. send Will the plan: what changes, why, and the files it touches;
+  4. with the \`backlog\` skill, add it (\`-k Tech -a dev-environment\`) with the
+     plan in the body, so Claude can build it. Then tell Will it is filed.
 - For the client lab (vCenter, the Supervisor, VCF Automation, Cloud
   Foundry; hostnames in ~/.lab.env), use the \`lab-creds\` skill for logins. Never put a
   credential in a reply, a note or a file.
 - On live machines, only query and troubleshoot, through the no-sudo \`agent\`
   account. Do not install packages, edit config or change state by hand. A fix
   goes into ~/workspace/dev-environment as code, and Will applies it.
+- That includes this host: no \`pip install\`, \`uv tool run\`/\`uvx\`, \`npm -g\`
+  or model downloads here either, not even into Hermes' own tools.
 - The work laptop is out of scope. Never propose anything that involves it.
 - ~/second-brain is Will's vault. Save notes only through the \`second-brain\`
   skill, and never edit anything in its entries/ folder.
@@ -476,7 +513,7 @@ install_hermes_soul_rules() {
   cat >>"$tmp" <<EOF
 ${HERMES_SOUL_BEGIN}
 ## Will's lab: standing rules
-${lab_rules}
+${plan_rule}${lab_rules}
 ${code_rule}
 ${HERMES_SOUL_END}
 EOF
