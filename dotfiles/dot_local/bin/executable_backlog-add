@@ -173,9 +173,17 @@ done
 [ -n "$area_fid" ] && mutations+="$(set_field area "$area_fid" '{text: $area}')"$'\n'
 
 if [ -n "$mutations" ]; then
+  # $area is declared only when a mutation uses it: GraphQL rejects a declared
+  # but unused variable ("Variable $area is declared ... but not used"), which
+  # failed the whole request whenever -a was left out.
+  area_args=() area_decl=""
+  if [ -n "$area_fid" ]; then
+    area_args=(-f area="$area")
+    area_decl=', $area: String'
+  fi
   # shellcheck disable=SC2016
-  gh api graphql --silent -f project="$project_id" -f item="$item_id" -f area="$area" \
-    -f query='mutation($project: ID!, $item: ID!, $area: String) {'"$mutations"'}'
+  gh api graphql --silent -f project="$project_id" -f item="$item_id" "${area_args[@]}" \
+    -f query='mutation($project: ID!, $item: ID!'"$area_decl"') {'"$mutations"'}'
 fi
 
 summary="Status=${status}"

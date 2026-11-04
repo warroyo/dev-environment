@@ -385,14 +385,15 @@ configure_hermes() {
 # are about Claude's own workflow (handoff, log-session, hermes), or are for
 # coding and writing, which stay with Claude and Codex. lab-creds is in because
 # a Telegram session can already read ~/.lab.env (see configure_hermes_telegram);
-# the skill only teaches it to use that properly.
+# the skill only teaches it to use that properly. backlog is in because a lab
+# change Hermes finds is filed there for Claude to build (SOUL.md rules).
 #
 # Each link points at the ~/.claude/skills entry, so a skill edited or
 # re-pointed for Claude changes for Hermes too. External dirs are not
 # read-only to Hermes, but skills.write_approval=true puts every skill edit in
 # front of Will first.
 HERMES_SHARED_SKILLS_DIR="${HERMES_SHARED_SKILLS_DIR:-$HOME/.local/share/hermes-skills}"
-HERMES_SHARED_SKILLS=(homelab second-brain lab-creds)
+HERMES_SHARED_SKILLS=(homelab second-brain lab-creds backlog)
 
 install_hermes_shared_skills() {
   local name src link failed=0
@@ -471,9 +472,21 @@ install_hermes_soul_rules() {
   same result through a different command."
   local lab_rules=""
   [ -z "$profile" ] && lab_rules="
-- Before answering anything about the home lab, use the \`homelab\` skill. It
-  reads the current state from ~/second-brain/topics/homelab.md. Do not
+- Use the \`homelab\` skill before answering anything about the home lab, and
+  before installing, downloading or changing anything on any lab machine,
+  this host included: a package, a pip/uv/npm tool, a model, a service, a
+  container, config, a cron job. That counts even when the change is only a
+  means to another job (transcribing a voice note, converting a file). The
+  skill reads the current state from ~/second-brain/topics/homelab.md. Do not
   answer lab questions from general knowledge alone.
+- Lab changes are code in ~/workspace/dev-environment, never done by hand,
+  and you do not write that code. When a job needs a change, stop and:
+  1. use the \`homelab\` skill to check what is already decided or built;
+  2. find where the change belongs in dev-environment (provision/ script and
+     function, ansible/ role, dotfiles/ path, docs/ page) by reading the repo;
+  3. send Will the plan: what changes, why, and the files it touches;
+  4. with the \`backlog\` skill, add it (\`-k Tech -a dev-environment\`) with the
+     plan in the body, so Claude can build it. Then tell Will it is filed.
 - For the client lab (vCenter, the Supervisor, VCF Automation, Cloud
   Foundry; hostnames in ~/.lab.env), use the \`lab-creds\` skill for logins. Never put a
   credential in a reply, a note or a file.
