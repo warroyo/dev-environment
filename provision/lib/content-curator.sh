@@ -87,6 +87,9 @@ CURATOR_URL="http://127.0.0.1:${CURATOR_PORT}"
 CURATOR_TIMEZONE="${CURATOR_TIMEZONE:-America/Denver}"
 CURATOR_RUN_CRON="${CURATOR_RUN_CRON:-30 1 * * *}"
 CURATOR_DISCOVER_CRON="${CURATOR_DISCOVER_CRON:-0 1 * * sun}"
+# Applies the read, meh, follow and unfollow tags on picks, and records deleted
+# picks, in the day; the nightly run does it too.
+CURATOR_FEEDBACK_CRON="${CURATOR_FEEDBACK_CRON:-*/30 6-23 * * *}"
 # systemd calendar time for rendering the config, before the run above.
 CURATOR_CONFIG_AT="${CURATOR_CONFIG_AT:-*-*-* 01:20:00}"
 # Publishing to Raindrop: on, into these collections (created on first use).
@@ -294,6 +297,7 @@ schedule:
   jobs:
     - {job: run, cron: "${CURATOR_RUN_CRON}"}
     - {job: discover, cron: "${CURATOR_DISCOVER_CRON}"}
+    - {job: feedback, cron: "${CURATOR_FEEDBACK_CRON}"}
 publish:
   enabled: ${CURATOR_PUBLISH}
   collection: ${CURATOR_PICKS_COLLECTION}

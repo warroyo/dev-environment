@@ -7,6 +7,11 @@ server; the application, its tests and its image live in the curator repo. Once
 a week Hermes searches the web for new sources and suggests them to the curator,
 which tries the good ones (see [Source suggestions](#source-suggestions)).
 
+In Raindrop, tag a pick `read` when done or `meh` for less like this: the
+curator records it and moves the pick to "AI read" or "AI skipped", every 30
+minutes from 06:00 to 23:30 (`CURATOR_FEEDBACK_CRON`). Deleting a pick is
+recorded as a light negative. "AI picks" stays the unread queue.
+
 ```
  vault (Obsidian)                 server (ubuntu-home)                                   Raindrop.io
  notes/content-curator-sources.md ──┐
