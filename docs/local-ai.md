@@ -89,8 +89,10 @@ channel, then configured key by key with `hermes config set`, so Hermes can
 still migrate its own config between releases.
 
 Always on for one thing only: the `lab` profile answers on Telegram once
-it has a bot (see [On Telegram](#on-telegram)). No cron. Otherwise Hermes
-runs when someone starts it, by hand or through Claude.
+it has a bot (see [On Telegram](#on-telegram)). Its gateway also runs Hermes'
+cron scheduler. Cron jobs are code: setup scripts create them (today only
+`curator-weekly`, from `lib/content-curator.sh`), never a chat session.
+Otherwise Hermes runs when someone starts it, by hand or through Claude.
 
 ### Two profiles
 
