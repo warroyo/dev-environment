@@ -72,7 +72,7 @@
 
 # Bump to deploy a new curator build: the tag and digest are in the summary of
 # the curator's "image" workflow run.
-CURATOR_IMAGE="${CURATOR_IMAGE:-ghcr.io/warroyo/content-curator:sha-b197089@sha256:708655683cdc10418347f651ec2a1150a82a65fad88fde489f21a6f6cbaa5a5f}"
+CURATOR_IMAGE="${CURATOR_IMAGE:-ghcr.io/warroyo/content-curator:sha-823768d@sha256:76c6983a4e64be2cf713fd8c5461c7c5ac1892929cbbee40611f777b0671ae98}"
 CURATOR_DIR="${CURATOR_DIR:-$HOME/.local/share/content-curator}"
 CURATOR_DATA="${CURATOR_DIR}/data"
 CURATOR_SECRETS_DIR="${CURATOR_SECRETS_DIR:-$HOME/.secrets/content-curator}"
@@ -87,6 +87,9 @@ CURATOR_URL="http://127.0.0.1:${CURATOR_PORT}"
 CURATOR_TIMEZONE="${CURATOR_TIMEZONE:-America/Denver}"
 CURATOR_RUN_CRON="${CURATOR_RUN_CRON:-30 1 * * *}"
 CURATOR_DISCOVER_CRON="${CURATOR_DISCOVER_CRON:-0 1 * * sun}"
+# Applies the read, meh, follow and unfollow tags on picks, and records deleted
+# picks, in the day; the nightly run does it too.
+CURATOR_FEEDBACK_CRON="${CURATOR_FEEDBACK_CRON:-*/30 6-23 * * *}"
 # systemd calendar time for rendering the config, before the run above.
 CURATOR_CONFIG_AT="${CURATOR_CONFIG_AT:-*-*-* 01:20:00}"
 # Publishing to Raindrop: on, into these collections (created on first use).
@@ -294,6 +297,7 @@ schedule:
   jobs:
     - {job: run, cron: "${CURATOR_RUN_CRON}"}
     - {job: discover, cron: "${CURATOR_DISCOVER_CRON}"}
+    - {job: feedback, cron: "${CURATOR_FEEDBACK_CRON}"}
 publish:
   enabled: ${CURATOR_PUBLISH}
   collection: ${CURATOR_PICKS_COLLECTION}
