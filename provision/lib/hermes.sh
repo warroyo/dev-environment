@@ -567,8 +567,10 @@ configure_hermes_telegram() {
 
   local s failed=0
   # UPPER_SNAKE names go to the profile's .env (~/.hermes/.env, mode 600).
+  # The home channel is where cron jobs deliver (`--deliver telegram`): Will's
+  # chat with the bot, the first id on the allow-list.
   for s in "TELEGRAM_BOT_TOKEN=${token}" "TELEGRAM_ALLOWED_USERS=${users}" \
-           "unauthorized_dm_behavior=ignore"; do
+           "TELEGRAM_HOME_CHANNEL=${users%%,*}" "unauthorized_dm_behavior=ignore"; do
     if ! "$HERMES_BIN" config set "${s%%=*}" "${s#*=}" >/dev/null 2>&1; then
       log "  WARNING: [lab] 'hermes config set ${s%%=*}' failed"
       failed=1

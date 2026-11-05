@@ -12,6 +12,10 @@ curator records it and moves the pick to "AI read" or "AI skipped", every 30
 minutes from 06:00 to 23:30 (`CURATOR_FEEDBACK_CRON`). Deleting a pick is
 recorded as a light negative. "AI picks" stays the unread queue.
 
+Claude Code and Hermes reach the curator through its MCP tools, and every
+Sunday morning Hermes sends a short review of the week's feedback and learning
+to Telegram (see [Agents](#agents-mcp-and-the-weekly-review)).
+
 ```
  vault (Obsidian)                 server (ubuntu-home)                                   Raindrop.io
  notes/content-curator-sources.md ──┐
@@ -53,7 +57,10 @@ It is idempotent: re-run it after bumping the image pin or changing a setting.
 | `~/.local/share/content-curator/config/app.yaml` | generated: schedule and publishing, from the variables at the top of `lib/content-curator.sh` |
 | `~/.local/share/content-curator/config/{sources,interests}.yaml` | rendered from the vault notes |
 | `~/.local/share/content-curator/data/` | SQLite database (scores, picks, what was published) and the nightly reports |
-| `~/.secrets/content-curator/curator.env` | generated: the LiteLLM key and the Raindrop token |
+| `~/.secrets/content-curator/curator.env` | generated: the LiteLLM key, the Raindrop token and the API token |
+| `~/.secrets/content-curator/api-token` | generated once: the bearer token for the API's POST routes and the MCP write tools |
+| MCP server `content_curator` | registered with Claude Code (user scope) and Hermes' lab profile, with the API token |
+| Hermes cron job `curator-weekly` | Sunday 09:00 (`CURATOR_WEEKLY_AT`), lab profile, delivered to Telegram. `CURATOR_WEEKLY_REPORT=false` removes it. |
 
 ## Config from the vault
 
@@ -111,6 +118,27 @@ Run it now, or see what it did:
 sudo systemctl start content-curator-suggest.service
 journalctl -u content-curator-suggest -n 30 --no-pager
 curl -s 127.0.0.1:8090/api/candidates | jq '.[] | {submitted_url, status, reason}'
+```
+
+## Agents: MCP and the weekly review
+
+The curator serves MCP tools at `127.0.0.1:8090/mcp` (the curator repo's
+`docs/architecture.md` lists them). Setup registers them as `content_curator`
+with Claude Code and with Hermes' lab profile, and restarts the Hermes gateway
+when that changed, because Hermes connects to MCP servers when it starts. Both
+get the API token, so they can also add a URL, follow or unfollow a source,
+suggest sources and run a job. The restricted profile does not get the server.
+Registration is skipped, with a warning, while the running image has no `/mcp`.
+
+The weekly review is the Hermes cron job `curator-weekly`. Hermes' gateway
+runs it on Sunday at 09:00: it calls `weekly_review` and `sources`, and sends a
+short summary to the Telegram home channel, your chat with the Hermes bot. The
+job is created and updated only by setup.
+
+```sh
+hermes cron list                     # curator-weekly, its next run
+hermes cron run <id>                 # run it on the next tick
+claude mcp get content_curator
 ```
 
 ## Upgrading
