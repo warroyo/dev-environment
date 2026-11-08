@@ -17,8 +17,9 @@ ubuntu-home                                              EVO-X2
 └─────────────────────────────────────────────┘
 ```
 
-Claude Code itself does not go through LiteLLM; it talks to Anthropic
-directly. No cloud model is in LiteLLM at all, so a request meant for the local
+Claude Code itself does not go through LiteLLM for models; it talks to
+Anthropic directly. It does use LiteLLM for MCP: LiteLLM is also the lab's MCP
+gateway ([mcp-gateway.md](mcp-gateway.md)). No cloud model is in LiteLLM at all, so a request meant for the local
 model cannot fall back to the cloud.
 
 ## Install
@@ -67,6 +68,8 @@ loaded makes llama-swap swap, and Flash-Next takes 1-2 minutes to load.
 | `~/.secrets/litellm/hermes-restricted.key` | Hermes, `restricted` profile |
 | `~/.secrets/litellm/scripts.key` | for scripts and ad-hoc `curl` |
 | `~/.secrets/litellm/content-curator.key` | the content curator ([warroyo/content-curator](https://github.com/warroyo/content-curator)) |
+| `~/.secrets/litellm/claude-code.key` | Claude Code, for the MCP gateway only |
+| `~/.secrets/litellm/mcp.env` | generated: tokens of the MCP servers behind the gateway, for the container |
 
 A client gets its own key so it can be cut off alone and its tokens counted
 alone. Add one by putting its name in `LITELLM_CLIENTS` and re-running. The
@@ -78,6 +81,9 @@ curl -s -H "Authorization: Bearer $(cat ~/.secrets/litellm/scripts.key)" \
   http://127.0.0.1:4000/v1/chat/completions -H 'Content-Type: application/json' \
   -d '{"model":"local-qwen","messages":[{"role":"user","content":"Say OK"}]}'
 ```
+
+Each key also has an MCP allowlist (`LITELLM_MCP_GRANTS`); keys not listed
+there get no MCP servers. See [mcp-gateway.md](mcp-gateway.md).
 
 Both `/v1/chat/completions` and `/v1/responses` (with tool calls) work
 through it; LiteLLM passes the Responses API straight to Gufo.

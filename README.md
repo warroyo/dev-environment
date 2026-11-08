@@ -118,5 +118,7 @@ not source paths — verify with `chezmoi ignored`.
 - [`docs/server-setup.md`](docs/server-setup.md)
 - [`docs/local-ai.md`](docs/local-ai.md) — LiteLLM gateway and Hermes Agent
   on the server, and how Claude delegates to Hermes
+- [`docs/mcp-gateway.md`](docs/mcp-gateway.md) — LiteLLM as the MCP gateway:
+  servers, per-key access, adding one
 - [`docs/client-personal-setup.md`](docs/client-personal-setup.md)
 - [`docs/client-work-setup.md`](docs/client-work-setup.md)

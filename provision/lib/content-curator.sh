@@ -77,11 +77,17 @@
 # The curator serves MCP tools at /mcp: status, picks, reports, sources, a
 # weekly review of feedback and learning, and the API's actions (add a URL,
 # follow or unfollow a source, suggest sources, run a job). Write tools need
-# the API token, like the API's POST routes. This lib registers the server as
-# `content_curator` with Claude Code (user scope) and with Hermes' lab profile,
-# both with the token, and restarts the Hermes gateway when that changed:
-# Hermes connects to MCP servers when its gateway starts. The restricted
-# profile does not get it.
+# the API token, like the API's POST routes.
+#
+# Agents do not connect to it directly. It is registered once in LiteLLM, the
+# lab's MCP gateway (lib/litellm.sh, docs/mcp-gateway.md), which holds the API
+# token; Claude Code and Hermes' lab profile connect to LiteLLM's /mcp with
+# their own LiteLLM keys. Their tools are named `content_curator-<tool>` there.
+# This lib only makes the gateway pick the token up (the token is created
+# here, after LiteLLM is installed) and then has lib/litellm.sh connect the
+# clients, which restarts the Hermes gateway when that changed: Hermes
+# connects to MCP servers when its gateway starts. The restricted profile does
+# not get it, and neither does the suggest-sources timer: it posts to the API.
 #
 # The weekly review is a Hermes cron job, `curator-weekly`, in the lab profile.
 # On Sunday morning Hermes calls weekly_review and sends a short summary to its
@@ -125,10 +131,8 @@ CURATOR_INBOX="${CURATOR_INBOX:-${CURATOR_VAULT}/inbox}"
 # Where the curator ran before this lib existed, started by hand from a working copy.
 CURATOR_OLD_CHECKOUT="${CURATOR_OLD_CHECKOUT:-$HOME/workspace/content-curator}"
 CURATOR_API_TOKEN_FILE="${CURATOR_SECRETS_DIR}/api-token"
-# MCP registration and the weekly review (see AGENTS above). The schedule is
-# Hermes' cron syntax, in the host's timezone. "false" removes the job.
-CURATOR_MCP_NAME="${CURATOR_MCP_NAME:-content_curator}"
-CURATOR_CLAUDE_BIN="${CURATOR_CLAUDE_BIN:-$(command -v claude || echo "$HOME/.local/bin/claude")}"
+# The weekly review (see AGENTS above). The schedule is Hermes' cron syntax,
+# in the host's timezone. "false" removes the job.
 CURATOR_WEEKLY_REPORT="${CURATOR_WEEKLY_REPORT:-true}"
 CURATOR_WEEKLY_AT="${CURATOR_WEEKLY_AT:-0 9 * * sun}"
 CURATOR_WEEKLY_JOB=curator-weekly
@@ -620,9 +624,12 @@ EOF
 #
 # See AGENTS in the header. Skipped, with a warning, while the running image
 # has no /mcp, so pinning the image and registering can land in either order.
+#
+# install_litellm runs again here, after the curator's token exists: on a first
+# run LiteLLM was installed before there was a token, so the server was left out
+# of its config. It is idempotent and restarts the gateway only if that changed.
 _curator_connect_agents() {
-  local token url="${CURATOR_URL}/mcp"
-  token="$(tr -d '[:space:]' <"$CURATOR_API_TOKEN_FILE")"
+  local url="${CURATOR_URL}/mcp"
   if ! curl -fsS -m 10 -o /dev/null -X POST "$url" \
       -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' \
       -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'; then
@@ -630,53 +637,19 @@ _curator_connect_agents() {
     return 1
   fi
 
-  if [ -x "$CURATOR_CLAUDE_BIN" ]; then
-    "$CURATOR_CLAUDE_BIN" mcp remove --scope user "$CURATOR_MCP_NAME" >/dev/null 2>&1 || true
-    if "$CURATOR_CLAUDE_BIN" mcp add --scope user --transport http "$CURATOR_MCP_NAME" "$url" \
-        --header "Authorization: Bearer ${token}" >/dev/null 2>&1; then
-      log "  curator MCP registered with Claude Code (${CURATOR_MCP_NAME})"
-    else
-      log "  WARNING: 'claude mcp add ${CURATOR_MCP_NAME}' failed"
-    fi
+  # content-curator-setup.sh does not load LiteLLM's lib.
+  if ! declare -F install_litellm >/dev/null; then
+    # shellcheck source=lib/litellm.sh
+    source "$(dirname "${BASH_SOURCE[0]}")/litellm.sh"
   fi
-
-  [ -x "$CURATOR_HERMES_BIN" ] || return 0
-  _curator_hermes_mcp "$url" "$token"
-  _curator_hermes_weekly
-}
-
-# _curator_hermes_mcp <url> <token>
-#
-# Sets the lab profile's MCP entry, and restarts the gateway only when it
-# changed. Compared in config.yaml itself: `hermes config get` masks the header.
-_curator_hermes_mcp() {
-  local url="$1" token="$2" key="mcp_servers.${CURATOR_MCP_NAME}" config current
-  config="$("$CURATOR_HERMES_BIN" config path 2>/dev/null)"
-  current="$(python3 - "$config" "$CURATOR_MCP_NAME" <<'PY' 2>/dev/null
-import sys, yaml
-server = ((yaml.safe_load(open(sys.argv[1])) or {}).get("mcp_servers") or {}).get(sys.argv[2]) or {}
-print(server.get("url", ""), (server.get("headers") or {}).get("Authorization", ""))
-PY
-)"
-  [ "$current" = "${url} Bearer ${token}" ] && return 0
-
-  if ! "$CURATOR_HERMES_BIN" config set "${key}.url" "$url" >/dev/null 2>&1 \
-      || ! "$CURATOR_HERMES_BIN" config set "${key}.headers.Authorization" "Bearer ${token}" >/dev/null 2>&1; then
-    log "  WARNING: could not add the curator MCP to Hermes' config"
+  if ! install_litellm; then
+    log "  WARNING: LiteLLM did not come up — the curator's MCP is not connected to agents."
     return 1
   fi
-  log "  curator MCP added to Hermes' lab profile (${CURATOR_MCP_NAME})"
-  # The same stop-then-start as lib/hermes.sh's configure_hermes_telegram, for
-  # the same reasons. Only when a gateway runs: otherwise the next start loads it.
-  # `cron status` exits 0 either way; its output says whether a gateway runs.
-  if "$CURATOR_HERMES_BIN" cron status 2>/dev/null | grep -q 'Gateway is running'; then
-    "$CURATOR_HERMES_BIN" gateway stop --all >/dev/null 2>&1 || true
-    if timeout 120 "$CURATOR_HERMES_BIN" gateway start >/dev/null 2>&1; then
-      log "  restarted the Hermes gateway to load it"
-    else
-      log "  WARNING: 'hermes gateway start' failed or timed out — check 'hermes gateway status'"
-    fi
-  fi
+  litellm_connect_clients || return 1
+
+  [ -x "$CURATOR_HERMES_BIN" ] || return 0
+  _curator_hermes_weekly
 }
 
 # _curator_hermes_weekly
@@ -720,7 +693,9 @@ _curator_weekly_prompt() {
   cat <<'PROMPT'
 Weekly content-curator review for Will, sent to him on Telegram.
 
-Call the content_curator MCP tool weekly_review (days 7), and sources with status "trial". Only read:
+Call the content curator's MCP tools weekly_review (days 7), and sources with status "trial". They come
+through the litellm MCP server, with a content_curator- prefix on the name (content_curator-weekly_review).
+Only read:
 do not follow, unfollow, add or run anything.
 
 Write one short message in plain text, under 250 words:

@@ -1171,7 +1171,9 @@ if ensure_hermes; then
   install_hermes_work_prune || true
   configure_hermes || true
 fi
-# After LiteLLM, which makes the curator's key.
+# After LiteLLM, which makes the curator's key. The curator then re-runs
+# install_litellm to put its API token behind the MCP gateway, and connects
+# Claude Code and Hermes to the gateway (docs/mcp-gateway.md).
 # shellcheck source=lib/content-curator.sh
 source "${SCRIPT_DIR}/lib/content-curator.sh"
 log "Installing the content curator"
