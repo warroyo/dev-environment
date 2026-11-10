@@ -1,6 +1,6 @@
 ---
 name: lab-creds
-description: Refresh or read Will's client lab credentials (vCenter, the vSphere Supervisor, VCF Automation, and the Tanzu Platform / Cloud Foundry foundation with Tanzu Hub; hostnames and context names are in ~/.lab.env). Use when a Cloud Foundry API call, cf CLI or the Terraform cloudfoundry provider needs a token for the foundation's deployer account, and use as soon as kubectl against the Supervisor or VCF Automation context answers "You must be logged in to the server" or "the server has asked for the client to provide credentials", when `vcf context use` or `vcf context refresh` asks for a password, when a vCenter or VCF Automation API call needs a login, or when asked to "refresh the lab creds", "log back in to the supervisor", or "where is the vCenter password". Use it before asking Will to log in by hand. Not for GitHub auth, and not for a repo's own secrets such as Terraform state tokens or deploy keys.
+description: Refresh or read Will's client lab credentials (vCenter, NSX Manager, the vSphere Supervisor, VCF Automation, and the Tanzu Platform / Cloud Foundry foundation with Tanzu Hub; hostnames and context names are in ~/.lab.env). Use when a Cloud Foundry API call, cf CLI or the Terraform cloudfoundry provider needs a token for the foundation's deployer account, and use as soon as kubectl against the Supervisor or VCF Automation context answers "You must be logged in to the server" or "the server has asked for the client to provide credentials", when `vcf context use` or `vcf context refresh` asks for a password, when a vCenter or VCF Automation API call needs a login, or when asked to "refresh the lab creds", "log back in to the supervisor", or "where is the vCenter password". Use it before asking Will to log in by hand. Not for GitHub auth, and not for a repo's own secrets such as Terraform state tokens or deploy keys.
 ---
 
 The lab logins are in `~/.lab.env`, mode 600, outside every repo. One file,
@@ -29,6 +29,7 @@ names, which this public repo leaves out: below, `$SUPERVISOR_CONTEXT`,
 | `SUPERVISOR_CONTEXT`, `SUPERVISOR_ENDPOINT` | The vcf CLI and kubectl context for the Supervisor, and its address. |
 | `VCFA_URL`, `VCFA_USER`, `VCFA_ORG`, `VCFA_PASSWORD` | VCF Automation, the provider administrator in the `System` org. |
 | `VCFA_CONTEXT`, `VCFA_TENANT_ORG`, `VCFA_TENANT_API_TOKEN` | VCF Automation, the tenant org: the vcf CLI and kubectl context for it, and the API token it logs in with. |
+| `NSX_HOST`, `NSX_USER`, `NSX_PASSWORD` | NSX Manager, as `admin`. The password is the general lab password, the same as `VC_PASSWORD`. |
 | `TANZU_HUB_URL`, `CF_API_URL`, `CF_UAA_TOKEN_URL`, `CF_CLIENT_ASSERTION_FILE` | The Tanzu Platform: Tanzu Hub, the foundation's CF API and UAA token URL, and the path of the deployer account's client assertion secret (under `~/.lab/`, mode 600). |
 
 ## Tanzu Platform (Cloud Foundry)
@@ -126,6 +127,17 @@ curl -sk -X DELETE -H "vmware-api-session-id: $sid" "https://$VC_HOST/api/sessio
 
 Supervisor Namespaces made in vCenter are under
 `/api/vcenter/namespaces/instances`. Delete the session when done.
+
+## NSX API
+
+```sh
+set -a; . ~/.lab.env; set +a
+curl -sk -u "$NSX_USER:$NSX_PASSWORD" "https://$NSX_HOST/policy/api/v1/infra/domains/default/security-policies"
+```
+
+Basic auth on every call, no session needed. The security admin's
+Terraform (`terraform/security-admin` in the-goad) logs in with the same
+user.
 
 ## VCF Automation API
 
