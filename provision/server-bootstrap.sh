@@ -980,6 +980,14 @@ fi
 fi  # CLIENT_LAB: split DNS
 
 # ---------------------------------------------------------------------------
+# The client lab's Tanzu cf CLI, from the URL in client-lab.env (lib/cf-cli.sh).
+if [ "$CLIENT_LAB" = 1 ]; then
+  # shellcheck source=lib/cf-cli.sh
+  source "${SCRIPT_DIR}/lib/cf-cli.sh"
+  install_cf_cli | while read -r line; do log "$line"; done
+fi
+
+# ---------------------------------------------------------------------------
 # Apply dotfiles, same as the two client bootstrap scripts do. This must come
 # before the tpm plugin install below, since tpm reads the plugin list out of
 # the ~/.tmux.conf that chezmoi writes here.
