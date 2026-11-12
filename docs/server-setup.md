@@ -296,6 +296,12 @@ on the server, which is never committed (copy
 `provision/client-lab.env.example`, `chmod 600`). Without it this step and the
 split DNS below are skipped. The addresses used in this doc are stand-ins.
 
+The same file can set `LAB_CF_CLI_URL`, the lab's Cloud Foundry foundation's
+own cf CLI tarball. `server-bootstrap.sh` then installs `cf10` and a `cf`
+symlink into `~/.local/bin` (`provision/lib/cf-cli.sh`). The download goes over
+the tunnel and can't be verified: the certificate is self-signed and there is
+no checksum.
+
 Other devices reach this network **through** the server rather than opening
 their own connection (that identity only allows one live connection at a
 time). `server-bootstrap.sh` sets that up: IP forwarding via
