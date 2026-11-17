@@ -1,6 +1,6 @@
 ---
 name: hermes
-description: Delegate a job to Hermes Agent, which runs on the local Qwen model on the EVO-X2 through LiteLLM, to save Claude tokens. Use when Will says "hermes", "local model", "give this to the local model", "delegate this" or "run it locally", and offer it unprompted for high-input, low-output work: triaging logs or cluster state in the home lab or client lab, summarizing many documents, reading through a big directory or a docs site to answer one question, bulk extraction into a table. Not for coding (that stays with Claude and Codex), and not for anything needing back-and-forth.
+description: Hand work to the local Qwen model on the EVO-X2 to save Claude tokens, either as a one-shot `ask-qwen` call with the input piped in or as a job for Hermes Agent when the model has to find its own input. Use when Will says "hermes", "local model", "give this to the local model", "delegate this" or "run it locally", and offer it unprompted for high-input, low-output work: triaging logs or cluster state in the home lab or client lab, summarizing many documents, reading through a big directory or a docs site to answer one question, bulk extraction into a table. Not for coding (that stays with Claude and Codex), and not for anything needing back-and-forth.
 ---
 
 Hermes runs on `ubuntu-home` against LiteLLM (`http://127.0.0.1:4000/v1`,
@@ -31,7 +31,43 @@ only when Hermes reads far more than it returns.
 Local models are wrong more often than Claude. Delegate work where a wrong
 answer is cheap to spot, and spot-check it.
 
-## Steps
+## ask-qwen or Hermes
+
+Pick by who does the reading.
+
+| `ask-qwen` | Hermes |
+|---|---|
+| The input is already known: a log, a file set, a command's output | The model has to decide what to read next: SSH to hosts, follow leads, browse a docs site |
+| One question per input, or the same question per chunk | Several steps with tools |
+| Seconds to minutes, no pane, nothing to clean up | A herdr worker, a brief and a job folder |
+
+### ask-qwen
+
+Pipe the input in from Bash; never read it into this session first, or
+nothing is saved.
+
+```bash
+journalctl -u litellm --since -24h | ask-qwen -f - "List distinct errors, one line each, with a count"
+kubectl get pods -A -o json | ask-qwen -q -s '{"type":"object","properties":{"failing":{"type":"array","items":{"type":"string"}}},"required":["failing"],"additionalProperties":false}' -f - "Which pods are not Running or Completed?"
+ask-qwen -q -f docs/a.md -f docs/b.md "Every version number mentioned, as a markdown table"
+```
+
+- `-f -` reads stdin; nothing else does. `-f <file>` is repeatable.
+- `-s <schema>` (a file or inline JSON) forces a JSON answer, so the result
+  can be checked with `jq` before it is trusted.
+- `-q` turns thinking off: use it for extraction, filtering and
+  reformatting. Leave thinking on for triage that needs judgement; it is
+  slow (minutes on a 30k-token log).
+- Exit 4 means the input is over about 100k tokens: split it
+  (`split -l`, one file per host, one namespace at a time) and run one call
+  per chunk, then merge the answers yourself or with one more call. Requests
+  run one at a time on the EVO-X2, so `xargs -P 2` at most.
+- Exit 3 means the answer hit the `-n` cap; raise it or add `-q`.
+- The first call after a model swap waits 1-2 minutes. That is not a hang.
+
+The same rule as for Hermes: spot-check a claim or two before reporting.
+
+## Hermes steps
 
 1. **Write a brief.** Hermes starts with no context of this session, so the
    brief carries everything: goal, where to look (hosts, clusters, URLs), what

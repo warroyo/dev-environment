@@ -70,6 +70,7 @@ loaded makes llama-swap swap, and Flash-Next takes 1-2 minutes to load.
 | `~/.secrets/litellm/content-curator.key` | the content curator ([warroyo/content-curator](https://github.com/warroyo/content-curator)) |
 | `~/.secrets/litellm/claude-code.key` | Claude Code, for the MCP gateway only |
 | `~/.secrets/litellm/mcp.env` | generated: tokens of the MCP servers behind the gateway, for the container |
+| `~/.secrets/litellm/ask-qwen.key` | `ask-qwen`, the one-shot helper Claude pipes inputs into |
 
 A client gets its own key so it can be cut off alone and its tokens counted
 alone. Add one by putting its name in `LITELLM_CLIENTS` and re-running. The
@@ -255,6 +256,38 @@ it has read the summary. `hermes-work-prune.timer` deletes a job folder once
 nothing in it has changed for 14 days (`HERMES_WORK_RETENTION_DAYS`), and
 prunes Hermes' own `~/.hermes/cache/scratch` the same way. Preview with
 `hermes-work-prune --dry-run`.
+
+## Asking the model directly: ask-qwen
+
+`ask-qwen` (`dotfiles/dot_local/bin/executable_ask-qwen`) sends one question
+to `local-qwen` through LiteLLM, with no agent loop. Claude pipes the input
+straight into it from Bash, so the input never enters Claude's context and
+only the answer comes back:
+
+```sh
+journalctl -u litellm --since -24h | ask-qwen -f - "List distinct errors with a count each"
+kubectl get events -A -o yaml | ask-qwen -s schema.json -f - "Which pods are failing and why?"
+ask-qwen -q -f a.md -f b.md "Pull every version number into a table"
+```
+
+It is the choice when the input is already known (a log, a directory, a
+command's output). When the model has to decide what to read next (SSH to
+hosts, follow leads, browse a docs site), that is an agent loop and Hermes'
+job. The `hermes` skill routes between the two.
+
+- `-s` takes a JSON schema and makes the answer match it (Gufo honours
+  `response_format: json_schema`), so Claude can check results with `jq`.
+- `-q` turns thinking off (`chat_template_kwargs.enable_thinking: false`).
+  With thinking on, a 30k-token log triage spent about 16k output tokens and
+  over five minutes; extraction and reformatting rarely need it.
+- Inputs over about 100k tokens (estimated at 3 bytes a token,
+  `ASK_QWEN_MAX_INPUT_TOKENS`) are refused with exit 4 rather than cut off:
+  split them and ask per chunk.
+- Gufo runs requests one at a time (`physical_execution_width: 1` in its
+  usage block, even with `--sessions 2`), so parallel calls queue rather than
+  speed up. Fan out with `xargs -P 2` at most.
+- It has its own key, `ask-qwen`, so its tokens show as their own client on
+  the Local model usage dashboard.
 
 ## Upgrading
 
