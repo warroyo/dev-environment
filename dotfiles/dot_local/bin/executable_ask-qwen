@@ -1,0 +1,162 @@
+#!/usr/bin/env bash
+# One question to the local model through LiteLLM, with no agent loop (server
+# only). Claude pipes a big input straight into it from Bash, so only the
+# answer comes back into Claude's context. For work where the model has to go
+# and find its input itself, use Hermes (the hermes skill) instead.
+#
+# Usage: ask-qwen [-f file|-]... [-s schema] [-S system] [-m model]
+#                 [-n max-tokens] [-q] [-v] prompt
+#
+#   -f  input file, repeatable; `-f -` reads stdin (stdin is never read
+#       unless asked for this way). Each file is labelled with its path.
+#   -s  JSON schema the answer must match: a file, or inline JSON starting
+#       with `{`. The answer is then the JSON object alone.
+#   -S  system prompt, replacing the default (answer only from the input)
+#   -m  model, default local-qwen ($ASK_QWEN_MODEL)
+#   -n  cap on output tokens, reasoning included; default the server's
+#   -q  quick: thinking off. Much faster for plain extraction and
+#       reformatting; leave it on for triage that needs judgement
+#   -v  print token counts and time to stderr
+#
+# Exit codes: 1 request failed, 2 usage, 3 answer cut off at the token cap,
+# 4 input too big for the context window (split it and ask per chunk).
+set -euo pipefail
+
+URL="${ASK_QWEN_URL:-http://127.0.0.1:4000/v1}"
+KEY_FILE="${ASK_QWEN_KEY_FILE:-$HOME/.secrets/litellm/ask-qwen.key}"
+MODEL="${ASK_QWEN_MODEL:-local-qwen}"
+# Flash-Next runs with a 131072-token context (ansible/group_vars/inference.yml).
+# The input is estimated at 3 bytes a token, which overcounts English a little,
+# and the rest is left for the prompt, reasoning and answer.
+MAX_INPUT_TOKENS="${ASK_QWEN_MAX_INPUT_TOKENS:-100000}"
+# LiteLLM's own timeout is 15 minutes; a model swap alone takes 1-2.
+TIMEOUT="${ASK_QWEN_TIMEOUT:-900}"
+
+DEFAULT_SYSTEM='Answer only from the input you are given. Be concise and direct. If the input does not contain the answer, say so plainly. Never invent hosts, values, names or quotes that are not in the input.'
+
+usage() {
+  sed -n '7,20p' "$0" | sed 's/^# \{0,1\}//' >&2
+  exit 2
+}
+
+files=() schema="" system="$DEFAULT_SYSTEM" max_tokens="" quick="" verbose=""
+while getopts "f:s:S:m:n:qvh" opt; do
+  case "$opt" in
+    f) files+=("$OPTARG") ;;
+    s) schema="$OPTARG" ;;
+    S) system="$OPTARG" ;;
+    m) MODEL="$OPTARG" ;;
+    n) max_tokens="$OPTARG" ;;
+    q) quick=1 ;;
+    v) verbose=1 ;;
+    *) usage ;;
+  esac
+done
+shift $((OPTIND - 1))
+prompt="$*"
+
+if [ -z "${prompt//[[:space:]]/}" ]; then
+  echo "ask-qwen: a prompt is required" >&2
+  usage
+fi
+if [ ! -s "$KEY_FILE" ]; then
+  echo "ask-qwen: no key at ${KEY_FILE}; run provision/local-ai-setup.sh" >&2
+  exit 1
+fi
+
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+
+# Stdin is read only when asked for with `-f -`. Claude Code runs commands with
+# stdin attached to a socket that stays open, so reading it just because it is
+# not a terminal would block forever.
+: >"$tmp/input"
+for f in "${files[@]}"; do
+  if [ "$f" = "-" ]; then
+    label="stdin"
+    src=/dev/stdin
+  else
+    if [ ! -r "$f" ]; then
+      echo "ask-qwen: cannot read ${f}" >&2
+      exit 2
+    fi
+    label="$f"
+    src="$f"
+  fi
+  { printf '<file name="%s">\n' "$label"; cat "$src"; printf '\n</file>\n'; } >>"$tmp/input"
+done
+
+bytes="$(wc -c <"$tmp/input")"
+est=$(( bytes / 3 ))
+if [ "$est" -gt "$MAX_INPUT_TOKENS" ]; then
+  echo "ask-qwen: input is about ${est} tokens, over the ${MAX_INPUT_TOKENS} limit; split it and ask per chunk" >&2
+  exit 4
+fi
+
+schema_json="null"
+if [ -n "$schema" ]; then
+  if [ "${schema:0:1}" = "{" ]; then
+    schema_json="$schema"
+  elif [ -r "$schema" ]; then
+    schema_json="$(cat "$schema")"
+  else
+    echo "ask-qwen: schema ${schema} is neither inline JSON nor a readable file" >&2
+    exit 2
+  fi
+  if ! jq -e 'type == "object"' >/dev/null 2>&1 <<<"$schema_json"; then
+    echo "ask-qwen: schema is not a JSON object" >&2
+    exit 2
+  fi
+fi
+
+# The input goes first and the question last, which long-context models follow
+# better. Everything travels through jq files and variables, never spliced
+# into the JSON by hand, and the body goes to curl on stdin so a big input
+# never hits the argument length limit.
+jq -n \
+  --arg model "$MODEL" --arg system "$system" --arg prompt "$prompt" \
+  --rawfile input "$tmp/input" --argjson schema "$schema_json" \
+  --arg max_tokens "$max_tokens" --arg quick "$quick" '
+  {
+    model: $model,
+    messages: [
+      {role: "system", content: $system},
+      {role: "user", content: (if $input == "" then $prompt else "\($input)\n\($prompt)" end)}
+    ]
+  }
+  + (if $schema == null then {} else
+      {response_format: {type: "json_schema",
+                         json_schema: {name: "answer", strict: true, schema: $schema}}} end)
+  + (if $max_tokens == "" then {} else {max_tokens: ($max_tokens | tonumber)} end)
+  + (if $quick == "" then {} else {chat_template_kwargs: {enable_thinking: false}} end)
+  ' >"$tmp/body"
+
+start=$SECONDS
+code="$(curl -sS -m "$TIMEOUT" -o "$tmp/resp" -w '%{http_code}' \
+          -H "Authorization: Bearer $(cat "$KEY_FILE")" \
+          -H 'Content-Type: application/json' \
+          --data-binary @"$tmp/body" "${URL}/chat/completions")" || {
+  echo "ask-qwen: request to ${URL} failed (is litellm.service up?)" >&2
+  exit 1
+}
+
+if [ "$code" != "200" ]; then
+  msg="$(jq -r '.error.message // empty' "$tmp/resp" 2>/dev/null || true)"
+  echo "ask-qwen: HTTP ${code}: ${msg:-$(head -c 300 "$tmp/resp")}" >&2
+  exit 1
+fi
+
+if [ -n "$verbose" ]; then
+  jq -r --arg s "$(( SECONDS - start ))" \
+    '"ask-qwen: \(.model) \(.usage.prompt_tokens) in, \(.usage.completion_tokens) out, \($s)s"' \
+    "$tmp/resp" >&2
+fi
+
+# Reasoning arrives in its own field and is dropped; strip <think> blocks too,
+# in case a model or engine leaves them in the content.
+jq -r '.choices[0].message.content // "" | gsub("(?s)<think>.*?</think>\\s*"; "")' "$tmp/resp"
+
+if [ "$(jq -r '.choices[0].finish_reason' "$tmp/resp")" = "length" ]; then
+  echo "ask-qwen: answer cut off at the token cap" >&2
+  exit 3
+fi

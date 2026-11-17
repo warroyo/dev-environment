@@ -54,6 +54,7 @@ CLIENT_COLORS = {
     "hermes-restricted": "purple",
     "scripts": "orange",
     "content-curator": "green",
+    "ask-qwen": "red",
 }
 
 panels = []

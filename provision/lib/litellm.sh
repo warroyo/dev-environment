@@ -92,8 +92,9 @@ LITELLM_UPSTREAM="${LITELLM_UPSTREAM:-http://evo-x2:8080/v1}"
 # Clients that get a virtual key: Hermes's two profiles, scripts, and the
 # content curator (github.com/warroyo/content-curator). Open WebUI joins when it
 # is installed.
-# claude-code is Claude Code on this box, which uses LiteLLM for MCP only.
-LITELLM_CLIENTS="${LITELLM_CLIENTS:-hermes-lab hermes-restricted scripts content-curator claude-code}"
+# claude-code is Claude Code on this box, which uses LiteLLM for MCP only;
+# ask-qwen is the one-shot helper Claude pipes big inputs into (docs/local-ai.md).
+LITELLM_CLIENTS="${LITELLM_CLIENTS:-hermes-lab hermes-restricted scripts content-curator claude-code ask-qwen}"
 
 # MCP servers behind the gateway (see MCP GATEWAY above): name|url|token file|description.
 # The content curator's token file and port are set in lib/content-curator.sh;

@@ -14,9 +14,11 @@
   start, prompt, watch and read Hermes workers without asking. send-keys is
   deliberately left out of allow, so answering one of Hermes' approval
   prompts always comes back to Will: a dangerous command then passes two
-  gates, Hermes asking and Will confirming Claude's answer.
+  gates, Hermes asking and Will confirming Claude's answer. ask-qwen only
+  sends its input to the local model and prints the answer, so it is allowed
+  too; whatever feeds its stdin is checked on its own.
 */ -}}
-{{- $allow := list "Bash(herdr agent list*)" "Bash(herdr agent get *)" "Bash(herdr agent read *)" "Bash(herdr agent wait *)" "Bash(herdr agent start *)" "Bash(herdr agent prompt *)" "Bash(herdr agent explain *)" "Bash(herdr workspace list*)" "Bash(herdr workspace create *)" "Bash(herdr pane list*)" "Bash(herdr pane read *)" "Bash(herdr pane split *)" -}}
+{{- $allow := list "Bash(herdr agent list*)" "Bash(herdr agent get *)" "Bash(herdr agent read *)" "Bash(herdr agent wait *)" "Bash(herdr agent start *)" "Bash(herdr agent prompt *)" "Bash(herdr agent explain *)" "Bash(herdr workspace list*)" "Bash(herdr workspace create *)" "Bash(herdr pane list*)" "Bash(herdr pane read *)" "Bash(herdr pane split *)" "Bash(ask-qwen *)" -}}
 {{- $ask := list "Bash(*ansible/play*)" -}}
 {{- $deny := list "Bash(ssh *-admin*)" "Bash(ansible *)" "Bash(*ansible-playbook*)" -}}
 {{- $s := dict -}}
