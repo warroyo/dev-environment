@@ -496,13 +496,19 @@ _tutor_tailscale_serve() {
   have="$(jq -r --arg p ":${SPANISH_TUTOR_HTTPS_PORT}" \
     '[(.Web // {}) | to_entries[] | select(.key | endswith($p)) | .value.Handlers["/"].Proxy] | first // ""' \
     <<<"$status")"
+  if jq -e --arg p ":${SPANISH_TUTOR_HTTPS_PORT}" \
+       '(.AllowFunnel // {}) | to_entries | any(.[]; (.key | endswith($p)) and .value == true)' \
+       <<<"$status" >/dev/null; then
+    log "  ERROR: Funnel is on for :${SPANISH_TUTOR_HTTPS_PORT}, so the tutor would be public."
+    log "         Turn it off with 'sudo tailscale funnel --https=${SPANISH_TUTOR_HTTPS_PORT} off', then re-run."
+    return 1
+  fi
   if [ "$have" = "$want" ]; then
     log "  tailscale serve already publishes ${want} on :${SPANISH_TUTOR_HTTPS_PORT}"
     return 0
   fi
   [ -z "$have" ] || log "  :${SPANISH_TUTOR_HTTPS_PORT} serves ${have} — replacing it with ${want}"
-  if timeout 60 tailscale serve --bg --https="$SPANISH_TUTOR_HTTPS_PORT" "$want" >/dev/null 2>&1 \
-     || timeout 60 $SUDO tailscale serve --bg --https="$SPANISH_TUTOR_HTTPS_PORT" "$want" >/dev/null 2>&1; then
+  if timeout 60 $SUDO tailscale serve --bg --https="$SPANISH_TUTOR_HTTPS_PORT" "$want" >/dev/null 2>&1; then
     log "  tailscale serve now publishes ${want} on :${SPANISH_TUTOR_HTTPS_PORT} (tailnet only)"
     return 0
   fi
@@ -517,6 +523,8 @@ _tutor_tailscale_serve() {
 _tutor_prune_images() {
   local tag
   docker image ls "$SPANISH_TUTOR_IMAGE_REPO" --format '{{.Tag}}' | while read -r tag; do
+    # Only the commit tags this lib builds (12 hex characters).
+    [[ "$tag" =~ ^[0-9a-f]{12}$ ]] || continue
     [ "${SPANISH_TUTOR_IMAGE_REPO}:${tag}" = "$SPANISH_TUTOR_IMAGE" ] && continue
     docker image rm "${SPANISH_TUTOR_IMAGE_REPO}:${tag}" >/dev/null 2>&1 \
       && log "  removed old image ${SPANISH_TUTOR_IMAGE_REPO}:${tag}"
