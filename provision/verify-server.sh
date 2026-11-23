@@ -477,6 +477,44 @@ if [ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null |
 fi
 
 # ---------------------------------------------------------------------------
+section "Spanish tutor (docs/spanish-tutor.md)"
+# Optional, like the rest of the local AI stack: not installed is a warning.
+if ! systemctl cat spanish-tutor.service >/dev/null 2>&1; then
+  warn "spanish-tutor.service not installed — run provision/spanish-tutor-setup.sh"
+else
+  systemctl is-enabled --quiet spanish-tutor.service 2>/dev/null \
+    && ok "spanish-tutor.service enabled (starts on boot)" \
+    || bad "spanish-tutor.service NOT enabled — re-run provision/spanish-tutor-setup.sh"
+  systemctl is-active --quiet spanish-tutor.service \
+    && ok "spanish-tutor.service active" \
+    || bad "spanish-tutor.service not active — check: journalctl -u spanish-tutor -n 30"
+  if curl -fsS -m 5 http://127.0.0.1:8096/healthz >/dev/null 2>&1; then
+    ok "tutor answers on 127.0.0.1:8096/healthz"
+  else
+    bad "tutor does not answer on 127.0.0.1:8096/healthz"
+  fi
+  # `tailscale serve status --json`: Web["<host>:8443"].Handlers["/"].Proxy, and
+  # AllowFunnel["<host>:8443"] when Funnel is on. Funnel must never be on.
+  ts_serve="$(tailscale serve status --json 2>/dev/null || true)"
+  if [ "$(printf '%s' "$ts_serve" | jq -r '[(.Web // {}) | to_entries[] | select(.key | endswith(":8443")) | .value.Handlers["/"].Proxy] | first // ""' 2>/dev/null)" = "http://127.0.0.1:8096" ]; then
+    ok "tailscale serve publishes 127.0.0.1:8096 on :8443"
+  else
+    bad "no tailscale serve entry for :8443 -> http://127.0.0.1:8096 — re-run provision/spanish-tutor-setup.sh"
+  fi
+  if [ "$(printf '%s' "$ts_serve" | jq -r '[(.AllowFunnel // {}) | to_entries[] | select(.value == true)] | length' 2>/dev/null)" = "0" ]; then
+    ok "no Tailscale Funnel is enabled"
+  else
+    bad "a Tailscale Funnel is enabled — the tutor has no login of its own; turn it off: tailscale funnel reset"
+  fi
+  systemctl is-active --quiet spanish-tutor-backup.timer \
+    && ok "spanish-tutor-backup.timer active" \
+    || bad "spanish-tutor-backup.timer not active — re-run provision/spanish-tutor-setup.sh"
+  perms="$(stat -c %a "$HOME/.secrets/spanish-tutor/tutor.env" 2>/dev/null || echo missing)"
+  [ "$perms" = "600" ] && ok "~/.secrets/spanish-tutor/tutor.env is 0600" \
+    || bad "~/.secrets/spanish-tutor/tutor.env is ${perms} — it holds the LiteLLM key, chmod 600 it"
+fi
+
+# ---------------------------------------------------------------------------
 section "Blog writing flow (dev-log -> post)"
 # The clones are provisioned by lib/repos.sh, which warns rather than aborts
 # when GitHub credentials are missing — so a missing repo here is the expected

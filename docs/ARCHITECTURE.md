@@ -271,6 +271,24 @@ since been deleted: the routed path plus split DNS covers every network the
 laptop actually works from, and a second, slower way to reach the same hosts
 was one more thing to keep true.
 
+## Apps on the server
+
+Small services that run on `ubuntu-home` as Docker compose stacks, each
+installed by its own `provision/*-setup.sh` (also run from
+`server-bootstrap.sh`) and owned by a systemd unit. Apps are code in this
+repo; agents query and troubleshoot them but never install or change them by
+hand.
+
+| App | Port | Reached by | Doc |
+|---|---|---|---|
+| Content curator | `127.0.0.1:8090` | loopback; agents through the LiteLLM MCP gateway | [content-curator.md](content-curator.md) |
+| Spanish tutor | `127.0.0.1:8096` | loopback, and `https://ubuntu-home.<tailnet>.ts.net:8443/` from the phone | [spanish-tutor.md](spanish-tutor.md) |
+
+The Spanish tutor is the lab's first `tailscale serve`: it publishes a loopback
+port to tailnet members only. There is no Funnel anywhere, and
+`verify-server.sh` fails if one appears. The tutor's image is built on the host
+from a pinned commit of its private repo rather than pulled from a registry.
+
 ## Definition of Done
 
 - [ ] Closing a laptop never interrupts a Claude Code session — session state

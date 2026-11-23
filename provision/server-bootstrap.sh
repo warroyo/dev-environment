@@ -1178,6 +1178,13 @@ fi
 source "${SCRIPT_DIR}/lib/content-curator.sh"
 log "Installing the content curator"
 install_content_curator || true
+# After LiteLLM (its key comes from there). Builds the image from the private
+# repo, so it needs `gh auth login`; the first `tailscale serve` on this box is
+# its. See docs/spanish-tutor.md.
+# shellcheck source=lib/spanish-tutor.sh
+source "${SCRIPT_DIR}/lib/spanish-tutor.sh"
+log "Installing the Spanish tutor"
+install_spanish_tutor || true
 
 # ---------------------------------------------------------------------------
 log "Writing claude-telegram-bot systemd service"
