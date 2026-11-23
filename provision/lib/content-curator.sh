@@ -173,6 +173,13 @@ install_content_curator() {
     fi
     changed=1
   fi
+  # A run that pulled the image and wrote compose.yaml but could not restart
+  # (no sudo) leaves nothing to detect as changed next time, so also compare
+  # the running container's image with the pinned one.
+  if [ "$(docker inspect -f '{{.Image}}' content-curator-curator-1 2>/dev/null)" != \
+       "$(docker image inspect -f '{{.Id}}' "$CURATOR_IMAGE" 2>/dev/null)" ]; then
+    changed=1
+  fi
 
   for f in compose:compose.yaml:644 app:config/app.yaml:644 renderer:render-config:755 \
            suggester:suggest-sources:755; do
