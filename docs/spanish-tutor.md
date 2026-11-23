@@ -49,7 +49,7 @@ changed rewrites nothing and restarts nothing. Agents never run it; Will does.
 | `~/.local/share/spanish-tutor/compose.yaml` | generated; points at the local image `spanish-tutor:<12-char commit>` with `pull_policy: never` |
 | `~/.local/share/spanish-tutor/data/` | `tutor.db` (SQLite), `recordings/`, `backups/` |
 | `~/.local/share/spanish-tutor/backup` | generated: the backup script |
-| `~/.secrets/spanish-tutor/tutor.env` | generated, mode 600: `LITELLM_BASE_URL`, `LITELLM_API_KEY`, `TUTOR_MODEL`, `TUTOR_HOST`, `TUTOR_PORT`, `TZ`, `TUTOR_START_DATE`, `TUTOR_EXAM_WEEKDAY`, `TUTOR_NEW_CARDS_PER_DAY`, `TUTOR_DRILL_SCHEDULE`, `TUTOR_LOG_LEVEL` |
+| `~/.secrets/spanish-tutor/tutor.env` | generated, mode 600: `LITELLM_BASE_URL`, `LITELLM_API_KEY`, `TUTOR_MODEL`, `TUTOR_HOST`, `TUTOR_PORT`, `TZ`, `TUTOR_START_DATE`, `TUTOR_WEEK_PLAN`, `TUTOR_NEW_CARDS_PER_DAY`, `TUTOR_DRILL_SCHEDULE`, `TUTOR_LOG_LEVEL` |
 | `~/.secrets/litellm/spanish-tutor.key` | made by `lib/litellm.sh` |
 | `tailscale serve` on `:8443` | `http://127.0.0.1:8096` at `https://ubuntu-home.<tailnet>.ts.net:8443/` |
 

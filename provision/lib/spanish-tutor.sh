@@ -66,7 +66,7 @@
 # Bump to deploy a new build: a commit hash of warroyo/spanish-tutor, written
 # out in full. Then re-run provision/spanish-tutor-setup.sh.
 # (main as of 2026-11-22, complete through M7.)
-SPANISH_TUTOR_REF="${SPANISH_TUTOR_REF:-3d03dacdd1ef9cbfe69b2c103e8fd28a3707fa70}"
+SPANISH_TUTOR_REF="${SPANISH_TUTOR_REF:-844b7a262fb0283e6d7fd9cdd0dee0453a2eb03d}"
 SPANISH_TUTOR_REPO="${SPANISH_TUTOR_REPO:-warroyo/spanish-tutor}"
 SPANISH_TUTOR_REPO_URL="${SPANISH_TUTOR_REPO_URL:-https://github.com/${SPANISH_TUTOR_REPO}.git}"
 SPANISH_TUTOR_DIR="${SPANISH_TUTOR_DIR:-$HOME/.local/share/spanish-tutor}"
@@ -85,7 +85,7 @@ SPANISH_TUTOR_IMAGE_REPO="${SPANISH_TUTOR_IMAGE_REPO:-spanish-tutor}"
 # Settings written to the env file (docs/reference/configuration.md in the app repo).
 SPANISH_TUTOR_START_DATE="${SPANISH_TUTOR_START_DATE:-2026-11-24}"
 SPANISH_TUTOR_MODEL="${SPANISH_TUTOR_MODEL:-local-qwen}"
-SPANISH_TUTOR_EXAM_WEEKDAY="${SPANISH_TUTOR_EXAM_WEEKDAY:-saturday}"
+SPANISH_TUTOR_WEEK_PLAN="${SPANISH_TUTOR_WEEK_PLAN:-tue=speak,wed=speak,thu=silent,fri=speak,sat=exam,sun=silent,mon=speak}"
 SPANISH_TUTOR_NEW_CARDS="${SPANISH_TUTOR_NEW_CARDS:-10}"
 SPANISH_TUTOR_DRILL_SCHEDULE="${SPANISH_TUTOR_DRILL_SCHEDULE:-02:30}"
 # Nightly backup, systemd calendar time (host local time), and how many to keep.
@@ -338,7 +338,7 @@ TUTOR_HOST=127.0.0.1
 TUTOR_PORT=${SPANISH_TUTOR_PORT}
 TZ=$(_tutor_tz)
 TUTOR_START_DATE=${SPANISH_TUTOR_START_DATE}
-TUTOR_EXAM_WEEKDAY=${SPANISH_TUTOR_EXAM_WEEKDAY}
+TUTOR_WEEK_PLAN=${SPANISH_TUTOR_WEEK_PLAN}
 TUTOR_NEW_CARDS_PER_DAY=${SPANISH_TUTOR_NEW_CARDS}
 TUTOR_DRILL_SCHEDULE=${SPANISH_TUTOR_DRILL_SCHEDULE}
 TUTOR_LOG_LEVEL=INFO
