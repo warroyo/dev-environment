@@ -10,7 +10,9 @@ which tries the good ones (see [Source suggestions](#source-suggestions)).
 In Raindrop, tag a pick `read` when done or `meh` for less like this: the
 curator records it and moves the pick to "AI read" or "AI skipped", every 30
 minutes from 06:00 to 23:30 (`CURATOR_FEEDBACK_CRON`). Deleting a pick is
-recorded as a light negative. "AI picks" stays the unread queue.
+recorded as a light negative. "AI picks" is a daily paper: favourite a pick to
+keep it (it moves to "AI saved"), and anything left untouched is removed to the
+Trash by the next night's run, with no feedback recorded.
 
 Claude Code and Hermes reach the curator through its MCP tools, and every
 Sunday morning Hermes sends a short review of the week's feedback and learning
