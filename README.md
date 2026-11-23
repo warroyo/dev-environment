@@ -31,6 +31,7 @@ picture, then follow the setup doc for whichever machine you're on.
 | Inference host (the model server) | lab target first, then `ansible/play inference` from the server | [`docs/inference-host.md`](docs/inference-host.md) |
 | Local AI on the server (LiteLLM, Hermes) | part of `server-bootstrap.sh`, or `provision/local-ai-setup.sh` alone | [`docs/local-ai.md`](docs/local-ai.md) |
 | Content curator on the server | part of `server-bootstrap.sh`, or `provision/content-curator-setup.sh` alone | [`docs/content-curator.md`](docs/content-curator.md) |
+| Spanish tutor on the server | part of `server-bootstrap.sh`, or `provision/spanish-tutor-setup.sh` alone | [`docs/spanish-tutor.md`](docs/spanish-tutor.md) |
 | Lab metrics (Grafana Cloud) | `provision/metrics-setup.sh` on the server, `ansible/play inference --tags metrics` for targets | [`docs/lab-metrics.md`](docs/lab-metrics.md) |
 
 ```sh
@@ -120,5 +121,9 @@ not source paths — verify with `chezmoi ignored`.
   on the server, and how Claude delegates to Hermes
 - [`docs/mcp-gateway.md`](docs/mcp-gateway.md) — LiteLLM as the MCP gateway:
   servers, per-key access, adding one
+- [`docs/content-curator.md`](docs/content-curator.md) — the feed curator on
+  the server
+- [`docs/spanish-tutor.md`](docs/spanish-tutor.md) — the Spanish tutor web app:
+  build from a pinned ref, `tailscale serve` on the tailnet, nightly backup
 - [`docs/client-personal-setup.md`](docs/client-personal-setup.md)
 - [`docs/client-work-setup.md`](docs/client-work-setup.md)

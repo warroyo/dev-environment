@@ -68,6 +68,7 @@ loaded makes llama-swap swap, and Flash-Next takes 1-2 minutes to load.
 | `~/.secrets/litellm/hermes-restricted.key` | Hermes, `restricted` profile |
 | `~/.secrets/litellm/scripts.key` | for scripts and ad-hoc `curl` |
 | `~/.secrets/litellm/content-curator.key` | the content curator ([warroyo/content-curator](https://github.com/warroyo/content-curator)) |
+| `~/.secrets/litellm/spanish-tutor.key` | the Spanish tutor ([warroyo/spanish-tutor](https://github.com/warroyo/spanish-tutor), [spanish-tutor.md](spanish-tutor.md)) |
 | `~/.secrets/litellm/claude-code.key` | Claude Code, for the MCP gateway only |
 | `~/.secrets/litellm/mcp.env` | generated: tokens of the MCP servers behind the gateway, for the container |
 | `~/.secrets/litellm/ask-qwen.key` | `ask-qwen`, the one-shot helper Claude pipes inputs into |
