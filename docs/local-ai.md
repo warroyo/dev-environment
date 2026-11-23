@@ -160,6 +160,18 @@ and stops on its own.
 Off again: delete `~/.secrets/hermes-telegram`, run
 `./provision/local-ai-setup.sh`, then `hermes gateway uninstall`.
 
+### Claude Code skill: `spanish`
+
+`dotfiles/dot_claude/skills/spanish` is the typed channel of the Spanish tutor
+([spanish-tutor.md](spanish-tutor.md)). From the Claude app on the phone, start
+a session on this box and say `/spanish` (or "practicar español"): the skill
+fetches `http://127.0.0.1:8096/api/brief?kind=chat`, holds a short Mexican
+Spanish conversation, and on "dame el reporte" or "terminamos" posts the
+REPORTE block to `/api/report?source=claude`, then shows what was logged. It
+only talks to the tutor on loopback and changes nothing on the host. The tutor
+has no phrase-add endpoint, so "Agrega esto" goes into the next report's
+FRASES NUEVAS. Hermes does not get this skill.
+
 ### Skills and standing rules
 
 A session nobody briefed (Telegram, a pane started by hand) needs to know the
